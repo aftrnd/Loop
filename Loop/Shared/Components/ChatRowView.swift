@@ -20,7 +20,6 @@ struct ChatRowView: View {
                         .fontWeight(.semibold)
                         .foregroundColor(.white)
                 )
-                .offset(y: parallax * 0.35)
             
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
@@ -56,10 +55,12 @@ struct ChatRowView: View {
                     }
                 }
             }
-            .offset(y: parallax * -0.2)
         }
         .padding(.horizontal, 20)
-        .padding(.vertical, 16)
+        .padding(.vertical, 6)
+        .contentShape(RoundedRectangle(cornerRadius: 18))
+        .compositingGroup()
+        .offset(y: parallax)
     }
     
     private func formatTime(_ date: Date) -> String {

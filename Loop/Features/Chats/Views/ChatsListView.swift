@@ -16,7 +16,7 @@ struct ChatsListView: View {
                 .ignoresSafeArea()
                 
                 ScrollView {
-                    LazyVStack(spacing: 16) {
+                    LazyVStack(spacing: 10) {
                         if !viewModel.pinned.isEmpty {
                             VStack(alignment: .leading, spacing: 8) {
                                 Text("Pinned")
@@ -24,7 +24,7 @@ struct ChatsListView: View {
                                     .foregroundColor(.secondary)
                                     .padding(.horizontal, 20)
                                 
-                                ForEach(viewModel.pinned) { chat in
+                                ForEach(Array(viewModel.pinned.enumerated()), id: \.element.id) { index, chat in
                                     GeometryReader { geo in
                                         let midY = geo.frame(in: .global).midY
                                         let screenMid = UIScreen.main.bounds.midY
@@ -43,10 +43,8 @@ struct ChatsListView: View {
                                         let parallax = ((midY - screenMid) / 18) * edgeFactor
                                         NavigationLink(value: ChatsRoute.conversation(chat)) {
                                             ChatRowView(chat: chat, parallax: parallax)
-                                                .background(
-                                                    Color.clear
-                                                        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 18))
-                                                )
+                                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                                .compositingGroup()
                                                 .scaleEffect(scale)
                                                 .rotation3DEffect(rotation, axis: (x: 1, y: 0, z: 0), anchor: .center)
                                                 .opacity(opacity)
@@ -55,7 +53,11 @@ struct ChatsListView: View {
                                         .buttonStyle(.plain)
                                         .contentShape(RoundedRectangle(cornerRadius: 18))
                                     }
-                                    .frame(height: 96)
+                                    .frame(height: 99)
+                                    if index < viewModel.pinned.count - 1 {
+                                        Divider()
+                                            .padding(.leading, 86)
+                                    }
                                 }
                             }
                         }
@@ -67,7 +69,7 @@ struct ChatsListView: View {
                                     .foregroundColor(.secondary)
                                     .padding(.horizontal, 20)
                                 
-                                ForEach(viewModel.recent) { chat in
+                                ForEach(Array(viewModel.recent.enumerated()), id: \.element.id) { index, chat in
                                     GeometryReader { geo in
                                         let midY = geo.frame(in: .global).midY
                                         let screenMid = UIScreen.main.bounds.midY
@@ -86,10 +88,8 @@ struct ChatsListView: View {
                                         let parallax = ((midY - screenMid) / 18) * edgeFactor
                                         NavigationLink(value: ChatsRoute.conversation(chat)) {
                                             ChatRowView(chat: chat, parallax: parallax)
-                                                .background(
-                                                    Color.clear
-                                                        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 18))
-                                                )
+                                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                                .compositingGroup()
                                                 .scaleEffect(scale)
                                                 .rotation3DEffect(rotation, axis: (x: 1, y: 0, z: 0), anchor: .center)
                                                 .opacity(opacity)
@@ -98,7 +98,11 @@ struct ChatsListView: View {
                                         .buttonStyle(.plain)
                                         .contentShape(RoundedRectangle(cornerRadius: 18))
                                     }
-                                    .frame(height: 96)
+                                    .frame(height: 99)
+                                    if index < viewModel.recent.count - 1 {
+                                        Divider()
+                                            .padding(.leading, 86)
+                                    }
                                 }
                             }
                         }
@@ -107,8 +111,21 @@ struct ChatsListView: View {
                     .padding(.top, 20)
                 }
             }
-            .navigationTitle("Chats")
-            .navigationBarTitleDisplayMode(.large)
+            .navigationTitle("Messages")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text("Messages")
+                        .font(.headline)
+                        .fontWeight(.semibold)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(
+                            Color.clear
+                                .glassEffect(.regular, in: Capsule())
+                        )
+                }
+            }
             .navigationDestination(for: ChatsRoute.self) { route in
                 switch route {
                 case .conversation(let chat):
