@@ -10,14 +10,27 @@ struct ChatRowView: View {
             Circle()
                 .fill(Color(.systemGray5))
                 .frame(width: 50, height: 50)
-                .overlay(
+                .overlay(alignment: .center) {
                     Text(String(chat.title.prefix(1)).uppercased())
                         .font(.headline)
                         .fontWeight(.semibold)
                         .foregroundColor(.primary)
-                )
+                }
+                .overlay(alignment: .topTrailing) {
+                    if chat.unreadCount > 0 {
+                        Text("\(chat.unreadCount)")
+                            .font(.caption2)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 7.5)
+                            .padding(.vertical, 4.5)
+                            .background(Color.blue)
+                            .clipShape(Capsule())
+                            .offset(x: 7, y: -7)
+                    }
+                }
             
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 4) {
                 HStack {
                     Text(chat.title)
                         .font(.headline)
@@ -29,6 +42,9 @@ struct ChatRowView: View {
                     Text(formatTime(chat.lastMessageTime))
                         .font(.caption)
                         .foregroundColor(.secondary)
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
                 
                 HStack {
@@ -38,22 +54,11 @@ struct ChatRowView: View {
                         .lineLimit(2)
                     
                     Spacer()
-                    
-                    if chat.unreadCount > 0 {
-                        Text("\(chat.unreadCount)")
-                            .font(.caption)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(Color.blue)
-                            .clipShape(Capsule())
-                    }
                 }
             }
         }
         .padding(.horizontal, 20)
-        .padding(.vertical, 6)
+        .padding(.vertical, 4)
         .contentShape(RoundedRectangle(cornerRadius: 18))
         .compositingGroup()
         .offset(y: parallax)

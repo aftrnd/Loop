@@ -11,9 +11,9 @@ struct ChatsListView: View {
                     .ignoresSafeArea()
                 
                 ScrollView {
-                    LazyVStack(spacing: 10) {
+                    LazyVStack(spacing: 6) {
                         if !viewModel.pinned.isEmpty {
-                            VStack(alignment: .leading, spacing: 8) {
+                            VStack(alignment: .leading, spacing: 6) {
                                 Text("Pinned")
                                     .font(.headline)
                                     .foregroundColor(.secondary)
@@ -48,7 +48,7 @@ struct ChatsListView: View {
                                         .buttonStyle(.plain)
                                         .contentShape(RoundedRectangle(cornerRadius: 18))
                                     }
-                                    .frame(height: 99)
+                                    .frame(height: 84)
                                     if index < viewModel.pinned.count - 1 {
                                         Divider()
                                             .padding(.leading, 86)
@@ -58,7 +58,7 @@ struct ChatsListView: View {
                         }
                         
                         if !viewModel.recent.isEmpty {
-                            VStack(alignment: .leading, spacing: 8) {
+                            VStack(alignment: .leading, spacing: 6) {
                                 Text("Recent")
                                     .font(.headline)
                                     .foregroundColor(.secondary)
@@ -93,7 +93,7 @@ struct ChatsListView: View {
                                         .buttonStyle(.plain)
                                         .contentShape(RoundedRectangle(cornerRadius: 18))
                                     }
-                                    .frame(height: 99)
+                                    .frame(height: 84)
                                     if index < viewModel.recent.count - 1 {
                                         Divider()
                                             .padding(.leading, 86)
@@ -103,7 +103,7 @@ struct ChatsListView: View {
                         }
                     }
                     .padding(.horizontal, 16)
-                    .padding(.top, 20)
+                    .padding(.top, 12)
                 }
             }
             .navigationTitle("Messages")
