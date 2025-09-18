@@ -43,17 +43,12 @@ struct ChatRowView: View {
                     
                     Spacer()
                     
-                    HStack(spacing: 6) {
-                        Text(formatTime(chat.lastMessageTime))
-                            .font(.subheadline)
-                            .monospacedDigit()
-                            .foregroundColor(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                        Image(systemName: "chevron.right")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                    }
+                    Text(formatTime(chat.lastMessageTime))
+                        .font(.subheadline)
+                        .monospacedDigit()
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                 }
                 
                 HStack {
