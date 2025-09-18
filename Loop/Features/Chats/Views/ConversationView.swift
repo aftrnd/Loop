@@ -7,12 +7,8 @@ struct ConversationView: View {
     
     var body: some View {
         ZStack {
-            LinearGradient(
-                colors: [Color.blue.opacity(0.08), Color.purple.opacity(0.08)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
+            Color(.systemBackground)
+                .ignoresSafeArea()
             
             // Messages area
             ScrollViewReader { proxy in

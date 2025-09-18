@@ -8,17 +8,13 @@ struct ChatRowView: View {
         HStack(spacing: 16) {
             // Avatar
             Circle()
-                .fill(LinearGradient(
-                    colors: [Color.blue.opacity(0.8), Color.purple.opacity(0.8)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                ))
+                .fill(Color(.systemGray5))
                 .frame(width: 50, height: 50)
                 .overlay(
                     Text(String(chat.title.prefix(1)).uppercased())
                         .font(.headline)
                         .fontWeight(.semibold)
-                        .foregroundColor(.white)
+                        .foregroundColor(.primary)
                 )
             
             VStack(alignment: .leading, spacing: 6) {
