@@ -60,11 +60,15 @@ struct ConversationView: View {
                 loadMessages()
             }
             .safeAreaInset(edge: .bottom, alignment: .center, spacing: 0) {
-                MessageInputView(messageText: $messageText) {
-                    sendMessage()
+                ZStack {
+                    Rectangle()
+                        .fill(Color.clear)
+                        .glassEffect(.regular, in: Rectangle())
+                    MessageInputView(messageText: $messageText) {
+                        sendMessage()
+                    }
+                    .zIndex(1)
                 }
-                .zIndex(1)
-                .background(Color.clear)
             }
     }
     

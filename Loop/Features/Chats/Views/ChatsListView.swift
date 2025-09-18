@@ -29,7 +29,9 @@ struct ChatsListView: View {
                                         let bottomZoneStart = screen.maxY - edgeZone
                                         let topFactor = max(0, 1 - max(0, midY - screen.minY) / edgeZone)
                                         let bottomFactor = max(0, (midY - bottomZoneStart) / edgeZone)
-                                        let edgeFactor = min(1, max(topFactor, bottomFactor))
+                                        let rawEdgeFactor = min(1, max(topFactor, bottomFactor))
+                                        let isEdgeRow = index == 0 || index == viewModel.pinned.count - 1
+                                        let edgeFactor = isEdgeRow ? 0 : rawEdgeFactor
                                         let rotationSign: CGFloat = topFactor >= bottomFactor ? 1 : -1
                                         let scale = 1 - (0.06 * edgeFactor)
                                         let rotation = Angle(degrees: rotationSign * 6 * edgeFactor)
@@ -74,7 +76,9 @@ struct ChatsListView: View {
                                         let bottomZoneStart = screen.maxY - edgeZone
                                         let topFactor = max(0, 1 - max(0, midY - screen.minY) / edgeZone)
                                         let bottomFactor = max(0, (midY - bottomZoneStart) / edgeZone)
-                                        let edgeFactor = min(1, max(topFactor, bottomFactor))
+                                        let rawEdgeFactor = min(1, max(topFactor, bottomFactor))
+                                        let isEdgeRow = index == 0 || index == viewModel.recent.count - 1
+                                        let edgeFactor = isEdgeRow ? 0 : rawEdgeFactor
                                         let rotationSign: CGFloat = topFactor >= bottomFactor ? 1 : -1
                                         let scale = 1 - (0.06 * edgeFactor)
                                         let rotation = Angle(degrees: rotationSign * 6 * edgeFactor)
