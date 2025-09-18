@@ -350,5 +350,3 @@ struct ChatItemView: View {
         ChatsListView()
     }
 }
-
-
