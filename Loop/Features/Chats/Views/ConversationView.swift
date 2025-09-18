@@ -63,16 +63,12 @@ struct ConversationView: View {
             .onAppear {
                 loadMessages()
             }
-            .safeAreaInset(edge: .bottom) {
+            .safeAreaInset(edge: .bottom, alignment: .center, spacing: 0) {
                 MessageInputView(messageText: $messageText) {
                     sendMessage()
                 }
                 .zIndex(1)
-                .background(
-                    Color.clear
-                        .glassEffect(.regular, in: Rectangle())
-                        .ignoresSafeArea(edges: .bottom)
-                )
+                .background(Color.clear)
             }
     }
     

@@ -15,10 +15,16 @@ struct MessageInputView: View {
                 .onSubmit(onSend)
                 .textInputAutocapitalization(.sentences)
                 .disableAutocorrection(false)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
                 .lineLimit(1)
                 .focused($isFocused)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    Color.clear
+                        .glassEffect(.regular, in: Capsule())
+                        .allowsHitTesting(false)
+                )
             
             Button(action: onSend) {
                 Image(systemName: "arrow.up.circle.fill")
@@ -34,14 +40,6 @@ struct MessageInputView: View {
             }
             .disabled(messageText.isEmpty)
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 8)
-        .contentShape(RoundedRectangle(cornerRadius: 30))
-        .background(
-            Color.clear
-                .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 30))
-                .allowsHitTesting(false)
-        )
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
     }
