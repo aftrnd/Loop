@@ -53,9 +53,18 @@ struct ChatsListView: View {
                                         let edgeGateTop = min(1, topDistance / disableThreshold)
                                         let computedRemaining = max(0, contentHeight - viewportHeight - scrollOffset)
                                         let edgeGateBottom: CGFloat = (contentHeight <= 0 || viewportHeight <= 0) ? 1 : min(1, computedRemaining / disableThreshold)
+                                        
+                                        // Disable effects for first and last items to ease into normal scrolling
+                                        let isFirstPinnedItem = index == 0
+                                        let isLastPinnedItem = index == viewModel.pinned.count - 1
+                                        let isAtListStart = isFirstPinnedItem
+                                        let isAtListEnd = isLastPinnedItem && viewModel.recent.isEmpty
+                                        
+                                        let listPositionGate: CGFloat = (isAtListStart || isAtListEnd) ? 0 : 1
+                                        
                                         // Apply gates to their respective edge factors, then combine
-                                        let effectiveTop = topFactor * edgeGateTop
-                                        let effectiveBottom = bottomFactor * edgeGateBottom
+                                        let effectiveTop = topFactor * edgeGateTop * listPositionGate
+                                        let effectiveBottom = bottomFactor * edgeGateBottom * listPositionGate
                                         let effective = min(1, max(effectiveTop, effectiveBottom))
                                         let scale = 1 - (0.04 * effective)
                                         let rotation = Angle(degrees: rotationSign * 4 * effective)
@@ -118,9 +127,18 @@ struct ChatsListView: View {
                                         let edgeGateTop = min(1, topDistance / disableThreshold)
                                         let computedRemaining = max(0, contentHeight - viewportHeight - scrollOffset)
                                         let edgeGateBottom: CGFloat = (contentHeight <= 0 || viewportHeight <= 0) ? 1 : min(1, computedRemaining / disableThreshold)
+                                        
+                                        // Disable effects for first and last items to ease into normal scrolling
+                                        let isFirstRecentItem = index == 0
+                                        let isLastRecentItem = index == viewModel.recent.count - 1
+                                        let isAtListStart = isFirstRecentItem && viewModel.pinned.isEmpty
+                                        let isAtListEnd = isLastRecentItem
+                                        
+                                        let listPositionGate: CGFloat = (isAtListStart || isAtListEnd) ? 0 : 1
+                                        
                                         // Apply gates to their respective edge factors, then combine
-                                        let effectiveTop = topFactor * edgeGateTop
-                                        let effectiveBottom = bottomFactor * edgeGateBottom
+                                        let effectiveTop = topFactor * edgeGateTop * listPositionGate
+                                        let effectiveBottom = bottomFactor * edgeGateBottom * listPositionGate
                                         let effective = min(1, max(effectiveTop, effectiveBottom))
                                         let scale = 1 - (0.04 * effective)
                                         let rotation = Angle(degrees: rotationSign * 4 * effective)
@@ -184,6 +202,36 @@ struct ChatsListView: View {
                             }
                     }
                 )
+                
+                // Symmetric fade overlays for top and bottom
+                VStack {
+                    // Top fade overlay
+                    LinearGradient(
+                        colors: [
+                            Color(.systemBackground),
+                            Color(.systemBackground).opacity(0)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .frame(height: 40)
+                    .allowsHitTesting(false)
+                    
+                    Spacer()
+                    
+                    // Bottom fade overlay
+                    LinearGradient(
+                        colors: [
+                            Color(.systemBackground).opacity(0),
+                            Color(.systemBackground)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .frame(height: 40)
+                    .allowsHitTesting(false)
+                }
+                .ignoresSafeArea(.container, edges: .vertical)
             }
             .navigationTitle("Messages")
             .navigationBarTitleDisplayMode(.inline)

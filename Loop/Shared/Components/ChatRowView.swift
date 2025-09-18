@@ -3,6 +3,7 @@ import SwiftUI
 struct ChatRowView: View {
     let chat: Chat
     var parallax: CGFloat = 0
+    @Environment(\.colorScheme) private var colorScheme
     
     var body: some View {
         HStack(spacing: 16) {
@@ -20,7 +21,7 @@ struct ChatRowView: View {
                     if chat.unreadCount > 0 {
                         ZStack {
                             Circle()
-                                .fill(Color.blue)
+                                .fill(colorScheme == .light ? Color.red : Color.blue)
                             Text(badgeText(chat.unreadCount))
                                 .font(.caption2)
                                 .fontWeight(.semibold)
