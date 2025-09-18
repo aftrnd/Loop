@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import SwiftUI
 
 @MainActor
 final class ChatsListViewModel: ObservableObject {
@@ -74,5 +75,18 @@ final class ChatsListViewModel: ObservableObject {
         ]
         self.pinned = Array(sample.prefix(3))
         self.recent = Array(sample.dropFirst(3))
+    }
+    
+    func deleteChat(withId id: UUID) {
+        pinned.removeAll { $0.id == id }
+        recent.removeAll { $0.id == id }
+    }
+    
+    func deletePinnedChats(at offsets: IndexSet) {
+        pinned.remove(atOffsets: offsets)
+    }
+    
+    func deleteRecentChats(at offsets: IndexSet) {
+        recent.remove(atOffsets: offsets)
     }
 }
