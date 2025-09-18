@@ -15,7 +15,7 @@ struct ChatsListView: View {
                     .ignoresSafeArea()
                 
                 ScrollView {
-                    LazyVStack(spacing: 6) {
+                    LazyVStack(spacing: 0) {
                         // Top sentinel: measure scroll offset from top in named space
                         GeometryReader { geo in
                             let topMinY = geo.frame(in: .named("chatScroll")).minY
@@ -30,7 +30,7 @@ struct ChatsListView: View {
                         .frame(height: 0)
                         
                         if !viewModel.pinned.isEmpty {
-                            VStack(alignment: .leading, spacing: 6) {
+                            VStack(alignment: .leading, spacing: 0) {
                                 Text("Pinned")
                                     .font(.headline)
                                     .foregroundColor(.secondary)
@@ -57,11 +57,11 @@ struct ChatsListView: View {
                                         let effectiveTop = topFactor * edgeGateTop
                                         let effectiveBottom = bottomFactor * edgeGateBottom
                                         let effective = min(1, max(effectiveTop, effectiveBottom))
-                                        let scale = 1 - (0.06 * effective)
-                                        let rotation = Angle(degrees: rotationSign * 6 * effective)
+                                        let scale = 1 - (0.04 * effective)
+                                        let rotation = Angle(degrees: rotationSign * 4 * effective)
                                         let opacity = 0.9 + (1 - effective) * 0.1
-                                        let blur = 6 * effective
-                                        let parallax = ((midY - screenMid) / 18) * effective
+                                        let blur = 4 * effective
+                                        let parallax = ((midY - screenMid) / 24) * effective
                                         
                                         VStack(spacing: 0) {
                                             NavigationLink(value: ChatsRoute.conversation(chat)) {
@@ -72,11 +72,14 @@ struct ChatsListView: View {
                                             }
                                             .buttonStyle(.plain)
                                             .contentShape(RoundedRectangle(cornerRadius: 18))
-                                            
-                                            // Divider moves with the same parallax so it stays aligned
+                                        }
+                                        .overlay(alignment: .bottom) {
                                             if index < viewModel.pinned.count - 1 {
-                                                Divider()
-                                                    .padding(.leading, 86)
+                                                Rectangle()
+                                                    .fill(Color(.separator))
+                                                    .frame(height: 1 / UIScreen.main.scale)
+                                                    .padding(.leading, 82)
+                                                    .padding(.trailing, 16)
                                             }
                                         }
                                         .compositingGroup()
@@ -86,13 +89,13 @@ struct ChatsListView: View {
                                         .blur(radius: blur)
                                         .offset(y: parallax)
                                     }
-                                    .frame(height: index < viewModel.pinned.count - 1 ? 85 : 84)
+                                    .frame(height: 84)
                                 }
                             }
                         }
                         
                         if !viewModel.recent.isEmpty {
-                            VStack(alignment: .leading, spacing: 6) {
+                            VStack(alignment: .leading, spacing: 0) {
                                 Text("Recent")
                                     .font(.headline)
                                     .foregroundColor(.secondary)
@@ -119,11 +122,11 @@ struct ChatsListView: View {
                                         let effectiveTop = topFactor * edgeGateTop
                                         let effectiveBottom = bottomFactor * edgeGateBottom
                                         let effective = min(1, max(effectiveTop, effectiveBottom))
-                                        let scale = 1 - (0.06 * effective)
-                                        let rotation = Angle(degrees: rotationSign * 6 * effective)
+                                        let scale = 1 - (0.04 * effective)
+                                        let rotation = Angle(degrees: rotationSign * 4 * effective)
                                         let opacity = 0.9 + (1 - effective) * 0.1
-                                        let blur = 6 * effective
-                                        let parallax = ((midY - screenMid) / 18) * effective
+                                        let blur = 4 * effective
+                                        let parallax = ((midY - screenMid) / 24) * effective
                                         
                                         VStack(spacing: 0) {
                                             NavigationLink(value: ChatsRoute.conversation(chat)) {
@@ -134,11 +137,14 @@ struct ChatsListView: View {
                                             }
                                             .buttonStyle(.plain)
                                             .contentShape(RoundedRectangle(cornerRadius: 18))
-                                            
-                                            // Divider moves with the same parallax so it stays aligned
+                                        }
+                                        .overlay(alignment: .bottom) {
                                             if index < viewModel.recent.count - 1 {
-                                                Divider()
-                                                    .padding(.leading, 86)
+                                                Rectangle()
+                                                    .fill(Color(.separator))
+                                                    .frame(height: 1 / UIScreen.main.scale)
+                                                    .padding(.leading, 82)
+                                                    .padding(.trailing, 16)
                                             }
                                         }
                                         .compositingGroup()
@@ -148,7 +154,7 @@ struct ChatsListView: View {
                                         .blur(radius: blur)
                                         .offset(y: parallax)
                                     }
-                                    .frame(height: index < viewModel.recent.count - 1 ? 85 : 84)
+                                    .frame(height: 84)
                                 }
                             }
                         }

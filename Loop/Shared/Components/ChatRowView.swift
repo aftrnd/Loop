@@ -18,20 +18,23 @@ struct ChatRowView: View {
                 }
                 .overlay(alignment: .topTrailing) {
                     if chat.unreadCount > 0 {
-                        Text("\(chat.unreadCount)")
-                            .font(.caption2)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 7.5)
-                            .padding(.vertical, 4.5)
-                            .background(Color.blue)
-                            .clipShape(Capsule())
-                            .offset(x: 7, y: -7)
+                        ZStack {
+                            Circle()
+                                .fill(Color.blue)
+                            Text(badgeText(chat.unreadCount))
+                                .font(.caption2)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.white)
+                                .minimumScaleFactor(0.6)
+                                .lineLimit(1)
+                        }
+                        .frame(width: 22, height: 22)
+                        .offset(x: 7, y: -7)
                     }
                 }
             
             VStack(alignment: .leading, spacing: 4) {
-                HStack {
+                HStack(alignment: .firstTextBaseline) {
                     Text(chat.title)
                         .font(.headline)
                         .fontWeight(.semibold)
@@ -39,26 +42,33 @@ struct ChatRowView: View {
                     
                     Spacer()
                     
-                    Text(formatTime(chat.lastMessageTime))
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    Image(systemName: "chevron.right")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                    HStack(spacing: 6) {
+                        Text(formatTime(chat.lastMessageTime))
+                            .font(.subheadline)
+                            .monospacedDigit()
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                        Image(systemName: "chevron.right")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
                 }
                 
                 HStack {
                     Text(chat.lastMessagePreview)
                         .font(.subheadline)
                         .foregroundColor(.secondary)
-                        .lineLimit(2)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                     
                     Spacer()
                 }
             }
+            .frame(maxHeight: .infinity, alignment: .center)
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 4)
+        .offset(y: 0)
+        .padding(.horizontal, 16)
         .contentShape(RoundedRectangle(cornerRadius: 18))
         .compositingGroup()
         // Parallax is now applied at the row container level in ChatsListView
@@ -77,6 +87,11 @@ struct ChatRowView: View {
         }
         
         return formatter.string(from: date)
+    }
+
+    private func badgeText(_ count: Int) -> String {
+        if count > 99 { return "99+" }
+        return "\(count)"
     }
 }
 
