@@ -78,8 +78,15 @@ struct ChatsListView: View {
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
                     .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
+                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                        Button {
+                            viewModel.deleteRecentChats(at: IndexSet([index]))
+                        } label: {
+                            Image(systemName: "trash")
+                        }
+                        .tint(.red)
+                    }
                 }
-                .onDelete(perform: viewModel.deleteRecentChats)
                 
                 // Bottom sentinel to track content height
                 GeometryReader { geo in
@@ -307,19 +314,24 @@ struct ChatItemView: View {
         let parallaxDistance = (midY - screenMid) / 24
         let parallax = parallaxDistance * effective
         
-        return NavigationLink(value: ChatsRoute.conversation(chat)) {
+        return ZStack {
+            NavigationLink(value: ChatsRoute.conversation(chat)) {
+                EmptyView()
+            }
+            .opacity(0)
+            
             ChatRowView(chat: chat)
                 .frame(height: 84)
                 .frame(maxWidth: .infinity)
                 .compositingGroup()
         }
-        .buttonStyle(.plain)
+        .listRowSeparator(.hidden)
         .contentShape(RoundedRectangle(cornerRadius: 18))
         .overlay(alignment: .bottom) {
             if index < totalCount - 1 {
                 Rectangle()
                     .fill(Color(.separator))
-                    .frame(height: 1 / UIScreen.main.scale)
+                    .frame(height: 1.15)
                     .padding(.leading, 82)
                     .padding(.trailing, 16)
             }

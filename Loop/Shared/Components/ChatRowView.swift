@@ -48,12 +48,19 @@ struct ChatRowView: View {
                     
                     Spacer()
                     
-                    Text(formatTime(chat.lastMessageTime))
-                        .font(.subheadline)
-                        .monospacedDigit()
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
+                    HStack(spacing: 4) {
+                        Text(formatTime(chat.lastMessageTime))
+                            .font(.subheadline)
+                            .monospacedDigit()
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                        
+                        Image(systemName: "chevron.right")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.trailing, 16)
                 }
                 
                 HStack {
@@ -69,7 +76,8 @@ struct ChatRowView: View {
             .frame(maxHeight: .infinity, alignment: .center)
         }
         .offset(y: 0)
-        .padding(.horizontal, 16)
+        .padding(.leading, 16)
+        .padding(.trailing, 0) // No trailing padding to allow time to extend to edge
         .contentShape(RoundedRectangle(cornerRadius: 18))
         .compositingGroup()
         // Parallax is now applied at the row container level in ChatsListView
