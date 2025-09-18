@@ -36,23 +36,35 @@ struct ChatsListView: View {
                                         let opacity = 0.9 + (1 - edgeFactor) * 0.1
                                         let blur = 6 * edgeFactor
                                         let parallax = ((midY - screenMid) / 18) * edgeFactor
-                                        NavigationLink(value: ChatsRoute.conversation(chat)) {
-                                            ChatRowView(chat: chat, parallax: parallax)
-                                                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                                .compositingGroup()
-                                                .scaleEffect(scale)
-                                                .rotation3DEffect(rotation, axis: (x: 1, y: 0, z: 0), anchor: .center)
-                                                .opacity(opacity)
-                                                .blur(radius: blur)
+                                        
+                                        VStack(spacing: 0) {
+                                            NavigationLink(value: ChatsRoute.conversation(chat)) {
+                                                ChatRowView(chat: chat)
+                                                    .frame(height: 84)
+                                                    .frame(maxWidth: .infinity)
+                                                    .compositingGroup()
+                                            }
+                                            .buttonStyle(.plain)
+                                            .contentShape(RoundedRectangle(cornerRadius: 18))
+                                            
+                                            // Divider moves with the same parallax so it stays aligned
+                                            if index < viewModel.pinned.count - 1 {
+                                                Divider()
+                                                    .padding(.leading, 86)
+                                            } else {
+                                                // Keep consistent height so last item layout doesn't jump
+                                                Color.clear.frame(height: 1 / UIScreen.main.scale)
+                                                    .padding(.leading, 86)
+                                            }
                                         }
-                                        .buttonStyle(.plain)
-                                        .contentShape(RoundedRectangle(cornerRadius: 18))
+                                        .compositingGroup()
+                                        .scaleEffect(scale)
+                                        .rotation3DEffect(rotation, axis: (x: 1, y: 0, z: 0), anchor: .center)
+                                        .opacity(opacity)
+                                        .blur(radius: blur)
+                                        .offset(y: parallax)
                                     }
-                                    .frame(height: 84)
-                                    if index < viewModel.pinned.count - 1 {
-                                        Divider()
-                                            .padding(.leading, 86)
-                                    }
+                                    .frame(height: 85)
                                 }
                             }
                         }
@@ -81,23 +93,35 @@ struct ChatsListView: View {
                                         let opacity = 0.9 + (1 - edgeFactor) * 0.1
                                         let blur = 6 * edgeFactor
                                         let parallax = ((midY - screenMid) / 18) * edgeFactor
-                                        NavigationLink(value: ChatsRoute.conversation(chat)) {
-                                            ChatRowView(chat: chat, parallax: parallax)
-                                                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                                .compositingGroup()
-                                                .scaleEffect(scale)
-                                                .rotation3DEffect(rotation, axis: (x: 1, y: 0, z: 0), anchor: .center)
-                                                .opacity(opacity)
-                                                .blur(radius: blur)
+                                        
+                                        VStack(spacing: 0) {
+                                            NavigationLink(value: ChatsRoute.conversation(chat)) {
+                                                ChatRowView(chat: chat)
+                                                    .frame(height: 84)
+                                                    .frame(maxWidth: .infinity)
+                                                    .compositingGroup()
+                                            }
+                                            .buttonStyle(.plain)
+                                            .contentShape(RoundedRectangle(cornerRadius: 18))
+                                            
+                                            // Divider moves with the same parallax so it stays aligned
+                                            if index < viewModel.recent.count - 1 {
+                                                Divider()
+                                                    .padding(.leading, 86)
+                                            } else {
+                                                // Keep consistent height so last item layout doesn't jump
+                                                Color.clear.frame(height: 1 / UIScreen.main.scale)
+                                                    .padding(.leading, 86)
+                                            }
                                         }
-                                        .buttonStyle(.plain)
-                                        .contentShape(RoundedRectangle(cornerRadius: 18))
+                                        .compositingGroup()
+                                        .scaleEffect(scale)
+                                        .rotation3DEffect(rotation, axis: (x: 1, y: 0, z: 0), anchor: .center)
+                                        .opacity(opacity)
+                                        .blur(radius: blur)
+                                        .offset(y: parallax)
                                     }
-                                    .frame(height: 84)
-                                    if index < viewModel.recent.count - 1 {
-                                        Divider()
-                                            .padding(.leading, 86)
-                                    }
+                                    .frame(height: 85)
                                 }
                             }
                         }

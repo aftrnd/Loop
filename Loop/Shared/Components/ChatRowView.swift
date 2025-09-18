@@ -61,7 +61,7 @@ struct ChatRowView: View {
         .padding(.vertical, 4)
         .contentShape(RoundedRectangle(cornerRadius: 18))
         .compositingGroup()
-        .offset(y: parallax)
+        // Parallax is now applied at the row container level in ChatsListView
     }
     
     private func formatTime(_ date: Date) -> String {
