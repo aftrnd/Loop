@@ -5,8 +5,6 @@ struct ChatsListView: View {
     @StateObject private var viewModel = ChatsListViewModel()
     @State private var topDistance: CGFloat = 0
     @State private var scrollOffset: CGFloat = 0
-    @State private var contentHeight: CGFloat = 0
-    @State private var viewportHeight: CGFloat = 0
     @State private var navigationPath = NavigationPath()
     
     var body: some View {
@@ -16,39 +14,57 @@ struct ChatsListView: View {
                     .ignoresSafeArea()
                 
                 List {
-                    // Pinned messages in iOS-style avatar grid (no top sentinel needed)
+                    // Top sentinel: measure scroll offset from top in named space
+                    GeometryReader { geo in
+                        let topMinY = geo.frame(in: .named("chatScroll")).minY
+                        Color.clear
+                            .onChange(of: topMinY) { _, newValue in
+                                // Scroll offset is positive when scrolled down
+                                let offset = max(0, -newValue)
+                                scrollOffset = offset
+                                topDistance = offset
+                            }
+                    }
+                    .frame(height: 0)
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets())
+                    
+                    // Pinned messages in iOS-style avatar grid
                     if !viewModel.pinned.isEmpty {
                         VStack(spacing: 16) {
                             // First row of 3
                             HStack {
-                                Spacer()
                                 ForEach(Array(viewModel.pinned.prefix(3).enumerated()), id: \.element.id) { index, chat in
                                     VStack(spacing: 8) {
-                                        Circle()
-                                            .fill(Color(.systemGray5))
-                                            .frame(width: 85, height: 85)
-                                            .shadow(color: Color.black.opacity(0.1), radius: 2, x: 0, y: 1)
-                                            .overlay(alignment: .center) {
-                                                Text(String(chat.title.prefix(1)).uppercased())
-                                                    .font(.largeTitle)
-                                                    .fontWeight(.semibold)
-                                                    .foregroundColor(.primary)
+                                        ZStack {
+                                            Circle()
+                                                .fill(Color(.systemGray5))
+                                                .frame(width: 85, height: 85)
+                                            
+                                            Color.clear
+                                                .frame(width: 85, height: 85)
+                                                .glassEffect(.regular, in: Circle())
+                                            
+                                            Text(String(chat.title.prefix(1)).uppercased())
+                                                .font(.largeTitle)
+                                                .fontWeight(.semibold)
+                                                .foregroundColor(.primary)
+                                        }
+                                        .overlay(alignment: .topTrailing) {
+                                            if chat.unreadCount > 0 {
+                                                Circle()
+                                                    .fill(Color.red)
+                                                    .frame(width: 28, height: 28)
+                                                    .overlay {
+                                                        Text("\(min(chat.unreadCount, 99))")
+                                                            .font(.caption)
+                                                            .fontWeight(.semibold)
+                                                            .foregroundColor(.white)
+                                                    }
+                                                    .offset(x: 12, y: -12)
                                             }
-                                            .overlay(alignment: .topTrailing) {
-                                                if chat.unreadCount > 0 {
-                                                    Circle()
-                                                        .fill(Color.red)
-                                                        .frame(width: 28, height: 28)
-                                                        .shadow(color: Color.black.opacity(0.15), radius: 1, x: 0, y: 1)
-                                                        .overlay {
-                                                            Text("\(min(chat.unreadCount, 99))")
-                                                                .font(.caption)
-                                                                .fontWeight(.semibold)
-                                                                .foregroundColor(.white)
-                                                        }
-                                                        .offset(x: 12, y: -12)
-                                                }
-                                            }
+                                        }
                                         
                                         Text(chat.title)
                                             .font(.caption)
@@ -61,45 +77,45 @@ struct ChatsListView: View {
                                     .onTapGesture {
                                         navigationPath.append(ChatsRoute.conversation(chat))
                                     }
-                                    
-                                    if index < min(2, viewModel.pinned.prefix(3).count - 1) {
+                                    if index < viewModel.pinned.prefix(3).count - 1 {
                                         Spacer()
                                     }
                                 }
-                                Spacer()
                             }
                             
                             // Second row of 3 if we have more than 3 pinned
                             if viewModel.pinned.count > 3 {
                                 HStack {
-                                    Spacer()
                                     ForEach(Array(viewModel.pinned.dropFirst(3).prefix(3).enumerated()), id: \.element.id) { index, chat in
                                         VStack(spacing: 8) {
-                                            Circle()
-                                                .fill(Color(.systemGray5))
-                                                .frame(width: 85, height: 85)
-                                                .shadow(color: Color.black.opacity(0.1), radius: 2, x: 0, y: 1)
-                                                .overlay(alignment: .center) {
-                                                    Text(String(chat.title.prefix(1)).uppercased())
-                                                        .font(.largeTitle)
-                                                        .fontWeight(.semibold)
-                                                        .foregroundColor(.primary)
+                                            ZStack {
+                                                Circle()
+                                                    .fill(Color(.systemGray5))
+                                                    .frame(width: 85, height: 85)
+                                                
+                                                Color.clear
+                                                    .frame(width: 85, height: 85)
+                                                    .glassEffect(.regular, in: Circle())
+                                                
+                                                Text(String(chat.title.prefix(1)).uppercased())
+                                                    .font(.largeTitle)
+                                                    .fontWeight(.semibold)
+                                                    .foregroundColor(.primary)
+                                            }
+                                            .overlay(alignment: .topTrailing) {
+                                                if chat.unreadCount > 0 {
+                                                    Circle()
+                                                        .fill(Color.red)
+                                                        .frame(width: 28, height: 28)
+                                                        .overlay {
+                                                            Text("\(min(chat.unreadCount, 99))")
+                                                                .font(.caption)
+                                                                .fontWeight(.semibold)
+                                                                .foregroundColor(.white)
+                                                        }
+                                                        .offset(x: 12, y: -12)
                                                 }
-                                                .overlay(alignment: .topTrailing) {
-                                                    if chat.unreadCount > 0 {
-                                                        Circle()
-                                                            .fill(Color.red)
-                                                            .frame(width: 28, height: 28)
-                                                            .shadow(color: Color.black.opacity(0.15), radius: 1, x: 0, y: 1)
-                                                            .overlay {
-                                                                Text("\(min(chat.unreadCount, 99))")
-                                                                    .font(.caption)
-                                                                    .fontWeight(.semibold)
-                                                                    .foregroundColor(.white)
-                                                            }
-                                                            .offset(x: 12, y: -12)
-                                                    }
-                                                }
+                                            }
                                             
                                             Text(chat.title)
                                                 .font(.caption)
@@ -112,12 +128,10 @@ struct ChatsListView: View {
                                         .onTapGesture {
                                             navigationPath.append(ChatsRoute.conversation(chat))
                                         }
-                                        
-                                        if index < min(2, viewModel.pinned.dropFirst(3).prefix(3).count - 1) {
+                                        if index < viewModel.pinned.dropFirst(3).prefix(3).count - 1 {
                                             Spacer()
                                         }
                                     }
-                                    Spacer()
                                 }
                             }
                         }
@@ -133,33 +147,16 @@ struct ChatsListView: View {
                     // Regular chat list (combining all remaining chats)
                     ForEach(Array(viewModel.recent.enumerated()), id: \.element.id) { index, chat in
                         GeometryReader { geo in
-                            // Track scroll position from the first regular chat item
-                            let _ = {
-                                if index == 0 {
-                                    let topMinY = geo.frame(in: .named("chatScroll")).minY
-                                    let offset = max(0, -topMinY)
-                                    DispatchQueue.main.async {
-                                        scrollOffset = offset
-                                        topDistance = offset
-                                    }
-                                }
-                            }()
-                            
                             let midY = geo.frame(in: .global).midY
                             let screenMid = UIScreen.main.bounds.midY
                             let screen = UIScreen.main.bounds
                             let edgeZone: CGFloat = max(120, screen.height * 0.18)
-                            let topZoneEnd = screen.minY + edgeZone
-                            let bottomZoneStart = screen.maxY - edgeZone
+                            
+                            // Simplified logic that mirrors top behavior for bottom
                             let topFactor = max(0, 1 - max(0, midY - screen.minY) / edgeZone)
-                            let bottomFactor = max(0, (midY - bottomZoneStart) / edgeZone)
-                            let edgeFactor = min(1, max(topFactor, bottomFactor))
+                            let bottomFactor = max(0, 1 - max(0, screen.maxY - midY) / edgeZone)
+                            
                             let rotationSign: CGFloat = topFactor >= bottomFactor ? 1 : -1
-                            // Smoothly ramp in/out near extremes based on distance from each edge
-                            let disableThreshold: CGFloat = 28
-                            let edgeGateTop = min(1, topDistance / disableThreshold)
-                            let computedRemaining = max(0, contentHeight - viewportHeight - scrollOffset)
-                            let edgeGateBottom: CGFloat = (contentHeight <= 0 || viewportHeight <= 0) ? 1 : min(1, computedRemaining / disableThreshold)
                             
                             // Disable effects for first and last items to ease into normal scrolling
                             let isFirstRecentItem = index == 0
@@ -169,10 +166,8 @@ struct ChatsListView: View {
                             
                             let listPositionGate: CGFloat = (isAtListStart || isAtListEnd) ? 0 : 1
                             
-                            // Apply gates to their respective edge factors, then combine
-                            let effectiveTop = topFactor * edgeGateTop * listPositionGate
-                            let effectiveBottom = bottomFactor * edgeGateBottom * listPositionGate
-                            let effective = min(1, max(effectiveTop, effectiveBottom))
+                            // Simple effective calculation that works consistently for both edges
+                            let effective = min(1, max(topFactor, bottomFactor)) * listPositionGate
                             let scale = 1 - (0.04 * effective)
                             let rotation = Angle(degrees: rotationSign * 4 * effective)
                             let opacity = 0.9 + (1 - effective) * 0.1
@@ -215,20 +210,6 @@ struct ChatsListView: View {
                 .listSectionSeparator(.hidden)
                 .coordinateSpace(name: "chatScroll")
                 .contentMargins(.top, 0, for: .scrollContent)
-                // Measure total content height for bottom edge distance
-                .background(
-                    GeometryReader { gp in
-                        Color.clear
-                            .onAppear { 
-                                contentHeight = gp.size.height
-                                viewportHeight = gp.size.height
-                            }
-                            .onChange(of: gp.size.height) { _, newValue in
-                                contentHeight = newValue
-                                viewportHeight = newValue
-                            }
-                    }
-                )
                 
                 // Symmetric fade overlays for top and bottom
                 VStack {

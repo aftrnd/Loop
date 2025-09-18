@@ -8,20 +8,26 @@ struct ChatRowView: View {
     var body: some View {
         HStack(spacing: 16) {
             // Avatar
-            Circle()
-                .fill(Color(.systemGray5))
-                .frame(width: 50, height: 50)
-                .overlay(alignment: .center) {
-                    Text(String(chat.title.prefix(1)).uppercased())
-                        .font(.headline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.primary)
-                }
-                .overlay(alignment: .topTrailing) {
-                    if chat.unreadCount > 0 {
-                        ZStack {
-                            Circle()
-                                .fill(colorScheme == .light ? Color.red : Color.blue)
+            ZStack {
+                Circle()
+                    .fill(Color(.systemGray5))
+                    .frame(width: 50, height: 50)
+                
+                Color.clear
+                    .frame(width: 50, height: 50)
+                    .glassEffect(.regular, in: Circle())
+                
+                Text(String(chat.title.prefix(1)).uppercased())
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.primary)
+            }
+            .overlay(alignment: .topTrailing) {
+                if chat.unreadCount > 0 {
+                    Circle()
+                        .fill(colorScheme == .light ? Color.red : Color.blue)
+                        .frame(width: 22, height: 22)
+                        .overlay {
                             Text(badgeText(chat.unreadCount))
                                 .font(.caption2)
                                 .fontWeight(.semibold)
@@ -29,10 +35,9 @@ struct ChatRowView: View {
                                 .minimumScaleFactor(0.6)
                                 .lineLimit(1)
                         }
-                        .frame(width: 22, height: 22)
                         .offset(x: 7, y: -7)
-                    }
                 }
+            }
             
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline) {
