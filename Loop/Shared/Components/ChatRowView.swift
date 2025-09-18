@@ -40,7 +40,7 @@ struct ChatRowView: View {
             }
             
             VStack(alignment: .leading, spacing: 4) {
-                HStack(alignment: .firstTextBaseline) {
+                HStack(alignment: .center) {
                     Text(chat.title)
                         .font(.headline)
                         .fontWeight(.semibold)
@@ -57,7 +57,7 @@ struct ChatRowView: View {
                             .truncationMode(.tail)
                         
                         Image(systemName: "chevron.right")
-                            .font(.caption)
+                            .font(.subheadline) // Match the time font size
                             .foregroundColor(.secondary)
                     }
                     .padding(.trailing, 16)
