@@ -6,6 +6,7 @@ struct ChatsListView: View {
     @State private var topDistance: CGFloat = 0
     @State private var scrollOffset: CGFloat = 0
     @State private var navigationPath = NavigationPath()
+    @Environment(\.colorScheme) private var colorScheme
     
     var body: some View {
         NavigationStack(path: $navigationPath) {
@@ -40,10 +41,10 @@ struct ChatsListView: View {
                                         ZStack {
                                             Circle()
                                                 .fill(Color(.systemGray5))
-                                                .frame(width: 85, height: 85)
+                                                .frame(width: 90, height: 90)
                                             
                                             Color.clear
-                                                .frame(width: 85, height: 85)
+                                                .frame(width: 90, height: 90)
                                                 .glassEffect(.regular, in: Circle())
                                             
                                             Text(String(chat.title.prefix(1)).uppercased())
@@ -54,15 +55,15 @@ struct ChatsListView: View {
                                         .overlay(alignment: .topTrailing) {
                                             if chat.unreadCount > 0 {
                                                 Circle()
-                                                    .fill(Color.red)
-                                                    .frame(width: 28, height: 28)
+                                                    .fill(colorScheme == .light ? Color.red : Color.blue)
+                                                    .frame(width: 30, height: 30)
                                                     .overlay {
                                                         Text("\(min(chat.unreadCount, 99))")
                                                             .font(.caption)
                                                             .fontWeight(.semibold)
                                                             .foregroundColor(.white)
                                                     }
-                                                    .offset(x: 12, y: -12)
+                                                    .offset(x: 8, y: -8)
                                             }
                                         }
                                         
@@ -71,7 +72,7 @@ struct ChatsListView: View {
                                             .foregroundColor(.primary)
                                             .lineLimit(1)
                                             .truncationMode(.tail)
-                                            .frame(width: 100)
+                                            .frame(width: 105)
                                     }
                                     .contentShape(Rectangle())
                                     .onTapGesture {
@@ -91,10 +92,10 @@ struct ChatsListView: View {
                                             ZStack {
                                                 Circle()
                                                     .fill(Color(.systemGray5))
-                                                    .frame(width: 85, height: 85)
+                                                    .frame(width: 90, height: 90)
                                                 
                                                 Color.clear
-                                                    .frame(width: 85, height: 85)
+                                                    .frame(width: 90, height: 90)
                                                     .glassEffect(.regular, in: Circle())
                                                 
                                                 Text(String(chat.title.prefix(1)).uppercased())
@@ -105,15 +106,15 @@ struct ChatsListView: View {
                                             .overlay(alignment: .topTrailing) {
                                                 if chat.unreadCount > 0 {
                                                     Circle()
-                                                        .fill(Color.red)
-                                                        .frame(width: 28, height: 28)
+                                                        .fill(colorScheme == .light ? Color.red : Color.blue)
+                                                        .frame(width: 30, height: 30)
                                                         .overlay {
                                                             Text("\(min(chat.unreadCount, 99))")
                                                                 .font(.caption)
                                                                 .fontWeight(.semibold)
                                                                 .foregroundColor(.white)
                                                         }
-                                                        .offset(x: 12, y: -12)
+                                                        .offset(x: 8, y: -8)
                                                 }
                                             }
                                             
@@ -122,7 +123,7 @@ struct ChatsListView: View {
                                                 .foregroundColor(.primary)
                                                 .lineLimit(1)
                                                 .truncationMode(.tail)
-                                                .frame(width: 100)
+                                                .frame(width: 105)
                                         }
                                         .contentShape(Rectangle())
                                         .onTapGesture {
@@ -136,7 +137,7 @@ struct ChatsListView: View {
                             }
                         }
                         .padding(.horizontal, 16)
-                        .padding(.top, 4)
+                        .padding(.top, 0)
                         .padding(.bottom, 8)
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
