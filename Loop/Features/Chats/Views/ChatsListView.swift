@@ -23,6 +23,16 @@ struct ChatsListView: View {
                     ToolbarItem(placement: .principal) {
                         toolbarContent
                     }
+                    
+                    #if DEBUG
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button(action: {
+                            DebugManager.shared.showDebugMenu()
+                        }) {
+                            Image(systemName: "gear")
+                        }
+                    }
+                    #endif
                 }
                 .toolbarBackground(.hidden, for: .navigationBar)
                 .navigationDestination(for: ChatsRoute.self) { route in
@@ -72,7 +82,8 @@ struct ChatsListView: View {
                         isAtListStart: index == 0 && viewModel.pinned.isEmpty,
                         scrollOffset: scrollOffset,
                         contentHeight: contentHeight,
-                        scrollViewHeight: scrollViewHeight
+                        scrollViewHeight: scrollViewHeight,
+                        navigationPath: $navigationPath
                     )
                     .frame(height: 84)
                     .listRowSeparator(.hidden)
@@ -259,6 +270,7 @@ struct ChatItemView: View {
     let scrollOffset: CGFloat
     let contentHeight: CGFloat
     let scrollViewHeight: CGFloat
+    @Binding var navigationPath: NavigationPath
     
     var body: some View {
         GeometryReader { geo in
@@ -314,19 +326,15 @@ struct ChatItemView: View {
         let parallaxDistance = (midY - screenMid) / 24
         let parallax = parallaxDistance * effective
         
-        return ZStack {
-            NavigationLink(value: ChatsRoute.conversation(chat)) {
-                EmptyView()
+        return ChatRowView(chat: chat)
+            .frame(height: 84)
+            .frame(maxWidth: .infinity)
+            .compositingGroup()
+            .listRowSeparator(.hidden)
+            .contentShape(RoundedRectangle(cornerRadius: 18))
+            .onTapGesture {
+                navigationPath.append(ChatsRoute.conversation(chat))
             }
-            .opacity(0)
-            
-            ChatRowView(chat: chat)
-                .frame(height: 84)
-                .frame(maxWidth: .infinity)
-                .compositingGroup()
-        }
-        .listRowSeparator(.hidden)
-        .contentShape(RoundedRectangle(cornerRadius: 18))
         .overlay(alignment: .bottom) {
             if index < totalCount - 1 {
                 Rectangle()

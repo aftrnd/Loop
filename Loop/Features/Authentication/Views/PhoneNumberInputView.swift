@@ -3,6 +3,7 @@ import SwiftUI
 struct PhoneNumberInputView: View {
     @ObservedObject var viewModel: AuthenticationViewModel
     @FocusState private var isPhoneFieldFocused: Bool
+    @State private var isFormattingInProgress = false
     
     var body: some View {
         VStack(spacing: 24) {
@@ -18,6 +19,11 @@ struct PhoneNumberInputView: View {
         }
         .padding(.horizontal, AppConstants.UI.padding)
         .background(Color(.systemBackground))
+        .onTapGesture {
+            // Dismiss keyboard when tapping outside
+            isPhoneFieldFocused = false
+        }
+        .keyboardAdaptive() // Custom keyboard handling
     }
     
     private var headerSection: some View {
@@ -30,7 +36,7 @@ struct PhoneNumberInputView: View {
                 
                 Color.clear
                     .frame(width: 120, height: 120)
-                    .glassEffect(.regular, in: Circle())
+                    .lightGlassEffect(.regular, in: Circle())
                 
                 Image(systemName: "message.fill")
                     .font(.system(size: 48, weight: .medium))
@@ -75,7 +81,7 @@ struct PhoneNumberInputView: View {
                     .padding(.vertical, 10)
                     .background(
                         Color.clear
-                            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 12))
+                            .lightGlassEffect(.regular, in: RoundedRectangle(cornerRadius: 12))
                     )
                     
                     // Phone number input
@@ -85,17 +91,14 @@ struct PhoneNumberInputView: View {
                         .font(.body)
                         .focused($isPhoneFieldFocused)
                         .onChange(of: viewModel.phoneNumber) { _, newValue in
-                            // Format phone number as user types
-                            let digits = newValue.replacingOccurrences(of: "[^0-9]", with: "", options: .regularExpression)
-                            if digits.count <= 10 {
-                                viewModel.phoneNumber = formatPhoneNumber(digits)
-                            }
+                            // Immediate formatting without debouncing to prevent flashing
+                            formatPhoneNumberOptimized(newValue)
                         }
                         .padding(.horizontal, 16)
                         .padding(.vertical, 12)
                         .background(
                             Color.clear
-                                .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 12))
+                                .lightGlassEffect(.regular, in: RoundedRectangle(cornerRadius: 12))
                         )
                 }
             }
@@ -109,8 +112,8 @@ struct PhoneNumberInputView: View {
     private var actionSection: some View {
         VStack(spacing: 16) {
             Button(action: {
-                // Validate phone number before sending
-                let digits = viewModel.phoneNumber.replacingOccurrences(of: "[^0-9]", with: "", options: .regularExpression)
+                // Optimized validation - extract digits without regex
+                let digits = String(viewModel.phoneNumber.compactMap { $0.isNumber ? $0 : nil })
                 if digits.count == 10 {
                     viewModel.sendVerificationCode()
                 } else {
@@ -185,7 +188,7 @@ struct PhoneNumberInputView: View {
         .padding(.vertical, 8)
         .background(
             Color.clear
-                .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 8))
+                .lightGlassEffect(.regular, in: RoundedRectangle(cornerRadius: 8))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8)
@@ -193,21 +196,84 @@ struct PhoneNumberInputView: View {
         )
     }
     
+    // Optimized phone number formatting without debouncing
+    private func formatPhoneNumberOptimized(_ newValue: String) {
+        // Prevent recursive updates
+        guard !isFormattingInProgress else { return }
+        isFormattingInProgress = true
+        
+        // Extract digits only (optimized character filtering)
+        let digits = String(newValue.compactMap { $0.isNumber ? $0 : nil })
+        
+        // Limit to 10 digits max
+        guard digits.count <= 10 else {
+            isFormattingInProgress = false
+            return
+        }
+        
+        // Format the digits
+        let formatted = formatPhoneNumber(digits)
+        
+        // Only update if different to prevent infinite loops
+        if formatted != viewModel.phoneNumber {
+            DispatchQueue.main.async {
+                self.viewModel.phoneNumber = formatted
+                self.isFormattingInProgress = false
+            }
+        } else {
+            isFormattingInProgress = false
+        }
+    }
+    
     private func formatPhoneNumber(_ digits: String) -> String {
-        if digits.count >= 6 {
+        switch digits.count {
+        case 0...3:
+            return digits
+        case 4...6:
+            let areaCode = String(digits.prefix(3))
+            let remaining = String(digits.dropFirst(3))
+            return "(\(areaCode)) \(remaining)"
+        case 7...10:
             let areaCode = String(digits.prefix(3))
             let firstPart = String(digits.dropFirst(3).prefix(3))
             let lastPart = String(digits.dropFirst(6))
             return "(\(areaCode)) \(firstPart)-\(lastPart)"
-        } else if digits.count >= 3 {
-            let areaCode = String(digits.prefix(3))
-            let remaining = String(digits.dropFirst(3))
-            return "(\(areaCode)) \(remaining)"
-        } else {
+        default:
             return digits
         }
     }
     
+}
+
+// MARK: - Keyboard Adaptive Modifier
+struct KeyboardAdaptiveModifier: ViewModifier {
+    @State private var keyboardHeight: CGFloat = 0
+    
+    func body(content: Content) -> some View {
+        content
+            .padding(.bottom, keyboardHeight)
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { notification in
+                if let keyboardFrame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue {
+                    let keyboardRectangle = keyboardFrame.cgRectValue
+                    let keyboardHeight = keyboardRectangle.height
+                    
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        self.keyboardHeight = keyboardHeight * 0.1 // Minimal adjustment
+                    }
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    self.keyboardHeight = 0
+                }
+            }
+    }
+}
+
+extension View {
+    func keyboardAdaptive() -> some View {
+        self.modifier(KeyboardAdaptiveModifier())
+    }
 }
 
 #Preview {

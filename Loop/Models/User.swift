@@ -31,6 +31,20 @@ enum AuthState: Equatable {
     case authenticated(User)
     case error(String)
     
+    // Add computed property for animation identity
+    var id: String {
+        switch self {
+        case .loading:
+            return "loading"
+        case .unauthenticated:
+            return "unauthenticated"
+        case .authenticated(let user):
+            return "authenticated_\(user.id)"
+        case .error(let message):
+            return "error_\(message.hashValue)"
+        }
+    }
+    
     static func == (lhs: AuthState, rhs: AuthState) -> Bool {
         switch (lhs, rhs) {
         case (.loading, .loading), (.unauthenticated, .unauthenticated):

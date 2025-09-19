@@ -9,7 +9,14 @@ import UserNotifications
 @MainActor
 class AuthenticationViewModel: ObservableObject {
     @Published var authState: AuthState = .loading
-    @Published var phoneNumber: String = ""
+    @Published var phoneNumber: String = "" {
+        didSet {
+            // Clear error when user starts typing
+            if !phoneNumber.isEmpty && errorMessage != nil {
+                errorMessage = nil
+            }
+        }
+    }
     @Published var verificationCode: String = ""
     @Published var isLoading: Bool = false
     @Published var errorMessage: String?
@@ -18,7 +25,10 @@ class AuthenticationViewModel: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     
     init() {
-        checkAuthState()
+        // Defer heavy operations to avoid blocking UI
+        Task { @MainActor in
+            await checkAuthStateAsync()
+        }
     }
     
     // CRITICAL FIX: Ensure Firebase is configured before using it
@@ -41,7 +51,18 @@ class AuthenticationViewModel: ObservableObject {
     }
     
     func checkAuthState() {
+        Task { @MainActor in
+            await checkAuthStateAsync()
+        }
+    }
+    
+    // Async version to prevent blocking UI
+    @MainActor
+    private func checkAuthStateAsync() async {
         authState = .loading
+        
+        // Add small delay to allow UI to render first
+        try? await Task.sleep(nanoseconds: 50_000_000) // 50ms
         
         // CRITICAL FIX: Ensure Firebase is configured before using Auth
         guard ensureFirebaseConfigured() else {
@@ -52,11 +73,19 @@ class AuthenticationViewModel: ObservableObject {
         
         _ = Auth.auth().addStateDidChangeListener { [weak self] _, user in
             Task { @MainActor in
+                guard let self = self else { return }
+                
+                let newState: AuthState
                 if let user = user {
                     let appUser = User(from: user)
-                    self?.authState = .authenticated(appUser)
+                    newState = .authenticated(appUser)
                 } else {
-                    self?.authState = .unauthenticated
+                    newState = .unauthenticated
+                }
+                
+                // Only update if state actually changed to prevent unnecessary UI updates
+                if self.authState != newState {
+                    self.authState = newState
                 }
             }
         }
@@ -70,6 +99,13 @@ class AuthenticationViewModel: ObservableObject {
         
         isLoading = true
         errorMessage = nil
+        
+        // Check if debug mode forces mock auth
+        if DebugManager.shared.debugSettings.useMockAuth {
+            print("🔧 DEBUG: Mock auth enabled - using mock verification")
+            skipFirebaseAndUseMockAuth()
+            return
+        }
         
         // CRITICAL FIX: Ensure Firebase is configured before proceeding
         guard ensureFirebaseConfigured() else {

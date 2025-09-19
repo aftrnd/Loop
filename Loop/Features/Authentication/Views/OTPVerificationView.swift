@@ -26,31 +26,13 @@ struct OTPVerificationView: View {
         }
         .onDisappear {
             stopTimer()
+            // Reset verification when navigating back
+            viewModel.resetVerification()
         }
     }
     
     private var headerSection: some View {
         VStack(spacing: 16) {
-            // Back button
-            HStack {
-                Button(action: {
-                    viewModel.resetVerification()
-                    dismiss()
-                }) {
-                    Image(systemName: "chevron.left")
-                        .font(.title2)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.primary)
-                        .padding(12)
-                        .background(
-                            Color.clear
-                                .glassEffect(.regular, in: Circle())
-                        )
-                }
-                
-                Spacer()
-            }
-            
             // Verification icon
             ZStack {
                 Circle()

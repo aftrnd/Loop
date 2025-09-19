@@ -27,11 +27,21 @@ struct AuthenticationView: View {
                     errorView(message)
                 }
             }
-            .animation(.easeInOut(duration: AppConstants.Animation.defaultDuration), value: viewModel.authState)
+            .animation(.easeInOut(duration: AppConstants.Animation.defaultDuration), value: viewModel.authState.id)
+            .transaction { transaction in
+                // Reduce animation overhead for loading states
+                if case .loading = viewModel.authState {
+                    transaction.animation = .linear(duration: 0.1)
+                }
+            }
         }
+        .debugMenu() // Add debug menu support
         .onChange(of: viewModel.verificationID) { _, verificationID in
-            if verificationID != nil {
-                navigationPath.append(AuthenticationRoute.otpVerification)
+            // Debounce navigation to prevent multiple frame updates
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                if verificationID != nil && navigationPath.isEmpty {
+                    navigationPath.append(AuthenticationRoute.otpVerification)
+                }
             }
         }
     }
