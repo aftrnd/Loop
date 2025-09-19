@@ -198,7 +198,7 @@ struct LoopApp: App {
     
     var body: some Scene {
         WindowGroup {
-            AuthenticationView()
+            MainTabView()
         }
     }
 }
