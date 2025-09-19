@@ -103,21 +103,12 @@ struct PhoneNumberInputView: View {
             if let errorMessage = viewModel.errorMessage {
                 errorView(errorMessage)
             }
-            
-            // APNs registration status
-            if !viewModel.isAPNsRegistered {
-                apnsStatusView
-            }
         }
     }
     
     private var actionSection: some View {
         VStack(spacing: 16) {
             Button(action: {
-                // For now, let's try phone auth even without APNs to see if it works
-                // (This is a temporary workaround for testing)
-                print("🔍 DEBUG: Attempting phone auth - APNs registered: \(viewModel.isAPNsRegistered)")
-                
                 // Validate phone number before sending
                 let digits = viewModel.phoneNumber.replacingOccurrences(of: "[^0-9]", with: "", options: .regularExpression)
                 if digits.count == 10 {
@@ -217,59 +208,6 @@ struct PhoneNumberInputView: View {
         }
     }
     
-    private var apnsStatusView: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "bell.slash.fill")
-                .font(.caption)
-                .foregroundColor(.orange)
-            
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Push notifications required")
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .foregroundColor(.primary)
-                
-                Text("Phone authentication needs notifications enabled")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-            }
-            
-            Spacer()
-            
-            VStack(spacing: 4) {
-                Button("Enable") {
-                    // Open app settings
-                    if let settingsUrl = URL(string: UIApplication.openSettingsURLString) {
-                        UIApplication.shared.open(settingsUrl)
-                    }
-                }
-                .font(.caption)
-                .foregroundColor(.blue)
-                
-                Button("Refresh") {
-                    viewModel.refreshAPNsStatus()
-                }
-                .font(.caption2)
-                .foregroundColor(.secondary)
-                
-                Button("Force Register") {
-                    viewModel.forceAPNsRegistration()
-                }
-                .font(.caption2)
-                .foregroundColor(.orange)
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(
-            Color.clear
-                .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 8))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(Color.orange.opacity(0.3), lineWidth: 1)
-        )
-    }
 }
 
 #Preview {
