@@ -7,7 +7,7 @@ struct NotesView: View {
                 Spacer()
                 
                 VStack(spacing: 16) {
-                    Image(systemName: "note.text")
+                    Image(systemName: "pin")
                         .font(.system(size: 60))
                         .foregroundColor(.secondary)
                     

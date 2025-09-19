@@ -1,42 +1,107 @@
 import SwiftUI
 
 struct MainTabView: View {
-    @State private var selectedTab: Int = 1 // Start with Messages tab
+    @State private var searchText = ""
+    @StateObject private var chatsViewModel = ChatsListViewModel()
+    
+    var filteredChats: [Chat] {
+        if searchText.isEmpty {
+            return []
+        }
+        return (chatsViewModel.recent + chatsViewModel.pinned).filter { chat in
+            chat.title.localizedCaseInsensitiveContains(searchText) ||
+            chat.lastMessagePreview.localizedCaseInsensitiveContains(searchText)
+        }
+    }
     
     var body: some View {
-        TabView(selection: $selectedTab) {
+        TabView {
             // Home Tab
-            HomeView()
-                .tabItem {
-                    Image(systemName: "house")
-                    Text("Home")
-                }
-                .tag(0)
+            Tab("Home", systemImage: "house") {
+                HomeView()
+            }
             
             // Messages Tab
-            ChatsListView()
-                .tabItem {
-                    Image(systemName: "message")
-                    Text("Messages")
-                }
-                .tag(1)
+            Tab("Messages", systemImage: "message") {
+                ChatsListView()
+            }
             
             // Groups Tab
-            GroupsView()
-                .tabItem {
-                    Image(systemName: "person.3")
-                    Text("Groups")
-                }
-                .tag(2)
+            Tab("Groups", systemImage: "person.3") {
+                GroupsView()
+            }
             
             // Notes Tab
-            NotesView()
-                .tabItem {
-                    Image(systemName: "note.text")
-                    Text("Notes")
+            Tab("Notes", systemImage: "pin") {
+                NotesView()
+            }
+            
+            // Search Tab - Uses .search role for native iOS 26 behavior
+            Tab("Search", systemImage: "magnifyingglass", role: .search) {
+                NavigationStack {
+                    VStack {
+                        if searchText.isEmpty {
+                            // Empty state
+                            VStack(spacing: 20) {
+                                Spacer()
+                                
+                                Image(systemName: "magnifyingglass")
+                                    .font(.system(size: 60))
+                                    .foregroundColor(.secondary)
+                                
+                                Text("Search")
+                                    .font(.largeTitle)
+                                    .fontWeight(.bold)
+                                
+                                Text("Search your messages and conversations")
+                                    .font(.body)
+                                    .foregroundColor(.secondary)
+                                    .multilineTextAlignment(.center)
+                                    .padding(.horizontal)
+                                
+                                Spacer()
+                            }
+                        } else if filteredChats.isEmpty {
+                            // No results state
+                            VStack(spacing: 16) {
+                                Spacer()
+                                
+                                Image(systemName: "magnifyingglass")
+                                    .font(.system(size: 40))
+                                    .foregroundColor(.secondary)
+                                
+                                Text("No Results")
+                                    .font(.title2)
+                                    .fontWeight(.semibold)
+                                
+                                Text("No conversations found for \"\(searchText)\"")
+                                    .font(.body)
+                                    .foregroundColor(.secondary)
+                                    .multilineTextAlignment(.center)
+                                    .padding(.horizontal)
+                                
+                                Spacer()
+                            }
+                        } else {
+                            // Search results
+                            List {
+                                ForEach(filteredChats) { chat in
+                                    ChatRowView(chat: chat)
+                                        .listRowSeparator(.hidden)
+                                        .listRowBackground(Color.clear)
+                                }
+                            }
+                            .listStyle(.plain)
+                            .scrollContentBackground(.hidden)
+                        }
+                    }
+                    .navigationTitle("Search")
+                    .navigationBarTitleDisplayMode(.inline)
                 }
-                .tag(3)
+                .searchable(text: $searchText, prompt: "Search messages")
+            }
         }
+        .tabViewStyle(.sidebarAdaptable)
     }
 }
 
