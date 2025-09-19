@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		A659A4822E7DD1B700089673 /* FirebaseAnalytics in Frameworks */ = {isa = PBXBuildFile; productRef = A659A4812E7DD1B700089673 /* FirebaseAnalytics */; };
+		A659A4972E7DD58100089673 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = A659A4962E7DD58100089673 /* FirebaseAuth */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -28,16 +29,25 @@
 			buildActionMask = 2147483647;
 			files = (
 				A659A4822E7DD1B700089673 /* FirebaseAnalytics in Frameworks */,
+				A659A4972E7DD58100089673 /* FirebaseAuth in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		A659A4952E7DD58100089673 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		A68674A12E7B488D00D7A119 = {
 			isa = PBXGroup;
 			children = (
 				A68674AC2E7B488D00D7A119 /* Loop */,
+				A659A4952E7DD58100089673 /* Frameworks */,
 				A68674AB2E7B488D00D7A119 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -71,6 +81,7 @@
 			name = Loop;
 			packageProductDependencies = (
 				A659A4812E7DD1B700089673 /* FirebaseAnalytics */,
+				A659A4962E7DD58100089673 /* FirebaseAuth */,
 			);
 			productName = Loop;
 			productReference = A68674AA2E7B488D00D7A119 /* Loop.app */;
@@ -358,6 +369,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = A659A4802E7DD1B700089673 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
 			productName = FirebaseAnalytics;
+		};
+		A659A4962E7DD58100089673 /* FirebaseAuth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A659A4802E7DD1B700089673 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAuth;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
