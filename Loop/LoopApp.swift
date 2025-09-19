@@ -163,7 +163,7 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
     }
     
     // Handle custom scheme redirects for reCAPTCHA verification
-    func application(_ application: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey : Any]) -> Bool {
+    func application(_ application: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey : Any] = [:]) -> Bool {
         print("🔍 DEBUG: Received URL: \(url)")
         
         if Auth.auth().canHandle(url) {

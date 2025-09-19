@@ -20,7 +20,7 @@ struct AuthenticationView: View {
                                 OTPVerificationView(viewModel: viewModel)
                             }
                         }
-                case .authenticated(let user):
+                case .authenticated(_):
                     // User is authenticated, show main app
                     ContentView()
                 case .error(let message):

@@ -23,23 +23,18 @@ class AuthenticationViewModel: ObservableObject {
     
     // CRITICAL FIX: Ensure Firebase is configured before using it
     private func ensureFirebaseConfigured() -> Bool {
-        if let app = FirebaseApp.app() {
+        if FirebaseApp.app() != nil {
             // Firebase is already configured
             return true
         } else {
             // Firebase not configured yet, try to configure it
             print("⚠️ Firebase not configured, attempting to configure...")
-            do {
-                FirebaseApp.configure()
-                if let app = FirebaseApp.app() {
-                    print("✅ Firebase successfully configured: \(app.name)")
-                    return true
-                } else {
-                    print("❌ Firebase configuration failed - app() returned nil after configure()")
-                    return false
-                }
-            } catch {
-                print("❌ Firebase configuration threw error: \(error)")
+            FirebaseApp.configure()
+            if FirebaseApp.app() != nil {
+                print("✅ Firebase successfully configured")
+                return true
+            } else {
+                print("❌ Firebase configuration failed - app() returned nil after configure()")
                 return false
             }
         }
@@ -55,7 +50,7 @@ class AuthenticationViewModel: ObservableObject {
             return
         }
         
-        Auth.auth().addStateDidChangeListener { [weak self] _, user in
+        _ = Auth.auth().addStateDidChangeListener { [weak self] _, user in
             Task { @MainActor in
                 if let user = user {
                     let appUser = User(from: user)
@@ -207,7 +202,7 @@ class AuthenticationViewModel: ObservableObject {
         
         // Check if configuration looks good enough to try Firebase
         guard let path = Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist"),
-              let plist = NSDictionary(contentsOfFile: path) else {
+              let _ = NSDictionary(contentsOfFile: path) else {
             print("❌ GoogleService-Info.plist not found")
             errorMessage = "GoogleService-Info.plist missing"
             return
@@ -315,16 +310,6 @@ class AuthenticationViewModel: ObservableObject {
             
             print("📱 Firebase verifyPhoneNumber called - waiting for SMS or callback...")
             
-        } catch {
-            guard !hasCompleted else { return }
-            hasCompleted = true
-            
-            print("💥 Exception caught: \(error)")
-            DispatchQueue.main.async {
-                self.isLoading = false
-                self.errorMessage = "Phone auth exception: \(error.localizedDescription)"
-                self.skipFirebaseAndUseMockAuth()
-            }
         }
     }
     
@@ -336,15 +321,11 @@ class AuthenticationViewModel: ObservableObject {
         // Test 1: Check if Firebase is configured
         if let app = FirebaseApp.app() {
             result += "✅ Firebase app available: \(app.name)\n"
-            result += "✅ Project ID: \(app.options.projectID)\n"
+            result += "✅ Project ID: \(String(describing: app.options.projectID))\n"
             
             // Test 2: Try to access Auth
-            do {
-                let currentUser = Auth.auth().currentUser
-                result += "✅ Auth service accessible, current user: \(currentUser?.uid ?? "none")\n"
-            } catch {
-                result += "❌ Auth service error: \(error)\n"
-            }
+            let currentUser = Auth.auth().currentUser
+                result += "✅ Auth service accessible, current user: \(String(describing: currentUser?.uid))\n"
             
             // Test 3: Check GoogleService-Info.plist contents
             result += checkFirebaseConfiguration()
@@ -400,7 +381,7 @@ class AuthenticationViewModel: ObservableObject {
             result += "❌ REVERSED_CLIENT_ID missing (enable Google Sign-In in Firebase Console)\n"
         }
         
-        if let clientId = plist["CLIENT_ID"] {
+        if plist["CLIENT_ID"] != nil {
             result += "✅ CLIENT_ID present\n"
         } else {
             result += "❌ CLIENT_ID missing\n"
