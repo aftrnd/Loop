@@ -3,6 +3,7 @@ import SwiftUI
 struct MainTabView: View {
     @State private var searchText = ""
     @StateObject private var chatsViewModel = ChatsListViewModel()
+    @State private var selectedTab = "Home" // Default to Home tab
     
     var filteredChats: [Chat] {
         if searchText.isEmpty {
@@ -15,29 +16,29 @@ struct MainTabView: View {
     }
     
     var body: some View {
-        TabView {
+        TabView(selection: $selectedTab) {
             // Home Tab
-            Tab("Home", systemImage: "house") {
+            Tab("Home", systemImage: "house", value: "Home") {
                 HomeView()
             }
             
             // Messages Tab
-            Tab("Messages", systemImage: "message") {
+            Tab("Messages", systemImage: "message", value: "Messages") {
                 ChatsListView()
             }
             
             // Groups Tab
-            Tab("Groups", systemImage: "person.3") {
+            Tab("Groups", systemImage: "person.3", value: "Groups") {
                 GroupsView()
             }
             
             // Notes Tab
-            Tab("Notes", systemImage: "pin") {
+            Tab("Notes", systemImage: "pin", value: "Notes") {
                 NotesView()
             }
             
             // Search Tab - Uses .search role for native iOS 26 behavior
-            Tab("Search", systemImage: "magnifyingglass", role: .search) {
+            Tab("Search", systemImage: "magnifyingglass", value: "Search", role: .search) {
                 NavigationStack {
                     VStack {
                         if searchText.isEmpty {

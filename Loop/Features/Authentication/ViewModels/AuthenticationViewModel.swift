@@ -142,7 +142,13 @@ class AuthenticationViewModel: ObservableObject {
                 )
                 
                 self.isLoading = false
+                print("🎉 SUCCESS: Mock authentication completed!")
+                print("✅ Mock User ID: \(mockUser.id)")
+                print("📱 Phone Number: \(mockUser.phoneNumber)")
+                print("🚀 Transitioning to authenticated state...")
                 self.authState = .authenticated(mockUser)
+                // Notify ContentView to update
+                NotificationCenter.default.post(name: .AuthStateDidChange, object: nil)
             }
             return
         }
@@ -168,7 +174,13 @@ class AuthenticationViewModel: ObservableObject {
                 
                 if let user = authResult?.user {
                     let appUser = User(from: user)
+                    print("🎉 SUCCESS: Firebase authentication completed!")
+                    print("✅ User ID: \(user.uid)")
+                    print("📱 Phone Number: \(user.phoneNumber ?? "N/A")")
+                    print("🚀 Transitioning to authenticated state...")
                     self?.authState = .authenticated(appUser)
+                    // Notify ContentView to update
+                    NotificationCenter.default.post(name: .AuthStateDidChange, object: nil)
                 }
             }
         }

@@ -2,6 +2,11 @@ import SwiftUI
 import Combine
 import FirebaseAuth
 
+// MARK: - Notification Extension
+extension Notification.Name {
+    static let AuthStateDidChange = Notification.Name("AuthStateDidChange")
+}
+
 // MARK: - Debug Manager
 class DebugManager: ObservableObject {
     static let shared = DebugManager()
@@ -18,6 +23,8 @@ class DebugManager: ObservableObject {
         do {
             try Auth.auth().signOut()
             print("🔧 DEBUG: User signed out successfully")
+            // Notify UI to update authentication state
+            NotificationCenter.default.post(name: .AuthStateDidChange, object: nil)
         } catch {
             print("🔧 DEBUG: Sign out error: \(error)")
         }
@@ -36,6 +43,8 @@ class DebugManager: ObservableObject {
         resetAuthentication()
         clearUserDefaults()
         print("🔧 DEBUG: App state reset to fresh install")
+        // Notify UI to update authentication state
+        NotificationCenter.default.post(name: .AuthStateDidChange, object: nil)
     }
     
     /// Toggle between mock and real Firebase auth

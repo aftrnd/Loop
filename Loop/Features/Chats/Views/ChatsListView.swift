@@ -9,6 +9,7 @@ struct ChatsListView: View {
     @State private var scrollViewHeight: CGFloat = 0
     @State private var navigationPath = NavigationPath()
     @Environment(\.colorScheme) private var colorScheme
+    @ObservedObject private var debugManager = DebugManager.shared
     
     var body: some View {
         mainView
@@ -24,7 +25,6 @@ struct ChatsListView: View {
                         toolbarContent
                     }
                     
-                    #if DEBUG
                     ToolbarItem(placement: .topBarTrailing) {
                         Button(action: {
                             DebugManager.shared.showDebugMenu()
@@ -32,7 +32,6 @@ struct ChatsListView: View {
                             Image(systemName: "gear")
                         }
                     }
-                    #endif
                 }
                 .toolbarBackground(.hidden, for: .navigationBar)
                 .navigationDestination(for: ChatsRoute.self) { route in
@@ -41,6 +40,9 @@ struct ChatsListView: View {
                         ConversationView(chat: chat)
                     }
                 }
+        }
+        .sheet(isPresented: $debugManager.isDebugMenuVisible) {
+            DebugMenuView()
         }
     }
     
