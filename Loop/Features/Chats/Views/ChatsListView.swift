@@ -65,12 +65,11 @@ struct ChatsListView: View {
                         colorScheme: colorScheme,
                         navigationPath: $navigationPath
                     )
-                    .padding(.horizontal, 16)
                     .padding(.top, 0) // No top padding for pinned items
                     .padding(.bottom, 8)
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
-                    .listRowInsets(EdgeInsets())
+                    .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
                 }
                 
                 ForEach(Array(viewModel.recent.enumerated()), id: \.element.id) { index, chat in
@@ -193,23 +192,19 @@ struct PinnedMessagesView: View {
     var body: some View {
         VStack(spacing: 16) {
             // First row of 3
-            HStack {
+            HStack(spacing: 0) {
                 ForEach(Array(pinnedChats.prefix(3).enumerated()), id: \.element.id) { index, chat in
                     pinnedChatItem(chat: chat)
-                    if index < pinnedChats.prefix(3).count - 1 {
-                        Spacer()
-                    }
+                        .frame(maxWidth: .infinity)
                 }
             }
             
             // Second row of 3 if we have more than 3 pinned
             if pinnedChats.count > 3 {
-                HStack {
+                HStack(spacing: 0) {
                     ForEach(Array(pinnedChats.dropFirst(3).prefix(3).enumerated()), id: \.element.id) { index, chat in
                         pinnedChatItem(chat: chat)
-                        if index < pinnedChats.dropFirst(3).prefix(3).count - 1 {
-                            Spacer()
-                        }
+                            .frame(maxWidth: .infinity)
                     }
                 }
             }
