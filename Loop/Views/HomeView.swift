@@ -2,7 +2,7 @@ import SwiftUI
 
 struct HomeView: View {
     var body: some View {
-        NavigationView {
+        NavigationStack {
             VStack {
                 Spacer()
                 
@@ -23,7 +23,22 @@ struct HomeView: View {
                 
                 Spacer()
             }
-            .navigationTitle("Home")
+            .navigationTitle("")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text("Home")
+                        .font(.headline)
+                        .fontWeight(.semibold)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(
+                            Color.clear
+                                .glassEffect(.regular, in: Capsule())
+                        )
+                }
+            }
+            .toolbarBackground(.hidden, for: .navigationBar)
         }
     }
 }
