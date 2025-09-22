@@ -2,7 +2,7 @@ import SwiftUI
 
 struct MainTabView: View {
     @State private var searchText = ""
-    @StateObject private var chatsViewModel = ChatsListViewModel()
+    @State private var chatsViewModel = ChatsListViewModel()
     @State private var selectedTab = "Home" // Default to Home tab
     
     var filteredChats: [Chat] {

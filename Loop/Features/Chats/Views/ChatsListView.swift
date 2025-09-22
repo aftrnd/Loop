@@ -2,12 +2,13 @@ import SwiftUI
 import UIKit
 
 struct ChatsListView: View {
-    @StateObject private var viewModel = ChatsListViewModel()
+    @State private var viewModel = ChatsListViewModel()
     @State private var topDistance: CGFloat = 0
     @State private var scrollOffset: CGFloat = 0
     @State private var contentHeight: CGFloat = 0
     @State private var scrollViewHeight: CGFloat = 0
     @State private var navigationPath = NavigationPath()
+    @State private var showNewMessage = false
     @Environment(\.colorScheme) private var colorScheme
     @ObservedObject private var debugManager = DebugManager.shared
     
@@ -21,10 +22,18 @@ struct ChatsListView: View {
                 .navigationTitle("")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button(action: {
+                            showNewMessage = true
+                        }) {
+                            Image(systemName: "square.and.pencil")
+                        }
+                    }
+
                     ToolbarItem(placement: .principal) {
                         toolbarContent
                     }
-                    
+
                     ToolbarItem(placement: .topBarTrailing) {
                         Button(action: {
                             DebugManager.shared.showDebugMenu()
@@ -40,6 +49,9 @@ struct ChatsListView: View {
                         ConversationView(chat: chat)
                     }
                 }
+        }
+        .sheet(isPresented: $showNewMessage) {
+            NewMessageView(chatsViewModel: viewModel)
         }
         .sheet(isPresented: $debugManager.isDebugMenuVisible) {
             DebugMenuView()

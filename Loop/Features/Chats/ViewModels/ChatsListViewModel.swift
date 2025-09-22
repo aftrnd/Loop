@@ -1,64 +1,70 @@
 import Foundation
-import Combine
 import SwiftUI
+import FirebaseFirestore
 
 @MainActor
-final class ChatsListViewModel: ObservableObject {
-    @Published private(set) var pinned: [Chat] = []
-    @Published private(set) var recent: [Chat] = []
+@Observable
+final class ChatsListViewModel {
+    private(set) var pinned: [Chat] = []
+    private(set) var recent: [Chat] = []
+    private var chatListener: ListenerRegistration?
 
     init() {
-        // Seed with a richer set of sample data. In a real app, this would
-        // load from persistence or a service.
-        let now = Date()
-        let sample: [Chat] = [
-            Chat(title: "Mom",
-                 lastMessagePreview: "Pushing the latest glass tokens",
-                 unreadCount: 0,
-                 lastMessageTime: now.addingTimeInterval(-60 * 4)),
-            Chat(title: "Dad",
-                 lastMessagePreview: "Dinner at 7?",
-                 unreadCount: 0,
-                 lastMessageTime: now.addingTimeInterval(-60 * 60)),
-            Chat(title: "Matt",
-                 lastMessagePreview: "Sending the files now.",
-                 unreadCount: 0,
-                 lastMessageTime: now.addingTimeInterval(-60 * 30)),
-            Chat(title: "Ben Kotch",
-                 lastMessagePreview: "I had a dream about you last night and your fit was so good",
-                 unreadCount: 1,
-                 lastMessageTime: now.addingTimeInterval(-60 * 5)),
-            Chat(title: "Jordan",
-                 lastMessagePreview: "This weekend works for me",
-                 unreadCount: 0,
-                 lastMessageTime: now.addingTimeInterval(-60 * 90)),
-            Chat(title: "Casey",
-                 lastMessagePreview: "Love the new message bubbles!",
-                 unreadCount: 0,
-                 lastMessageTime: now.addingTimeInterval(-60 * 200)),
-            Chat(title: "Ryan",
-                 lastMessagePreview: "Got it, thanks!",
-                 unreadCount: 0,
-                 lastMessageTime: now.addingTimeInterval(-60 * 8)),
-            Chat(title: "Mom",
-                 lastMessagePreview: "Call me when you can",
-                 unreadCount: 0,
-                 lastMessageTime: now.addingTimeInterval(-60 * 15)),
-            Chat(title: "Taylor",
-                 lastMessagePreview: "Let's climb Saturday",
-                 unreadCount: 0,
-                 lastMessageTime: now.addingTimeInterval(-60 * 300)),
-            Chat(title: "Joe Monaco",
-                 lastMessagePreview: "Let's sync at 2pm",
-                 unreadCount: 1,
-                 lastMessageTime: now.addingTimeInterval(-60 * 5)),
-            Chat(title: "Sam",
-                 lastMessagePreview: "On my way",
-                 unreadCount: 0,
-                 lastMessageTime: now.addingTimeInterval(-60 * 12))
-        ]
-        self.pinned = Array(sample.prefix(3))
-        self.recent = Array(sample.dropFirst(3))
+        loadChats()
+        setupRealTimeUpdates()
+    }
+
+    @MainActor
+    deinit {
+        chatListener?.remove()
+    }
+
+    private func loadChats() {
+        Task {
+            do {
+                let chats = try await FirebaseService.shared.getChats()
+                self.recent = chats
+                self.pinned = Array(chats.prefix(3)) // First 3 become pinned
+            } catch {
+                print("Error loading chats: \(error)")
+            }
+        }
+    }
+
+    func setupRealTimeUpdates() {
+        chatListener = FirebaseService.shared.listenForChats { [weak self] chats in
+            self?.recent = chats
+            self?.pinned = Array(chats.prefix(3))
+        }
+    }
+
+    // MARK: - Public Methods
+
+    func createChat(with phoneNumber: String, displayName: String) async throws {
+        guard let currentUserId = FirebaseService.shared.getCurrentUser()?.id else {
+            throw NSError(domain: "ChatsListViewModel", code: 1, userInfo: [NSLocalizedDescriptionKey: "User not authenticated"])
+        }
+
+        // Create the chat in Firestore
+        let chat = try await FirebaseService.shared.createChat(withUserId: currentUserId, title: displayName)
+
+        // Update local state
+        self.recent.append(chat)
+        if self.pinned.isEmpty {
+            self.pinned.append(chat)
+        }
+    }
+
+    func refreshChats() {
+        Task {
+            do {
+                let chats = try await FirebaseService.shared.getChats()
+                self.recent = chats
+                self.pinned = Array(chats.prefix(3))
+            } catch {
+                print("Error refreshing chats: \(error)")
+            }
+        }
     }
     
     func deleteChat(withId id: UUID) {
