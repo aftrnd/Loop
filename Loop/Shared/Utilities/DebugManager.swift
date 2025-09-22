@@ -80,7 +80,7 @@ struct DebugMenuView: View {
     var body: some View {
         NavigationView {
             List {
-                Section("🔧 Authentication Debug") {
+                Section("Authentication Debug") {
                     Button("🔄 Reset Authentication") {
                         debugManager.resetAuthentication()
                     }
@@ -97,7 +97,7 @@ struct DebugMenuView: View {
                     .foregroundColor(.red)
                 }
                 
-                Section("🧪 Testing Options") {
+                Section("Testing Options") {
                     Toggle("Use Mock Authentication", isOn: $debugManager.debugSettings.useMockAuth)
                     
                     Toggle("Show Debug Logs", isOn: $debugManager.debugSettings.showDebugLogs)
@@ -112,7 +112,7 @@ struct DebugMenuView: View {
                     }
                 }
                 
-                Section("📱 App Info") {
+                Section("App Info") {
                     HStack {
                         Text("Bundle ID")
                         Spacer()
@@ -149,7 +149,7 @@ struct DebugMenuView: View {
                     .foregroundColor(.red)
                 }
             }
-            .navigationTitle("🔧 Debug Menu")
+            .navigationTitle("Debug Menu")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -168,18 +168,6 @@ struct DebugGestureModifier: ViewModifier {
     
     func body(content: Content) -> some View {
         content
-            .onShake {
-                // Shake gesture to show debug menu
-                #if DEBUG
-                debugManager.showDebugMenu()
-                #endif
-            }
-            .onLongPressGesture(minimumDuration: 3.0) {
-                // Long press (3 seconds) to show debug menu
-                #if DEBUG
-                debugManager.showDebugMenu()
-                #endif
-            }
             .sheet(isPresented: $debugManager.isDebugMenuVisible) {
                 DebugMenuView()
             }

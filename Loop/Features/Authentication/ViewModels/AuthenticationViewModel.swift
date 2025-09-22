@@ -424,15 +424,15 @@ class AuthenticationViewModel: ObservableObject {
         
         // Check for Google Sign-In keys (needed for phone auth)
         if let reversedClientId = plist["REVERSED_CLIENT_ID"] {
-            result += "✅ REVERSED_CLIENT_ID present: \(reversedClientId)\n"
+            result += "REVERSED_CLIENT_ID present: \(reversedClientId)\n"
         } else {
-            result += "❌ REVERSED_CLIENT_ID missing (enable Google Sign-In in Firebase Console)\n"
+            result += "REVERSED_CLIENT_ID missing (enable Google Sign-In in Firebase Console)\n"
         }
         
         if plist["CLIENT_ID"] != nil {
-            result += "✅ CLIENT_ID present\n"
+            result += "CLIENT_ID present\n"
         } else {
-            result += "❌ CLIENT_ID missing\n"
+            result += "CLIENT_ID missing\n"
         }
         
         // Check URL schemes in app
@@ -444,7 +444,7 @@ class AuthenticationViewModel: ObservableObject {
                 }
             }
         } else {
-            result += "❌ No URL Types configured (add REVERSED_CLIENT_ID as URL scheme)\n"
+            result += "No URL Types configured (add REVERSED_CLIENT_ID as URL scheme)\n"
         }
         
         result += "\n🔧 To fix Firebase phone auth crashes:\n"
