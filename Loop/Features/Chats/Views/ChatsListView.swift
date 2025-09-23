@@ -93,7 +93,8 @@ struct ChatsListView: View {
                         index: index,
                         totalCount: viewModel.recent.count,
                         isLastItem: index == viewModel.recent.count - 1,
-                        isAtListStart: index == 0 && viewModel.pinned.isEmpty,
+                        isAtListStart: index == 0 && scrollOffset <= 32,
+                        hasPinnedMessages: !viewModel.pinned.isEmpty,
                         scrollOffset: scrollOffset,
                         contentHeight: contentHeight,
                         scrollViewHeight: scrollViewHeight,
@@ -339,6 +340,7 @@ struct ChatItemView: View {
     let totalCount: Int
     let isLastItem: Bool
     let isAtListStart: Bool
+    let hasPinnedMessages: Bool
     let scrollOffset: CGFloat
     let contentHeight: CGFloat
     let scrollViewHeight: CGFloat
@@ -376,7 +378,13 @@ struct ChatItemView: View {
         var bottomEffectGate: CGFloat = 1
         
         // At the very top of the list
-        if isAtListStart && isAtAbsoluteTop {
+        // When there are no pinned messages, the first item should still get parallax effect
+        // because it's not at the visual "top" of the interface
+        if isAtListStart && isAtAbsoluteTop && !hasPinnedMessages {
+            // Don't disable top effect when there are no pinned messages
+            topEffectGate = 1
+        } else if isAtListStart && isAtAbsoluteTop {
+            // Only disable when there are pinned messages and we're at the very top
             topEffectGate = 0
         }
         
