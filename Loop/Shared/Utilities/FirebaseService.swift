@@ -105,6 +105,18 @@ class FirebaseService {
         )
     }
 
+    func deleteChat(withId chatId: String) async throws {
+        // Delete all messages in the chat
+        let messagesRef = db.collection("chats").document(chatId).collection("messages")
+        let messages = try await messagesRef.getDocuments()
+        for message in messages.documents {
+            try await message.reference.delete()
+        }
+
+        // Delete the chat document itself
+        try await db.collection("chats").document(chatId).delete()
+    }
+
     func getChats() async throws -> [Chat] {
         guard let currentUserId = Auth.auth().currentUser?.uid else { return [] }
 

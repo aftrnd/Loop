@@ -77,7 +77,8 @@ struct ChatsListView: View {
                     PinnedMessagesView(
                         pinnedChats: viewModel.pinned,
                         colorScheme: colorScheme,
-                        navigationPath: $navigationPath
+                        navigationPath: $navigationPath,
+                        viewModel: viewModel
                     )
                     .padding(.top, 0) // No top padding for pinned items
                     .padding(.bottom, 8)
@@ -102,9 +103,19 @@ struct ChatsListView: View {
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
                     .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
-                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                    .swipeActions(edge: .leading, allowsFullSwipe: false) {
                         Button {
-                            viewModel.deleteRecentChats(at: IndexSet([index]))
+                            viewModel.pinChat(chat)
+                        } label: {
+                            Image(systemName: "pin.fill")
+                        }
+                        .tint(.yellow)
+                    }
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        Button {
+                            Task {
+                                try? await viewModel.deleteChat(withId: chat.id)
+                            }
                         } label: {
                             Image(systemName: "trash")
                         }
@@ -202,14 +213,21 @@ struct PinnedMessagesView: View {
     let pinnedChats: [Chat]
     let colorScheme: ColorScheme
     @Binding var navigationPath: NavigationPath
+    let viewModel: ChatsListViewModel
+    @State private var longPressedChat: Chat?
     
     var body: some View {
         VStack(spacing: 16) {
             // First row of 3
             HStack(spacing: 0) {
                 ForEach(Array(pinnedChats.prefix(3).enumerated()), id: \.element.id) { index, chat in
-                    pinnedChatItem(chat: chat)
+                    pinnedChatItem(chat: chat, isLongPressed: longPressedChat?.id == chat.id)
                         .frame(maxWidth: .infinity)
+                        .onLongPressGesture {
+                            withAnimation {
+                                longPressedChat = longPressedChat?.id == chat.id ? nil : chat
+                            }
+                        }
                 }
             }
             
@@ -217,32 +235,69 @@ struct PinnedMessagesView: View {
             if pinnedChats.count > 3 {
                 HStack(spacing: 0) {
                     ForEach(Array(pinnedChats.dropFirst(3).prefix(3).enumerated()), id: \.element.id) { index, chat in
-                        pinnedChatItem(chat: chat)
+                        pinnedChatItem(chat: chat, isLongPressed: longPressedChat?.id == chat.id)
                             .frame(maxWidth: .infinity)
+                            .onLongPressGesture {
+                                withAnimation {
+                                    longPressedChat = longPressedChat?.id == chat.id ? nil : chat
+                                }
+                            }
                     }
                 }
             }
         }
+        .background {
+            // Background tap to dismiss long press (behind content)
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    withAnimation {
+                        longPressedChat = nil
+                    }
+                }
+                .zIndex(-1)
+        }
     }
     
-    private func pinnedChatItem(chat: Chat) -> some View {
+    private func pinnedChatItem(chat: Chat, isLongPressed: Bool) -> some View {
         VStack(spacing: 8) {
             ZStack {
                 Circle()
                     .fill(Color(.systemGray5))
                     .frame(width: 90, height: 90)
-                
+
                 Color.clear
                     .frame(width: 90, height: 90)
                     .glassEffect(.regular, in: Circle())
-                
+
                 Text(String(chat.title.prefix(1)).uppercased())
                     .font(.largeTitle)
                     .fontWeight(.semibold)
                     .foregroundColor(.primary)
             }
             .overlay(alignment: .topTrailing) {
-                if chat.unreadCount > 0 {
+                if isLongPressed {
+                    Circle()
+                        .fill(Color.clear)
+                        .frame(width: 30, height: 30)
+                        .overlay {
+                            Image(systemName: "minus")
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundColor(.primary)
+                        }
+                        .background(
+                            Circle()
+                                .fill(Color(.systemBackground))
+                                .glassEffect(.regular, in: Circle())
+                        )
+                        .onTapGesture {
+                            withAnimation {
+                                viewModel.unpinChat(chat)
+                                longPressedChat = nil
+                            }
+                        }
+                        .offset(x: 8, y: -8)
+                } else if chat.unreadCount > 0 {
                     Circle()
                         .fill(colorScheme == .light ? Color.red : Color.blue)
                         .frame(width: 30, height: 30)
@@ -265,7 +320,15 @@ struct PinnedMessagesView: View {
         }
         .contentShape(Rectangle())
         .onTapGesture {
-            navigationPath.append(ChatsRoute.conversation(chat))
+            if longPressedChat?.id == chat.id {
+                // If long pressed, tapping should dismiss the long press state
+                withAnimation {
+                    longPressedChat = nil
+                }
+            } else {
+                // Normal tap - navigate to conversation
+                navigationPath.append(ChatsRoute.conversation(chat))
+            }
         }
     }
 }
