@@ -36,24 +36,42 @@ final class ChatsListViewModel {
         }
     }
 
+    private func removeDuplicates(_ chats: [Chat]) -> [Chat] {
+        var seenIDs = Set<UUID>()
+        return chats.filter { chat in
+            if seenIDs.contains(chat.id) {
+                return false
+            } else {
+                seenIDs.insert(chat.id)
+                return true
+            }
+        }
+    }
+
     private func mergeChats(_ newChats: [Chat]) {
+        // Create a dictionary of new chats by ID for quick lookup
+        let newChatDict = Dictionary(uniqueKeysWithValues: newChats.map { ($0.id, $0) })
+
         // Create a dictionary of existing chats by ID for quick lookup
         var existingChatDict = Dictionary(uniqueKeysWithValues: recent.map { ($0.id, $0) })
 
-        // Merge new chats, updating existing ones and adding new ones
-        for chat in newChats {
-            existingChatDict[chat.id] = chat
+        // Merge new chats - only add if not already present
+        for (id, chat) in newChatDict {
+            if existingChatDict[id] == nil {
+                existingChatDict[id] = chat
+            }
         }
 
-        // Update the recent array with merged chats
-        recent = Array(existingChatDict.values)
+        // Update the recent array with merged chats (remove any duplicates just to be safe)
+        let mergedRecent = Array(existingChatDict.values)
+        recent = removeDuplicates(mergedRecent)
 
         // Also update pinned chats if they exist in the new data
         var pinnedChatDict = Dictionary(uniqueKeysWithValues: pinned.map { ($0.id, $0) })
-        for chat in newChats where pinnedChatDict[chat.id] != nil {
-            pinnedChatDict[chat.id] = chat
+        for (id, chat) in newChatDict where pinnedChatDict[id] != nil {
+            pinnedChatDict[id] = chat
         }
-        pinned = Array(pinnedChatDict.values)
+        pinned = removeDuplicates(Array(pinnedChatDict.values))
     }
 
     // MARK: - Public Methods
@@ -67,8 +85,8 @@ final class ChatsListViewModel {
         // In a real app, this would be the other user's ID
         let chat = try await FirebaseService.shared.createChat(withUserId: currentUserId, title: displayName)
 
-        // Update local state - new chats go to recents by default
-        self.recent.append(chat)
+        // Don't immediately add to local state - let the real-time listener handle it
+        // This prevents duplicates and ensures consistency with database state
     }
 
     func refreshChats() {
