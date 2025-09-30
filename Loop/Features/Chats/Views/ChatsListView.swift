@@ -112,7 +112,7 @@ struct ChatsListView: View {
                         }
                         .tint(.yellow)
                     }
-                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                         Button {
                             Task {
                                 try? await viewModel.deleteChat(withId: chat.id)
