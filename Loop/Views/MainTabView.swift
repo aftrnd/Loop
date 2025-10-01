@@ -32,9 +32,9 @@ struct MainTabView: View {
                 GroupsView()
             }
             
-            // Notes Tab
-            Tab("Notes", systemImage: "pin", value: "Notes") {
-                NotesView()
+            // Profile Tab
+            Tab("Profile", systemImage: "person.circle", value: "Profile") {
+                ProfileView()
             }
             
             // Search Tab - Uses .search role for native iOS 26 behavior

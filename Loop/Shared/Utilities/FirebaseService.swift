@@ -22,7 +22,9 @@ class FirebaseService {
         return User(
             id: userId,
             phoneNumber: data["phoneNumber"] as? String ?? "",
-            displayName: data["displayName"] as? String
+            displayName: data["displayName"] as? String,
+            username: data["username"] as? String,
+            bio: data["bio"] as? String
         )
     }
 
@@ -41,7 +43,9 @@ class FirebaseService {
             return User(
                 id: userId,
                 phoneNumber: data["phoneNumber"] as? String ?? "",
-                displayName: data["displayName"] as? String
+                displayName: data["displayName"] as? String,
+                username: data["username"] as? String,
+                bio: data["bio"] as? String
             )
         } else {
             // Create new user
@@ -49,6 +53,8 @@ class FirebaseService {
             try await userRef.setData([
                 "phoneNumber": user.phoneNumber,
                 "displayName": user.displayName ?? "",
+                "username": user.username ?? "",
+                "bio": user.bio ?? "",
                 "createdAt": Timestamp(date: user.createdAt),
                 "lastSeen": Timestamp(date: user.lastSeen)
             ])

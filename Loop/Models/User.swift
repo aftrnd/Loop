@@ -5,6 +5,8 @@ struct User: Identifiable, Codable, Equatable {
     let id: String
     let phoneNumber: String
     let displayName: String?
+    let username: String?
+    let bio: String?
     let createdAt: Date
     let lastSeen: Date
     
@@ -12,14 +14,18 @@ struct User: Identifiable, Codable, Equatable {
         self.id = firebaseUser.uid
         self.phoneNumber = firebaseUser.phoneNumber ?? ""
         self.displayName = firebaseUser.displayName
+        self.username = nil // Will be loaded from Firestore
+        self.bio = nil // Will be loaded from Firestore
         self.createdAt = Date()
         self.lastSeen = Date()
     }
     
-    init(id: String, phoneNumber: String, displayName: String? = nil) {
+    init(id: String, phoneNumber: String, displayName: String? = nil, username: String? = nil, bio: String? = nil) {
         self.id = id
         self.phoneNumber = phoneNumber
         self.displayName = displayName
+        self.username = username
+        self.bio = bio
         self.createdAt = Date()
         self.lastSeen = Date()
     }

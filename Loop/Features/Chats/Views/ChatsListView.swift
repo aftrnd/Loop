@@ -34,13 +34,6 @@ struct ChatsListView: View {
                         toolbarContent
                     }
 
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button(action: {
-                            DebugManager.shared.showDebugMenu()
-                        }) {
-                            Image(systemName: "gear")
-                        }
-                    }
                 }
                 .toolbarBackground(.hidden, for: .navigationBar)
                 .navigationDestination(for: ChatsRoute.self) { route in
