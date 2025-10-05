@@ -100,10 +100,12 @@ struct ProfileView: View {
                     }
                 }
                 .scrollIndicators(.hidden)
+                .scrollClipDisabled()
                 .ignoresSafeArea(edges: .top)
             }
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     if isEditing {
@@ -141,7 +143,7 @@ struct ProfileView: View {
                     }
                 }
             }
-            .toolbarBackground(.visible, for: .navigationBar)
+            .navigationBarBackButtonHidden(true)
             .onAppear {
                 loadCurrentUser()
             }
@@ -206,8 +208,10 @@ struct ProfileView: View {
                             .font(.caption)
                             .foregroundColor(.white)
                             .padding(8)
-                            .background(Color.black.opacity(0.6))
-                            .clipShape(Circle())
+                            .background {
+                                Color.clear
+                                    .glassEffect(.regular, in: Circle())
+                            }
                     }
                     .padding(12)
                 }
@@ -253,8 +257,10 @@ struct ProfileView: View {
                         .font(.caption)
                         .foregroundColor(.white)
                         .padding(8)
-                        .background(Color.black.opacity(0.6))
-                        .clipShape(Circle())
+                        .background {
+                            Color.clear
+                                .glassEffect(.regular, in: Circle())
+                        }
                 }
                 .offset(x: 42, y: 42)
             }
@@ -273,8 +279,10 @@ struct ProfileView: View {
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
                     .frame(height: 36)
-                    .background(Color.black.opacity(0.15))
-                    .cornerRadius(8)
+                    .background {
+                        Color.clear
+                            .glassEffect(.regular, in: .rect(cornerRadius: 12))
+                    }
             } else {
                 Text(currentUser?.displayName ?? "Display Name")
                     .font(.title3)
@@ -298,8 +306,10 @@ struct ProfileView: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
                 .frame(maxWidth: .infinity, maxHeight: 36)
-                .background(Color.black.opacity(0.15))
-                .cornerRadius(8)
+                .background {
+                    Color.clear
+                        .glassEffect(.regular, in: .rect(cornerRadius: 12))
+                }
             } else {
                 Text("@\(currentUser?.username ?? "username")")
                     .font(.callout)
@@ -338,8 +348,10 @@ struct ProfileView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity, maxHeight: 36)
-        .background(Color.black.opacity(0.15))
-        .cornerRadius(8)
+        .background {
+            Color.clear
+                .glassEffect(.regular, in: .rect(cornerRadius: 12))
+        }
     }
     
     private var bioView: some View {
@@ -352,8 +364,10 @@ struct ProfileView: View {
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
                     .frame(maxWidth: .infinity, minHeight: 60, alignment: .topLeading)
-                    .background(Color.black.opacity(0.15))
-                    .cornerRadius(8)
+                    .background {
+                        Color.clear
+                            .glassEffect(.regular, in: .rect(cornerRadius: 12))
+                    }
             } else {
                 if let bio = currentUser?.bio, !bio.isEmpty {
                     Text(bio)
