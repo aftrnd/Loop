@@ -1,5 +1,6 @@
 import SwiftUI
 import FirebaseAuth
+import PhotosUI
 
 struct ProfileView: View {
     @State private var currentUser: User?
@@ -21,32 +22,60 @@ struct ProfileView: View {
     @State private var showLogoutConfirmation = false
     @Environment(\.dismiss) private var dismiss
     
+    // Avatar editing with native PhotosPicker
+    @State private var avatarPickerItem: PhotosPickerItem?
+    @State private var selectedImage: UIImage?
+    @State private var bannerPickerItem: PhotosPickerItem?
+    @State private var selectedBanner: UIImage?
+    
     var body: some View {
         NavigationStack {
-            ZStack(alignment: .top) {
-                Color(.systemBackground)
-                    .ignoresSafeArea()
+            GeometryReader { geometry in
+                let bannerHeight: CGFloat = 180
                 
-                VStack(spacing: 0) {
-                    ScrollView {
-                        profileHeaderSection
+                ScrollView {
+                    VStack(spacing: 0) {
+                        // Banner - extends to top edge
+                        bannerContent
+                            .frame(height: bannerHeight + geometry.safeAreaInsets.top)
+                            .offset(y: -geometry.safeAreaInsets.top)
+                            .padding(.bottom, -geometry.safeAreaInsets.top) // Collapse the extra space
+                        
+                        // Avatar and profile info - moves up to overlap banner
+                        VStack(alignment: isEditing ? .center : .leading, spacing: 0) {
+                            // Avatar
+                            avatarView
+                                .frame(maxWidth: .infinity, alignment: isEditing ? .center : .leading)
+                                .padding(.leading, isEditing ? 0 : 16)
+                            
+                            // Profile info
+                            VStack(alignment: isEditing ? .center : .leading, spacing: 4) {
+                                displayNameView
+                                usernameView
+                                
+                                if let bio = currentUser?.bio, !bio.isEmpty || isEditing {
+                                    bioView
+                                        .padding(.top, 8)
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: isEditing ? .center : .leading)
+                            .padding(.horizontal, 16)
+                            .padding(.top, 8)
+                            .padding(.bottom, 32)
+                        }
+                        .offset(y: -60)
+                        .padding(.bottom, -60)
+                        
+                        // Settings section
+                        if !isEditing {
+                            settingsSection
+                        }
                         
                         Spacer(minLength: 40)
                     }
-                    
-                    if !isEditing {
-                        List {
-                            Section {
-                                settingsButton
-                                logoutButton
-                            }
-                        }
-                        .listStyle(.insetGrouped)
-                        .scrollDisabled(true)
-                        .frame(height: 120)
-                        .safeAreaPadding(.bottom, 20)
-                    }
                 }
+                .scrollIndicators(.hidden)
+                .ignoresSafeArea(edges: .top)
             }
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
@@ -56,32 +85,59 @@ struct ProfileView: View {
                         Button("Cancel") {
                             cancelEditing()
                         }
+                        .fontWeight(.medium)
                     } else {
-                        Button {
-                            dismiss()
-                        } label: {
+                        Button(action: { dismiss() }) {
                             Image(systemName: "xmark")
-                                .font(.body)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.secondary)
+                                .font(.body.weight(.medium))
                         }
                     }
                 }
                 
-                ToolbarItem(placement: .principal) {
-                    titlePill
-                }
-                
                 ToolbarItem(placement: .topBarTrailing) {
-                    trailingToolbarButton
+                    if isEditing {
+                        Button {
+                            if isSaving { return }
+                            saveProfile()
+                        } label: {
+                            if isSaving {
+                                ProgressView()
+                            } else {
+                                Text("Done")
+                                    .fontWeight(.medium)
+                            }
+                        }
+                        .disabled(isSaving)
+                    } else {
+                        Button("Edit") {
+                            startEditing()
+                        }
+                        .fontWeight(.medium)
+                    }
                 }
             }
-            .toolbarBackground(.hidden, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
             .onAppear {
                 loadCurrentUser()
             }
             .navigationDestination(isPresented: $showSettings) {
                 SettingsView()
+            }
+            .onChange(of: avatarPickerItem) { _, newItem in
+                Task {
+                    if let data = try? await newItem?.loadTransferable(type: Data.self),
+                       let image = UIImage(data: data) {
+                        selectedImage = image
+                    }
+                }
+            }
+            .onChange(of: bannerPickerItem) { _, newItem in
+                Task {
+                    if let data = try? await newItem?.loadTransferable(type: Data.self),
+                       let image = UIImage(data: data) {
+                        selectedBanner = image
+                    }
+                }
             }
             .alert("Log Out", isPresented: $showLogoutConfirmation) {
                 Button("Cancel", role: .cancel) { }
@@ -99,181 +155,204 @@ struct ProfileView: View {
         }
     }
     
-    private var profileHeaderSection: some View {
-        VStack(spacing: 0) {
-            avatarView
-            displayNameView
-            usernameView
-            bioView
+    // MARK: - Banner
+    
+    private var bannerContent: some View {
+        GeometryReader { geometry in
+            ZStack(alignment: .bottomTrailing) {
+                if let banner = selectedBanner {
+                    Image(uiImage: banner)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                        .clipped()
+                } else {
+                    LinearGradient(
+                        colors: [.blue, .purple],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                    .frame(width: geometry.size.width, height: geometry.size.height)
+                }
+                
+                if isEditing {
+                    PhotosPicker(selection: $bannerPickerItem, matching: .images) {
+                        Image(systemName: "camera.fill")
+                            .font(.caption)
+                            .foregroundColor(.white)
+                            .padding(8)
+                            .background(Color.black.opacity(0.6))
+                            .clipShape(Circle())
+                    }
+                    .padding(12)
+                }
+            }
         }
-        .frame(maxWidth: .infinity)
-        .padding(.bottom, 32)
     }
+    
+    // MARK: - Avatar
     
     private var avatarView: some View {
         ZStack {
-            Circle()
-                .fill(Color(.systemGray5))
-                .frame(width: 140, height: 140)
+            if let image = selectedImage {
+                Image(uiImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: 120, height: 120)
+                    .clipShape(Circle())
+                    .overlay {
+                        Circle()
+                            .strokeBorder(Color(.systemBackground), lineWidth: 4)
+                    }
+            } else {
+                Circle()
+                    .fill(Color(.systemGray5))
+                    .frame(width: 120, height: 120)
+                    .overlay {
+                        Circle()
+                            .strokeBorder(Color(.systemBackground), lineWidth: 4)
+                    }
+                
+                Color.clear
+                    .frame(width: 120, height: 120)
+                    .glassEffect(.regular, in: Circle())
+                
+                Text(userInitials)
+                    .font(.system(size: 48, weight: .semibold))
+                    .foregroundColor(.primary)
+            }
             
-            Color.clear
-                .frame(width: 140, height: 140)
-                .glassEffect(.regular, in: Circle())
-            
-            Text(userInitials)
-                .font(.system(size: 56, weight: .semibold))
-                .foregroundColor(.primary)
+            if isEditing {
+                PhotosPicker(selection: $avatarPickerItem, matching: .images) {
+                    Image(systemName: "camera.fill")
+                        .font(.caption)
+                        .foregroundColor(.white)
+                        .padding(8)
+                        .background(Color.black.opacity(0.6))
+                        .clipShape(Circle())
+                }
+                .offset(x: 42, y: 42)
+            }
         }
-        .padding(.top, 20)
-        .padding(.bottom, 20)
     }
+    
+    // MARK: - User Info
     
     private var displayNameView: some View {
         Group {
             if isEditing {
                 TextField("Display Name", text: $editDisplayName)
-                    .font(.largeTitle)
+                    .font(.title3)
                     .fontWeight(.bold)
-                    .multilineTextAlignment(.center)
                     .textFieldStyle(.plain)
-                    .padding(.horizontal, 40)
+                    .multilineTextAlignment(.center)
             } else {
                 Text(currentUser?.displayName ?? "Display Name")
-                    .font(.largeTitle)
+                    .font(.title3)
                     .fontWeight(.bold)
-                    .foregroundColor(.primary)
+                    .foregroundStyle(.primary)
             }
         }
     }
     
     private var usernameView: some View {
-        HStack(spacing: 0) {
-            Text("@")
-                .font(.title3)
-                .foregroundColor(.secondary)
-            
+        HStack(spacing: 4) {
             if isEditing {
-                TextField("username", text: $editUsername)
-                    .font(.title3)
-                    .textFieldStyle(.plain)
-                    .multilineTextAlignment(.leading)
-                    .frame(maxWidth: 200)
-            } else {
-                HStack(spacing: 6) {
-                    Text(currentUser?.username ?? "username")
-                        .font(.title3)
-                        .foregroundColor(.secondary)
-                    
-                    Image(systemName: "checkmark.seal.fill")
-                        .foregroundColor(.blue)
-                        .font(.title3)
+                HStack(spacing: 0) {
+                    Text("@")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                    TextField("username", text: $editUsername)
+                        .font(.callout)
+                        .textFieldStyle(.plain)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 200)
                 }
+            } else {
+                Text("@\(currentUser?.username ?? "username")")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                
+                Image(systemName: "checkmark.seal.fill")
+                    .foregroundStyle(.blue)
+                    .font(.callout)
             }
         }
-        .padding(.top, 2)
     }
     
     private var bioView: some View {
         Group {
             if isEditing {
                 TextField("Add a bio...", text: $editBio, axis: .vertical)
-                    .font(.body)
-                    .lineLimit(3...5)
+                    .font(.callout)
+                    .lineLimit(2...4)
+                    .textFieldStyle(.plain)
                     .multilineTextAlignment(.center)
-                    .padding(.horizontal, 40)
-                    .padding(.top, 16)
             } else {
                 if let bio = currentUser?.bio, !bio.isEmpty {
                     Text(bio)
-                        .font(.body)
+                        .font(.callout)
+                        .foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+    
+    // MARK: - Settings
+    
+    private var settingsSection: some View {
+        VStack(spacing: 0) {
+            Divider()
+                .padding(.horizontal, 24)
+            
+            Button {
+                showSettings = true
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "gearshape.fill")
+                        .foregroundColor(.gray)
+                        .frame(width: 28)
+                    
+                    Text("Settings")
+                        .foregroundColor(.primary)
+                    
+                    Spacer()
+                    
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
                         .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 40)
-                        .padding(.top, 16)
-                } else {
-                    Text("Add a bio")
-                        .font(.body)
-                        .foregroundStyle(.tertiary)
-                        .padding(.top, 16)
                 }
+                .padding(.horizontal, 24)
+                .padding(.vertical, 14)
             }
-        }
-    }
-    
-    private var settingsButton: some View {
-        Button {
-            showSettings = true
-        } label: {
-            HStack {
-                Image(systemName: "gearshape.fill")
-                    .foregroundColor(.gray)
-                    .frame(width: 30)
-                
-                Text("Settings")
-                    .foregroundColor(.primary)
-                
-                Spacer()
-                
-                Image(systemName: "chevron.right")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-        }
-    }
-    
-    private var logoutButton: some View {
-        Button {
-            showLogoutConfirmation = true
-        } label: {
-            HStack {
-                Image(systemName: "rectangle.portrait.and.arrow.right")
-                    .foregroundColor(.red)
-                    .frame(width: 30)
-                
-                Text("Log Out")
-                    .foregroundColor(.red)
-                
-                Spacer()
-            }
-        }
-    }
-    
-    private var titlePill: some View {
-        Text("Profile")
-            .font(.headline)
-            .fontWeight(.semibold)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(
-                Color.clear
-                    .glassEffect(.regular, in: Capsule())
-            )
-    }
-    
-    private var trailingToolbarButton: some View {
-        Group {
-            if isEditing {
-                Button {
-                    if isSaving { return }
-                    saveProfile()
-                } label: {
-                    if isSaving {
-                        ProgressView()
-                            .tint(.blue)
-                    } else {
-                        Text("Done")
-                            .fontWeight(.semibold)
-                    }
+            
+            Divider()
+                .padding(.horizontal, 24)
+            
+            Button {
+                showLogoutConfirmation = true
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "rectangle.portrait.and.arrow.right")
+                        .foregroundColor(.red)
+                        .frame(width: 28)
+                    
+                    Text("Log Out")
+                        .foregroundColor(.red)
+                    
+                    Spacer()
                 }
-                .disabled(isSaving)
-            } else {
-                Button("Edit") {
-                    startEditing()
-                }
-                .fontWeight(.semibold)
+                .padding(.horizontal, 24)
+                .padding(.vertical, 14)
             }
+            
+            Divider()
+                .padding(.horizontal, 24)
         }
     }
+    
+    // MARK: - Helper Properties
     
     private var userInitials: String {
         let displayName = isEditing ? editDisplayName : (currentUser?.displayName ?? "")
@@ -292,35 +371,17 @@ struct ProfileView: View {
         return "?"
     }
     
-    private var formattedPhoneNumber: String {
-        guard let phoneNumber = currentUser?.phoneNumber else {
-            return "No phone number"
-        }
-        
-        // Format phone number for display (assuming US format)
-        let digits = phoneNumber.replacingOccurrences(of: "[^0-9]", with: "", options: .regularExpression)
-        guard digits.count == 11 && digits.hasPrefix("1") else {
-            return phoneNumber // Return as-is if not in expected format
-        }
-        
-        let areaCode = String(digits.dropFirst(1).prefix(3))
-        let firstPart = String(digits.dropFirst(4).prefix(3))
-        let lastPart = String(digits.dropFirst(7))
-        
-        return "(\(areaCode)) \(firstPart)-\(lastPart)"
-    }
+    // MARK: - Methods
     
     private func loadCurrentUser() {
         isLoading = true
         
         Task {
             do {
-                // First try to get user from Firestore
                 if let firebaseUser = Auth.auth().currentUser {
                     if let firestoreUser = try await FirebaseService.shared.getUser(withId: firebaseUser.uid) {
                         currentUser = firestoreUser
                     } else {
-                        // Create user in Firestore if doesn't exist
                         currentUser = try await FirebaseService.shared.createUserIfNotExists(
                             phoneNumber: firebaseUser.phoneNumber ?? "",
                             displayName: firebaseUser.displayName
@@ -350,7 +411,6 @@ struct ProfileView: View {
             isEditing = false
         }
         
-        // Reset edit fields
         editDisplayName = ""
         editUsername = ""
         editBio = ""
@@ -361,18 +421,15 @@ struct ProfileView: View {
         
         Task {
             do {
-                // Clean up username (remove @ if user added it)
                 let cleanUsername = editUsername.trimmingCharacters(in: .whitespaces)
                     .replacingOccurrences(of: "@", with: "")
                 
-                // Update in Firestore
                 try await FirebaseService.shared.updateUserProfile(
                     displayName: editDisplayName.isEmpty ? nil : editDisplayName,
                     username: cleanUsername.isEmpty ? nil : cleanUsername,
                     bio: editBio.isEmpty ? nil : editBio
                 )
                 
-                // Reload user data
                 if let firebaseUser = Auth.auth().currentUser {
                     currentUser = try await FirebaseService.shared.getUser(withId: firebaseUser.uid)
                 }
@@ -396,8 +453,6 @@ struct ProfileView: View {
     private func logout() {
         do {
             try Auth.auth().signOut()
-            // The app should automatically navigate back to login screen
-            // via the AuthenticationViewModel's state listener
         } catch {
             print("Error signing out: \(error.localizedDescription)")
         }
@@ -406,4 +461,6 @@ struct ProfileView: View {
 
 #Preview {
     ProfileView()
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
 }
