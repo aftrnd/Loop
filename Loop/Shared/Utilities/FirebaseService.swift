@@ -1,10 +1,13 @@
 import FirebaseFirestore
 import FirebaseAuth
+import FirebaseStorage
 import Foundation
+import UIKit
 
 class FirebaseService {
     static let shared = FirebaseService()
     private let db = Firestore.firestore()
+    private let storage = Storage.storage()
 
     private init() {}
 
@@ -25,7 +28,9 @@ class FirebaseService {
             displayName: data["displayName"] as? String,
             username: data["username"] as? String,
             bio: data["bio"] as? String,
-            location: data["location"] as? String
+            location: data["location"] as? String,
+            avatarURL: data["avatarURL"] as? String,
+            bannerURL: data["bannerURL"] as? String
         )
     }
     
@@ -44,7 +49,9 @@ class FirebaseService {
             displayName: data["displayName"] as? String,
             username: data["username"] as? String,
             bio: data["bio"] as? String,
-            location: data["location"] as? String
+            location: data["location"] as? String,
+            avatarURL: data["avatarURL"] as? String,
+            bannerURL: data["bannerURL"] as? String
         )
     }
 
@@ -66,7 +73,9 @@ class FirebaseService {
                 displayName: data["displayName"] as? String,
                 username: data["username"] as? String,
                 bio: data["bio"] as? String,
-                location: data["location"] as? String
+                location: data["location"] as? String,
+                avatarURL: data["avatarURL"] as? String,
+                bannerURL: data["bannerURL"] as? String
             )
         } else {
             // Create new user
@@ -112,6 +121,70 @@ class FirebaseService {
         if !updateData.isEmpty {
             try await userRef.updateData(updateData)
         }
+    }
+    
+    // MARK: - Image Upload Operations
+    
+    /// Uploads an avatar image and returns the download URL
+    func uploadAvatarImage(_ image: UIImage) async throws -> String {
+        guard let userId = Auth.auth().currentUser?.uid else {
+            throw NSError(domain: "FirebaseService", code: 2, userInfo: [NSLocalizedDescriptionKey: "No authenticated user"])
+        }
+        
+        // Compress image to JPEG (0.7 quality for good balance)
+        guard let imageData = image.jpegData(compressionQuality: 0.7) else {
+            throw NSError(domain: "FirebaseService", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to compress image"])
+        }
+        
+        // Create storage reference
+        let storageRef = storage.reference()
+        let avatarRef = storageRef.child("users/\(userId)/avatar.jpg")
+        
+        // Upload image
+        let metadata = StorageMetadata()
+        metadata.contentType = "image/jpeg"
+        
+        _ = try await avatarRef.putDataAsync(imageData, metadata: metadata)
+        
+        // Get download URL
+        let downloadURL = try await avatarRef.downloadURL()
+        
+        // Update user document with avatar URL
+        let userRef = db.collection("users").document(userId)
+        try await userRef.updateData(["avatarURL": downloadURL.absoluteString])
+        
+        return downloadURL.absoluteString
+    }
+    
+    /// Uploads a banner image and returns the download URL
+    func uploadBannerImage(_ image: UIImage) async throws -> String {
+        guard let userId = Auth.auth().currentUser?.uid else {
+            throw NSError(domain: "FirebaseService", code: 2, userInfo: [NSLocalizedDescriptionKey: "No authenticated user"])
+        }
+        
+        // Compress image to JPEG (0.8 quality for banners)
+        guard let imageData = image.jpegData(compressionQuality: 0.8) else {
+            throw NSError(domain: "FirebaseService", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to compress image"])
+        }
+        
+        // Create storage reference
+        let storageRef = storage.reference()
+        let bannerRef = storageRef.child("users/\(userId)/banner.jpg")
+        
+        // Upload image
+        let metadata = StorageMetadata()
+        metadata.contentType = "image/jpeg"
+        
+        _ = try await bannerRef.putDataAsync(imageData, metadata: metadata)
+        
+        // Get download URL
+        let downloadURL = try await bannerRef.downloadURL()
+        
+        // Update user document with banner URL
+        let userRef = db.collection("users").document(userId)
+        try await userRef.updateData(["bannerURL": downloadURL.absoluteString])
+        
+        return downloadURL.absoluteString
     }
 
     // MARK: - Chat Operations

@@ -8,6 +8,8 @@ struct User: Identifiable, Codable, Equatable {
     let username: String?
     let bio: String?
     let location: String?
+    let avatarURL: String?
+    let bannerURL: String?
     let createdAt: Date
     let lastSeen: Date
     
@@ -18,17 +20,21 @@ struct User: Identifiable, Codable, Equatable {
         self.username = nil // Will be loaded from Firestore
         self.bio = nil // Will be loaded from Firestore
         self.location = nil // Will be loaded from Firestore
+        self.avatarURL = nil // Will be loaded from Firestore
+        self.bannerURL = nil // Will be loaded from Firestore
         self.createdAt = Date()
         self.lastSeen = Date()
     }
     
-    init(id: String, phoneNumber: String, displayName: String? = nil, username: String? = nil, bio: String? = nil, location: String? = nil) {
+    init(id: String, phoneNumber: String, displayName: String? = nil, username: String? = nil, bio: String? = nil, location: String? = nil, avatarURL: String? = nil, bannerURL: String? = nil) {
         self.id = id
         self.phoneNumber = phoneNumber
         self.displayName = displayName
         self.username = username
         self.bio = bio
         self.location = location
+        self.avatarURL = avatarURL
+        self.bannerURL = bannerURL
         self.createdAt = Date()
         self.lastSeen = Date()
     }

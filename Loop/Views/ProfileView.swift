@@ -76,6 +76,7 @@ struct ProfileView: View {
                                 }
                             }
                             .padding(.horizontal, 16)
+                            .padding(.leading, isEditing ? 0 : 8)
                             .padding(.top, 8)
                             .padding(.bottom, 32)
                         }
@@ -155,6 +156,16 @@ struct ProfileView: View {
                     if let data = try? await newItem?.loadTransferable(type: Data.self),
                        let image = UIImage(data: data) {
                         selectedImage = image
+                        // Upload to Firebase Storage
+                        do {
+                            _ = try await FirebaseService.shared.uploadAvatarImage(image)
+                            // Reload user to get updated avatar URL
+                            if let firebaseUser = Auth.auth().currentUser {
+                                currentUser = try await FirebaseService.shared.getUser(withId: firebaseUser.uid)
+                            }
+                        } catch {
+                            print("Error uploading avatar: \(error.localizedDescription)")
+                        }
                     }
                 }
             }
@@ -163,6 +174,16 @@ struct ProfileView: View {
                     if let data = try? await newItem?.loadTransferable(type: Data.self),
                        let image = UIImage(data: data) {
                         selectedBanner = image
+                        // Upload to Firebase Storage
+                        do {
+                            _ = try await FirebaseService.shared.uploadBannerImage(image)
+                            // Reload user to get updated banner URL
+                            if let firebaseUser = Auth.auth().currentUser {
+                                currentUser = try await FirebaseService.shared.getUser(withId: firebaseUser.uid)
+                            }
+                        } catch {
+                            print("Error uploading banner: \(error.localizedDescription)")
+                        }
                     }
                 }
             }
@@ -188,12 +209,30 @@ struct ProfileView: View {
         GeometryReader { geometry in
             ZStack(alignment: .bottomTrailing) {
                 if let banner = selectedBanner {
+                    // Show locally selected image (while uploading or editing)
                     Image(uiImage: banner)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
                         .frame(width: geometry.size.width, height: geometry.size.height)
                         .clipped()
+                } else if let bannerURL = currentUser?.bannerURL, let url = URL(string: bannerURL) {
+                    // Load from Firebase Storage URL with caching
+                    CachedAsyncImage(url: url) { image in
+                        image
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: geometry.size.width, height: geometry.size.height)
+                            .clipped()
+                    } placeholder: {
+                        LinearGradient(
+                            colors: [.blue, .purple],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                    }
                 } else {
+                    // Default gradient
                     LinearGradient(
                         colors: [.blue, .purple],
                         startPoint: .topLeading,
@@ -224,6 +263,7 @@ struct ProfileView: View {
     private var avatarView: some View {
         ZStack {
             if let image = selectedImage {
+                // Show locally selected image (while uploading or editing)
                 Image(uiImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
@@ -233,7 +273,33 @@ struct ProfileView: View {
                         Circle()
                             .strokeBorder(Color(.systemBackground), lineWidth: 4)
                     }
+            } else if let avatarURL = currentUser?.avatarURL, let url = URL(string: avatarURL) {
+                // Load from Firebase Storage URL with caching
+                CachedAsyncImage(url: url) { image in
+                    image
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: 120, height: 120)
+                        .clipShape(Circle())
+                        .overlay {
+                            Circle()
+                                .strokeBorder(Color(.systemBackground), lineWidth: 4)
+                        }
+                } placeholder: {
+                    ZStack {
+                        Circle()
+                            .fill(Color(.systemGray5))
+                            .frame(width: 120, height: 120)
+                            .overlay {
+                                Circle()
+                                    .strokeBorder(Color(.systemBackground), lineWidth: 4)
+                            }
+                        
+                        ProgressView()
+                    }
+                }
             } else {
+                // Default initials view
                 Circle()
                     .fill(Color(.systemGray5))
                     .frame(width: 120, height: 120)
@@ -302,6 +368,11 @@ struct ProfileView: View {
                     TextField("username", text: $editUsername)
                         .font(.callout)
                         .textFieldStyle(.plain)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .onChange(of: editUsername) { oldValue, newValue in
+                            editUsername = sanitizeUsername(newValue)
+                        }
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
@@ -451,6 +522,19 @@ struct ProfileView: View {
         return "?"
     }
     
+    // MARK: - Helper Methods
+    
+    private func sanitizeUsername(_ username: String) -> String {
+        // Convert to lowercase
+        let lowercased = username.lowercased()
+        
+        // Only allow alphanumeric, hyphen, and underscore
+        let allowedCharacters = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_"))
+        let filtered = lowercased.unicodeScalars.filter { allowedCharacters.contains($0) }
+        
+        return String(String.UnicodeScalarView(filtered))
+    }
+    
     // MARK: - Methods
     
     private func loadCurrentUser() {
@@ -503,8 +587,9 @@ struct ProfileView: View {
         
         Task {
             do {
-                let cleanUsername = editUsername.trimmingCharacters(in: .whitespaces)
-                    .replacingOccurrences(of: "@", with: "")
+                // Sanitize username: lowercase, alphanumeric + hyphen + underscore only
+                let cleanUsername = sanitizeUsername(editUsername.trimmingCharacters(in: .whitespaces)
+                    .replacingOccurrences(of: "@", with: ""))
                 
                 try await FirebaseService.shared.updateUserProfile(
                     displayName: editDisplayName.isEmpty ? nil : editDisplayName,

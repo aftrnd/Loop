@@ -42,7 +42,7 @@ struct ChatsListView: View {
                         Button(action: {
                             showProfile = true
                         }) {
-                            Image(systemName: "gearshape.fill")
+                            Image(systemName: "person")
                                 .font(.body)
                                 .fontWeight(.medium)
                         }
