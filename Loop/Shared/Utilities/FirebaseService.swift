@@ -24,7 +24,8 @@ class FirebaseService {
             phoneNumber: data["phoneNumber"] as? String ?? "",
             displayName: data["displayName"] as? String,
             username: data["username"] as? String,
-            bio: data["bio"] as? String
+            bio: data["bio"] as? String,
+            location: data["location"] as? String
         )
     }
     
@@ -42,7 +43,8 @@ class FirebaseService {
             phoneNumber: data["phoneNumber"] as? String ?? "",
             displayName: data["displayName"] as? String,
             username: data["username"] as? String,
-            bio: data["bio"] as? String
+            bio: data["bio"] as? String,
+            location: data["location"] as? String
         )
     }
 
@@ -63,7 +65,8 @@ class FirebaseService {
                 phoneNumber: data["phoneNumber"] as? String ?? "",
                 displayName: data["displayName"] as? String,
                 username: data["username"] as? String,
-                bio: data["bio"] as? String
+                bio: data["bio"] as? String,
+                location: data["location"] as? String
             )
         } else {
             // Create new user
@@ -73,6 +76,7 @@ class FirebaseService {
                 "displayName": user.displayName ?? "",
                 "username": user.username ?? "",
                 "bio": user.bio ?? "",
+                "location": user.location ?? "",
                 "createdAt": Timestamp(date: user.createdAt),
                 "lastSeen": Timestamp(date: user.lastSeen)
             ])
@@ -81,7 +85,7 @@ class FirebaseService {
         }
     }
     
-    func updateUserProfile(displayName: String?, username: String?, bio: String?) async throws {
+    func updateUserProfile(displayName: String?, username: String?, bio: String?, location: String? = nil) async throws {
         guard let userId = Auth.auth().currentUser?.uid else {
             throw NSError(domain: "FirebaseService", code: 2, userInfo: [NSLocalizedDescriptionKey: "No authenticated user"])
         }
@@ -99,6 +103,10 @@ class FirebaseService {
         
         if let bio = bio {
             updateData["bio"] = bio
+        }
+        
+        if let location = location {
+            updateData["location"] = location
         }
         
         if !updateData.isEmpty {

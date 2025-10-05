@@ -12,6 +12,7 @@ struct ProfileView: View {
     @State private var editDisplayName: String = ""
     @State private var editUsername: String = ""
     @State private var editBio: String = ""
+    @State private var editLocation: String = ""
     
     // Save state
     @State private var isSaving = false
@@ -42,23 +43,38 @@ struct ProfileView: View {
                             .padding(.bottom, -geometry.safeAreaInsets.top) // Collapse the extra space
                         
                         // Avatar and profile info - moves up to overlap banner
-                        VStack(alignment: isEditing ? .center : .leading, spacing: 0) {
+                        VStack(alignment: .leading, spacing: 0) {
                             // Avatar
                             avatarView
-                                .frame(maxWidth: .infinity, alignment: isEditing ? .center : .leading)
-                                .padding(.leading, isEditing ? 0 : 16)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.leading, 16)
                             
                             // Profile info
-                            VStack(alignment: isEditing ? .center : .leading, spacing: 4) {
+                            VStack(alignment: .leading, spacing: 0) {
                                 displayNameView
-                                usernameView
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                
+                                if isEditing {
+                                    // Username and Location on same line when editing
+                                    HStack(spacing: 8) {
+                                        usernameView
+                                        locationView
+                                    }
+                                    .padding(.vertical, 8)
+                                } else {
+                                    // Stacked when viewing
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        usernameView
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                    }
+                                    .padding(.vertical, 8)
+                                }
                                 
                                 if let bio = currentUser?.bio, !bio.isEmpty || isEditing {
                                     bioView
-                                        .padding(.top, 8)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
                                 }
                             }
-                            .frame(maxWidth: .infinity, alignment: isEditing ? .center : .leading)
                             .padding(.horizontal, 16)
                             .padding(.top, 8)
                             .padding(.bottom, 32)
@@ -66,9 +82,18 @@ struct ProfileView: View {
                         .offset(y: -60)
                         .padding(.bottom, -60)
                         
-                        // Settings section
+                        // Settings section with fade effect
                         if !isEditing {
-                            settingsSection
+                            GeometryReader { settingsGeo in
+                                let minY = settingsGeo.frame(in: .global).minY
+                                let screenHeight = UIScreen.main.bounds.height
+                                let fadeStart = screenHeight * 0.7
+                                let fadeEnd = screenHeight * 0.5
+                                let opacity = min(max((fadeStart - minY) / (fadeStart - fadeEnd), 0), 1)
+                                
+                                settingsSection
+                                    .opacity(opacity)
+                            }
                         }
                         
                         Spacer(minLength: 40)
@@ -245,7 +270,11 @@ struct ProfileView: View {
                     .font(.title3)
                     .fontWeight(.bold)
                     .textFieldStyle(.plain)
-                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .frame(height: 36)
+                    .background(Color.black.opacity(0.15))
+                    .cornerRadius(8)
             } else {
                 Text(currentUser?.displayName ?? "Display Name")
                     .font(.title3)
@@ -258,26 +287,59 @@ struct ProfileView: View {
     private var usernameView: some View {
         HStack(spacing: 4) {
             if isEditing {
-                HStack(spacing: 0) {
+                HStack(spacing: 4) {
                     Text("@")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                     TextField("username", text: $editUsername)
                         .font(.callout)
                         .textFieldStyle(.plain)
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: 200)
                 }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity, maxHeight: 36)
+                .background(Color.black.opacity(0.15))
+                .cornerRadius(8)
             } else {
                 Text("@\(currentUser?.username ?? "username")")
                     .font(.callout)
+                    .fontWeight(.regular)
                     .foregroundStyle(.secondary)
                 
                 Image(systemName: "checkmark.seal.fill")
                     .foregroundStyle(.blue)
                     .font(.callout)
+                
+                // Location - only show if exists
+                if let location = currentUser?.location, !location.isEmpty {
+                    Image(systemName: "location.fill")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    
+                    Text(location)
+                        .font(.callout)
+                        .fontWeight(.regular)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
+    }
+    
+    private var locationView: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "location.fill")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            
+            TextField("Add location...", text: $editLocation)
+                .font(.callout)
+                .textFieldStyle(.plain)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, maxHeight: 36)
+        .background(Color.black.opacity(0.15))
+        .cornerRadius(8)
     }
     
     private var bioView: some View {
@@ -287,7 +349,11 @@ struct ProfileView: View {
                     .font(.callout)
                     .lineLimit(2...4)
                     .textFieldStyle(.plain)
-                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .frame(maxWidth: .infinity, minHeight: 60, alignment: .topLeading)
+                    .background(Color.black.opacity(0.15))
+                    .cornerRadius(8)
             } else {
                 if let bio = currentUser?.bio, !bio.isEmpty {
                     Text(bio)
@@ -400,6 +466,7 @@ struct ProfileView: View {
         editDisplayName = currentUser?.displayName ?? ""
         editUsername = currentUser?.username ?? ""
         editBio = currentUser?.bio ?? ""
+        editLocation = currentUser?.location ?? ""
         
         withAnimation(.easeInOut(duration: 0.25)) {
             isEditing = true
@@ -414,6 +481,7 @@ struct ProfileView: View {
         editDisplayName = ""
         editUsername = ""
         editBio = ""
+        editLocation = ""
     }
     
     private func saveProfile() {
@@ -427,7 +495,8 @@ struct ProfileView: View {
                 try await FirebaseService.shared.updateUserProfile(
                     displayName: editDisplayName.isEmpty ? nil : editDisplayName,
                     username: cleanUsername.isEmpty ? nil : cleanUsername,
-                    bio: editBio.isEmpty ? nil : editBio
+                    bio: editBio.isEmpty ? nil : editBio,
+                    location: editLocation.isEmpty ? nil : editLocation
                 )
                 
                 if let firebaseUser = Auth.auth().currentUser {
