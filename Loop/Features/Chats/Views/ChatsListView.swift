@@ -9,6 +9,7 @@ struct ChatsListView: View {
     @State private var scrollViewHeight: CGFloat = 0
     @State private var navigationPath = NavigationPath()
     @State private var showNewMessage = false
+    @State private var showProfile = false
     @Environment(\.colorScheme) private var colorScheme
     @ObservedObject private var debugManager = DebugManager.shared
     
@@ -27,11 +28,25 @@ struct ChatsListView: View {
                             showNewMessage = true
                         }) {
                             Image(systemName: "square.and.pencil")
+                                .font(.body)
+                                .fontWeight(.medium)
                         }
+                        .buttonStyle(.plain)
                     }
 
                     ToolbarItem(placement: .principal) {
                         toolbarContent
+                    }
+                    
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button(action: {
+                            showProfile = true
+                        }) {
+                            Image(systemName: "gearshape.fill")
+                                .font(.body)
+                                .fontWeight(.medium)
+                        }
+                        .buttonStyle(.plain)
                     }
 
                 }
@@ -45,6 +60,11 @@ struct ChatsListView: View {
         }
         .sheet(isPresented: $showNewMessage) {
             NewMessageView(chatsViewModel: viewModel)
+        }
+        .sheet(isPresented: $showProfile) {
+            ProfileView()
+                .presentationDetents([.large])
+                .presentationDragIndicator(.hidden)
         }
         .sheet(isPresented: $debugManager.isDebugMenuVisible) {
             DebugMenuView()

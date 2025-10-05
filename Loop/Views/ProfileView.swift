@@ -19,225 +19,64 @@ struct ProfileView: View {
     
     // Logout
     @State private var showLogoutConfirmation = false
+    @Environment(\.dismiss) private var dismiss
     
     var body: some View {
         NavigationStack {
-            ScrollView {
+            ZStack(alignment: .top) {
+                Color(.systemBackground)
+                    .ignoresSafeArea()
+                
                 VStack(spacing: 0) {
-                    // Profile Header
-                    VStack(spacing: 12) {
-                        // Avatar
-                        ZStack {
-                            Circle()
-                                .fill(Color(.systemGray6))
-                                .frame(width: 120, height: 120)
-                            
-                            Text(userInitials)
-                                .font(.system(size: 48, weight: .medium))
-                                .foregroundColor(.primary)
-                        }
-                        .padding(.top, 20)
-                        .padding(.bottom, 8)
+                    ScrollView {
+                        profileHeaderSection
                         
-                        // Display Name
-                        if isEditing {
-                            TextField("Display Name", text: $editDisplayName)
-                                .font(.title2)
-                                .fontWeight(.semibold)
-                                .multilineTextAlignment(.center)
-                                .textFieldStyle(.plain)
-                                .padding(.horizontal, 40)
-                        } else {
-                            Text(currentUser?.displayName ?? "Display Name")
-                                .font(.title2)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.primary)
-                        }
-                        
-                        // Username
-                        HStack(spacing: 4) {
-                            Text("@")
-                                .font(.body)
-                                .foregroundColor(.secondary)
-                            
-                            if isEditing {
-                                TextField("username", text: $editUsername)
-                                    .font(.body)
-                                    .textFieldStyle(.plain)
-                                    .multilineTextAlignment(.leading)
-                                    .frame(maxWidth: 200)
-                            } else {
-                                Text(currentUser?.username ?? "username")
-                                    .font(.body)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                    }
-                    .padding(.bottom, 32)
-                    
-                    // Main Content
-                    VStack(spacing: 20) {
-                        // Account Section
-                        VStack(alignment: .leading, spacing: 16) {
-                            Text("ACCOUNT")
-                                .font(.caption)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.secondary)
-                                .padding(.horizontal, 16)
-                            
-                            VStack(spacing: 0) {
-                                // Phone Number
-                                HStack(spacing: 12) {
-                                    Image(systemName: "phone.fill")
-                                        .foregroundColor(.green)
-                                        .frame(width: 28)
-                                    
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text("Phone Number")
-                                            .font(.body)
-                                            .foregroundColor(.primary)
-                                        
-                                        Text(formattedPhoneNumber)
-                                            .font(.subheadline)
-                                            .foregroundColor(.secondary)
-                                    }
-                                    
-                                    Spacer()
-                                    
-                                    // Verified checkmark
-                                    Image(systemName: "checkmark.seal.fill")
-                                        .foregroundColor(.green)
-                                        .font(.title3)
-                                }
-                                .padding(16)
-                                .background(Color(.systemBackground))
-                            }
-                            .background(Color(.secondarySystemBackground))
-                            .cornerRadius(10)
-                            .padding(.horizontal, 16)
-                        }
-                        
-                        // Bio Section
-                        VStack(alignment: .leading, spacing: 16) {
-                            Text("BIO")
-                                .font(.caption)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.secondary)
-                                .padding(.horizontal, 16)
-                            
-                            VStack(alignment: .leading, spacing: 0) {
-                                if isEditing {
-                                    TextField("Add a bio to tell people more about yourself...", text: $editBio, axis: .vertical)
-                                        .font(.body)
-                                        .lineLimit(5...10)
-                                        .padding(16)
-                                } else {
-                                    if let bio = currentUser?.bio, !bio.isEmpty {
-                                        Text(bio)
-                                            .font(.body)
-                                            .foregroundColor(.primary)
-                                            .frame(maxWidth: .infinity, alignment: .leading)
-                                            .padding(16)
-                                    } else {
-                                        Text("Add a bio to tell people more about yourself...")
-                                            .font(.body)
-                                            .foregroundColor(.secondary)
-                                            .italic()
-                                            .frame(maxWidth: .infinity, alignment: .leading)
-                                            .padding(16)
-                                    }
-                                }
-                            }
-                            .background(Color(.secondarySystemBackground))
-                            .cornerRadius(10)
-                            .padding(.horizontal, 16)
-                        }
-                        
-                        // Actions Section
-                        if !isEditing {
-                            VStack(spacing: 12) {
-                                // Settings Button
-                                Button(action: {
-                                    showSettings = true
-                                }) {
-                                    HStack {
-                                        Image(systemName: "gear")
-                                            .frame(width: 28)
-                                        Text("Settings")
-                                        Spacer()
-                                        Image(systemName: "chevron.right")
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                    }
-                                    .font(.body)
-                                    .foregroundColor(.primary)
-                                    .padding(16)
-                                    .background(Color(.secondarySystemBackground))
-                                    .cornerRadius(10)
-                                }
-                                .buttonStyle(.plain)
-                                
-                                // Logout Button
-                                Button(action: {
-                                    showLogoutConfirmation = true
-                                }) {
-                                    HStack {
-                                        Image(systemName: "rectangle.portrait.and.arrow.right")
-                                            .frame(width: 28)
-                                        Text("Log Out")
-                                        Spacer()
-                                    }
-                                    .font(.body)
-                                    .foregroundColor(.red)
-                                    .padding(16)
-                                    .background(Color(.secondarySystemBackground))
-                                    .cornerRadius(10)
-                                }
-                                .buttonStyle(.plain)
-                            }
-                            .padding(.horizontal, 16)
-                            .padding(.top, 12)
-                        }
+                        Spacer(minLength: 40)
                     }
                     
-                    Spacer(minLength: 40)
+                    if !isEditing {
+                        List {
+                            Section {
+                                settingsButton
+                                logoutButton
+                            }
+                        }
+                        .listStyle(.insetGrouped)
+                        .scrollDisabled(true)
+                        .frame(height: 120)
+                        .safeAreaPadding(.bottom, 20)
+                    }
                 }
             }
-            .navigationTitle("Profile")
+            .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .topBarLeading) {
                     if isEditing {
-                        Button {
-                            if isSaving { return }
-                            saveProfile()
-                        } label: {
-                            if isSaving {
-                                ProgressView()
-                                    .tint(.blue)
-                            } else {
-                                Text("Done")
-                                    .fontWeight(.semibold)
-                            }
-                        }
-                        .disabled(isSaving)
-                    } else {
-                        Button("Edit") {
-                            startEditing()
-                        }
-                        .fontWeight(.semibold)
-                    }
-                }
-                
-                if isEditing {
-                    ToolbarItem(placement: .topBarLeading) {
                         Button("Cancel") {
                             cancelEditing()
                         }
+                    } else {
+                        Button {
+                            dismiss()
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.body)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.secondary)
+                        }
                     }
                 }
+                
+                ToolbarItem(placement: .principal) {
+                    titlePill
+                }
+                
+                ToolbarItem(placement: .topBarTrailing) {
+                    trailingToolbarButton
+                }
             }
-            .background(Color(.systemGroupedBackground))
+            .toolbarBackground(.hidden, for: .navigationBar)
             .onAppear {
                 loadCurrentUser()
             }
@@ -256,6 +95,182 @@ struct ProfileView: View {
                 Button("OK", role: .cancel) { }
             } message: {
                 Text(saveErrorMessage)
+            }
+        }
+    }
+    
+    private var profileHeaderSection: some View {
+        VStack(spacing: 0) {
+            avatarView
+            displayNameView
+            usernameView
+            bioView
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.bottom, 32)
+    }
+    
+    private var avatarView: some View {
+        ZStack {
+            Circle()
+                .fill(Color(.systemGray5))
+                .frame(width: 140, height: 140)
+            
+            Color.clear
+                .frame(width: 140, height: 140)
+                .glassEffect(.regular, in: Circle())
+            
+            Text(userInitials)
+                .font(.system(size: 56, weight: .semibold))
+                .foregroundColor(.primary)
+        }
+        .padding(.top, 20)
+        .padding(.bottom, 20)
+    }
+    
+    private var displayNameView: some View {
+        Group {
+            if isEditing {
+                TextField("Display Name", text: $editDisplayName)
+                    .font(.largeTitle)
+                    .fontWeight(.bold)
+                    .multilineTextAlignment(.center)
+                    .textFieldStyle(.plain)
+                    .padding(.horizontal, 40)
+            } else {
+                Text(currentUser?.displayName ?? "Display Name")
+                    .font(.largeTitle)
+                    .fontWeight(.bold)
+                    .foregroundColor(.primary)
+            }
+        }
+    }
+    
+    private var usernameView: some View {
+        HStack(spacing: 0) {
+            Text("@")
+                .font(.title3)
+                .foregroundColor(.secondary)
+            
+            if isEditing {
+                TextField("username", text: $editUsername)
+                    .font(.title3)
+                    .textFieldStyle(.plain)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: 200)
+            } else {
+                HStack(spacing: 6) {
+                    Text(currentUser?.username ?? "username")
+                        .font(.title3)
+                        .foregroundColor(.secondary)
+                    
+                    Image(systemName: "checkmark.seal.fill")
+                        .foregroundColor(.blue)
+                        .font(.title3)
+                }
+            }
+        }
+        .padding(.top, 2)
+    }
+    
+    private var bioView: some View {
+        Group {
+            if isEditing {
+                TextField("Add a bio...", text: $editBio, axis: .vertical)
+                    .font(.body)
+                    .lineLimit(3...5)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 40)
+                    .padding(.top, 16)
+            } else {
+                if let bio = currentUser?.bio, !bio.isEmpty {
+                    Text(bio)
+                        .font(.body)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 40)
+                        .padding(.top, 16)
+                } else {
+                    Text("Add a bio")
+                        .font(.body)
+                        .foregroundStyle(.tertiary)
+                        .padding(.top, 16)
+                }
+            }
+        }
+    }
+    
+    private var settingsButton: some View {
+        Button {
+            showSettings = true
+        } label: {
+            HStack {
+                Image(systemName: "gearshape.fill")
+                    .foregroundColor(.gray)
+                    .frame(width: 30)
+                
+                Text("Settings")
+                    .foregroundColor(.primary)
+                
+                Spacer()
+                
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+    
+    private var logoutButton: some View {
+        Button {
+            showLogoutConfirmation = true
+        } label: {
+            HStack {
+                Image(systemName: "rectangle.portrait.and.arrow.right")
+                    .foregroundColor(.red)
+                    .frame(width: 30)
+                
+                Text("Log Out")
+                    .foregroundColor(.red)
+                
+                Spacer()
+            }
+        }
+    }
+    
+    private var titlePill: some View {
+        Text("Profile")
+            .font(.headline)
+            .fontWeight(.semibold)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(
+                Color.clear
+                    .glassEffect(.regular, in: Capsule())
+            )
+    }
+    
+    private var trailingToolbarButton: some View {
+        Group {
+            if isEditing {
+                Button {
+                    if isSaving { return }
+                    saveProfile()
+                } label: {
+                    if isSaving {
+                        ProgressView()
+                            .tint(.blue)
+                    } else {
+                        Text("Done")
+                            .fontWeight(.semibold)
+                    }
+                }
+                .disabled(isSaving)
+            } else {
+                Button("Edit") {
+                    startEditing()
+                }
+                .fontWeight(.semibold)
             }
         }
     }

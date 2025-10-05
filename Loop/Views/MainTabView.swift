@@ -27,16 +27,6 @@ struct MainTabView: View {
                 ChatsListView()
             }
             
-            // Groups Tab
-            Tab("Groups", systemImage: "person.3", value: "Groups") {
-                GroupsView()
-            }
-            
-            // Profile Tab
-            Tab("Profile", systemImage: "person.circle", value: "Profile") {
-                ProfileView()
-            }
-            
             // Search Tab - Uses .search role for native iOS 26 behavior
             Tab("Search", systemImage: "magnifyingglass", value: "Search", role: .search) {
                 NavigationStack {
@@ -103,6 +93,7 @@ struct MainTabView: View {
             }
         }
         .tabViewStyle(.sidebarAdaptable)
+        .environment(\.horizontalSizeClass, .compact)
     }
 }
 
