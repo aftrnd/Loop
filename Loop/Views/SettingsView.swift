@@ -171,16 +171,48 @@ struct SettingsView: View {
     }
 
     private func loadCurrentUser() {
-        if let user = FirebaseService.shared.getCurrentUser() {
-            currentUser = user
+        Task {
+            do {
+                if let firebaseUser = FirebaseAuth.Auth.auth().currentUser {
+                    currentUser = try await FirebaseService.shared.getUser(withId: firebaseUser.uid)
+                    // Populate edit fields
+                    username = currentUser?.username ?? ""
+                    bio = currentUser?.bio ?? ""
+                }
+            } catch {
+                print("Error loading user: \(error)")
+            }
         }
     }
 
     private func saveProfile() {
-        // TODO: Implement profile saving to Firestore
-        isEditing = false
-        // For now, just update local state
-        // In a real implementation, you'd save to Firestore here
+        Task {
+            do {
+                // Clean up username (remove @ if user added it)
+                let cleanUsername = username.trimmingCharacters(in: .whitespaces)
+                    .replacingOccurrences(of: "@", with: "")
+                
+                try await FirebaseService.shared.updateUserProfile(
+                    displayName: nil, // Don't update display name from settings
+                    username: cleanUsername.isEmpty ? nil : cleanUsername,
+                    bio: bio.isEmpty ? nil : bio
+                )
+                
+                // Reload user
+                if let firebaseUser = FirebaseAuth.Auth.auth().currentUser {
+                    currentUser = try await FirebaseService.shared.getUser(withId: firebaseUser.uid)
+                }
+                
+                await MainActor.run {
+                    isEditing = false
+                }
+            } catch {
+                print("Error saving profile: \(error)")
+                await MainActor.run {
+                    isEditing = false
+                }
+            }
+        }
     }
 }
 

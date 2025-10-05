@@ -27,6 +27,24 @@ class FirebaseService {
             bio: data["bio"] as? String
         )
     }
+    
+    func getUserByPhoneNumber(_ phoneNumber: String) async throws -> User? {
+        let snapshot = try await db.collection("users")
+            .whereField("phoneNumber", isEqualTo: phoneNumber)
+            .limit(to: 1)
+            .getDocuments()
+        
+        guard let doc = snapshot.documents.first else { return nil }
+        let data = doc.data()
+        
+        return User(
+            id: doc.documentID,
+            phoneNumber: data["phoneNumber"] as? String ?? "",
+            displayName: data["displayName"] as? String,
+            username: data["username"] as? String,
+            bio: data["bio"] as? String
+        )
+    }
 
     func createUserIfNotExists(phoneNumber: String, displayName: String?) async throws -> User {
         let userId = Auth.auth().currentUser?.uid ?? UUID().uuidString
@@ -62,10 +80,89 @@ class FirebaseService {
             return user
         }
     }
+    
+    func updateUserProfile(displayName: String?, username: String?, bio: String?) async throws {
+        guard let userId = Auth.auth().currentUser?.uid else {
+            throw NSError(domain: "FirebaseService", code: 2, userInfo: [NSLocalizedDescriptionKey: "No authenticated user"])
+        }
+        
+        let userRef = db.collection("users").document(userId)
+        var updateData: [String: Any] = [:]
+        
+        if let displayName = displayName {
+            updateData["displayName"] = displayName
+        }
+        
+        if let username = username {
+            updateData["username"] = username
+        }
+        
+        if let bio = bio {
+            updateData["bio"] = bio
+        }
+        
+        if !updateData.isEmpty {
+            try await userRef.updateData(updateData)
+        }
+    }
 
     // MARK: - Chat Operations
+    
+    func findExistingChat(withParticipants participantIds: [String]) async throws -> Chat? {
+        guard let currentUserId = Auth.auth().currentUser?.uid else { return nil }
+        
+        // Query for chats where current user is a participant
+        let snapshot = try await db.collection("chats")
+            .whereField("participants", arrayContains: currentUserId)
+            .getDocuments()
+        
+        // Filter to find exact match (both users, no more, no less)
+        for doc in snapshot.documents {
+            let data = doc.data()
+            guard let participants = data["participants"] as? [String] else { continue }
+            
+            // Check if this chat has exactly the same participants
+            if Set(participants) == Set(participantIds) {
+                // Found existing chat
+                guard let title = data["title"] as? String,
+                      let lastMessage = data["lastMessage"] as? String,
+                      let timestamp = data["lastMessageTime"] as? Timestamp else {
+                    continue
+                }
+                
+                let unreadCount = data["unreadCount"] as? Int ?? 0
+                let chatId = data["id"] as? String ?? doc.documentID
+                let otherParticipantId = participants.first { $0 != currentUserId }
+                
+                return Chat(
+                    id: UUID(uuidString: chatId) ?? UUID(),
+                    title: title,
+                    lastMessagePreview: lastMessage,
+                    unreadCount: unreadCount,
+                    messages: [],
+                    lastMessageTime: timestamp.dateValue(),
+                    participants: participants,
+                    otherParticipantId: otherParticipantId
+                )
+            }
+        }
+        
+        return nil
+    }
 
     func createChat(withUserId userId: String, title: String) async throws -> Chat {
+        guard let currentUserId = Auth.auth().currentUser?.uid else {
+            throw NSError(domain: "FirebaseService", code: 3, userInfo: [NSLocalizedDescriptionKey: "No authenticated user"])
+        }
+        
+        let participants = [currentUserId, userId]
+        
+        // Check if chat already exists between these users
+        if let existingChat = try await findExistingChat(withParticipants: participants) {
+            return existingChat
+        }
+        
+        // Create new chat
         let chatId = UUID().uuidString
         let now = Date()
 
@@ -73,7 +170,7 @@ class FirebaseService {
         try await chatRef.setData([
             "id": chatId,
             "title": title,
-            "participants": [Auth.auth().currentUser?.uid ?? "", userId],
+            "participants": participants,
             "lastMessage": "Start a conversation...",
             "lastMessageTime": Timestamp(date: now),
             "createdAt": Timestamp(date: now)
@@ -85,11 +182,15 @@ class FirebaseService {
             lastMessagePreview: "Start a conversation...",
             unreadCount: 0,
             messages: [],
-            lastMessageTime: now
+            lastMessageTime: now,
+            participants: participants,
+            otherParticipantId: userId
         )
     }
 
     func getChat(withId chatId: String) async throws -> Chat? {
+        guard let currentUserId = Auth.auth().currentUser?.uid else { return nil }
+        
         let doc = try await db.collection("chats").document(chatId).getDocument()
         guard let data = doc.data() else { return nil }
 
@@ -100,6 +201,8 @@ class FirebaseService {
         }
 
         let unreadCount = data["unreadCount"] as? Int ?? 0
+        let participants = data["participants"] as? [String] ?? []
+        let otherParticipantId = participants.first { $0 != currentUserId }
 
         return Chat(
             id: UUID(uuidString: chatId) ?? UUID(),
@@ -107,7 +210,9 @@ class FirebaseService {
             lastMessagePreview: lastMessage,
             unreadCount: unreadCount,
             messages: [],
-            lastMessageTime: timestamp.dateValue()
+            lastMessageTime: timestamp.dateValue(),
+            participants: participants,
+            otherParticipantId: otherParticipantId
         )
     }
 
@@ -141,6 +246,8 @@ class FirebaseService {
 
             let unreadCount = data["unreadCount"] as? Int ?? 0
             let chatId = data["id"] as? String ?? doc.documentID
+            let participants = data["participants"] as? [String] ?? []
+            let otherParticipantId = participants.first { $0 != currentUserId }
 
             return Chat(
                 id: UUID(uuidString: chatId) ?? UUID(),
@@ -148,7 +255,9 @@ class FirebaseService {
                 lastMessagePreview: lastMessage,
                 unreadCount: unreadCount,
                 messages: [],
-                lastMessageTime: timestamp.dateValue()
+                lastMessageTime: timestamp.dateValue(),
+                participants: participants,
+                otherParticipantId: otherParticipantId
             )
         }
     }
@@ -227,6 +336,8 @@ class FirebaseService {
 
                     let unreadCount = data["unreadCount"] as? Int ?? 0
                     let chatId = data["id"] as? String ?? doc.documentID
+                    let participants = data["participants"] as? [String] ?? []
+                    let otherParticipantId = participants.first { $0 != currentUserId }
 
                     return Chat(
                         id: UUID(uuidString: chatId) ?? UUID(),
@@ -234,7 +345,9 @@ class FirebaseService {
                         lastMessagePreview: lastMessage,
                         unreadCount: unreadCount,
                         messages: [],
-                        lastMessageTime: timestamp.dateValue()
+                        lastMessageTime: timestamp.dateValue(),
+                        participants: participants,
+                        otherParticipantId: otherParticipantId
                     )
                 }
 

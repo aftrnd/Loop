@@ -159,12 +159,39 @@ final class ChatsListViewModel {
             throw NSError(domain: "ChatsListViewModel", code: 1, userInfo: [NSLocalizedDescriptionKey: "User not authenticated"])
         }
 
-        // Create the chat in Firestore - for now, just use current user as the only participant
-        // In a real app, this would be the other user's ID
-        let chat = try await FirebaseService.shared.createChat(withUserId: currentUserId, title: displayName)
+        // Format phone number to match Firebase format (assuming US: +1XXXXXXXXXX)
+        let formattedPhone = formatPhoneNumber(phoneNumber)
+        
+        // Look up user by phone number
+        guard let otherUser = try await FirebaseService.shared.getUserByPhoneNumber(formattedPhone) else {
+            throw NSError(domain: "ChatsListViewModel", code: 2, userInfo: [NSLocalizedDescriptionKey: "User with phone number \(phoneNumber) not found. They may need to sign up first."])
+        }
+        
+        // Use the actual display name from their profile, or fall back to generated name
+        let chatTitle = otherUser.displayName ?? displayName
+
+        // Create the chat with the other user's ID
+        let chat = try await FirebaseService.shared.createChat(withUserId: otherUser.id, title: chatTitle)
 
         // Don't immediately add to local state - let the real-time listener handle it
         // This prevents duplicates and ensures consistency with database state
+    }
+    
+    private func formatPhoneNumber(_ phoneNumber: String) -> String {
+        // Remove all non-digit characters
+        let digits = phoneNumber.replacingOccurrences(of: "[^0-9]", with: "", options: .regularExpression)
+        
+        // Validate we have enough digits for a US phone number
+        guard digits.count == 10 else {
+            // If already formatted with country code, return as is
+            if phoneNumber.hasPrefix("+") {
+                return phoneNumber
+            }
+            return phoneNumber // Return original if can't format
+        }
+        
+        // Format as +1XXXXXXXXXX for Firebase
+        return "+1" + digits
     }
 
     func refreshChats() {
