@@ -650,4 +650,281 @@ class FirebaseService {
         guard let currentUser = try await getUser(withId: currentUserId) else { return false }
         return currentUser.following.contains(targetUserId)
     }
+    
+    // MARK: - Loop Operations
+    
+    func createLoop(content: String, media: [LoopMedia] = [], isReply: Bool = false, parentLoopId: String? = nil) async throws {
+        guard let currentUserId = Auth.auth().currentUser?.uid else {
+            throw NSError(domain: "FirebaseService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
+        }
+        
+        let loopId = UUID().uuidString
+        let now = Date()
+        
+        // Convert media to dictionary format
+        let mediaData = media.map { media in
+            var dict: [String: Any] = [
+                "id": media.id,
+                "type": media.type.rawValue,
+                "url": media.url
+            ]
+            
+            if let thumbnailURL = media.thumbnailURL {
+                dict["thumbnailURL"] = thumbnailURL
+            }
+            if let width = media.width {
+                dict["width"] = width
+            }
+            if let height = media.height {
+                dict["height"] = height
+            }
+            
+            return dict
+        }
+        
+        let loopRef = db.collection("loops").document(loopId)
+        
+        var loopData: [String: Any] = [
+            "id": loopId,
+            "authorId": currentUserId,
+            "content": content,
+            "media": mediaData,
+            "createdAt": Timestamp(date: now),
+            "updatedAt": Timestamp(date: now),
+            "likes": [],
+            "replies": [],
+            "isReply": isReply
+        ]
+        
+        if let parentLoopId = parentLoopId {
+            loopData["parentLoopId"] = parentLoopId
+        }
+        
+        try await loopRef.setData(loopData)
+        
+        // If this is a reply, update the parent loop's replies array
+        if isReply, let parentLoopId = parentLoopId {
+            let parentLoopRef = db.collection("loops").document(parentLoopId)
+            try await parentLoopRef.updateData([
+                "replies": FieldValue.arrayUnion([loopId])
+            ])
+        }
+        
+        print("✅ Successfully created loop: \(loopId)")
+    }
+    
+    func likeLoop(_ loopId: String) async throws {
+        guard let currentUserId = Auth.auth().currentUser?.uid else {
+            throw NSError(domain: "FirebaseService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
+        }
+        
+        let loopRef = db.collection("loops").document(loopId)
+        try await loopRef.updateData([
+            "likes": FieldValue.arrayUnion([currentUserId])
+        ])
+        
+        print("✅ Successfully liked loop: \(loopId)")
+    }
+    
+    func unlikeLoop(_ loopId: String) async throws {
+        guard let currentUserId = Auth.auth().currentUser?.uid else {
+            throw NSError(domain: "FirebaseService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
+        }
+        
+        let loopRef = db.collection("loops").document(loopId)
+        try await loopRef.updateData([
+            "likes": FieldValue.arrayRemove([currentUserId])
+        ])
+        
+        print("✅ Successfully unliked loop: \(loopId)")
+    }
+    
+    func deleteLoop(_ loopId: String) async throws {
+        guard let currentUserId = Auth.auth().currentUser?.uid else {
+            throw NSError(domain: "FirebaseService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
+        }
+        
+        // First, verify the user owns this loop
+        let loopDoc = try await db.collection("loops").document(loopId).getDocument()
+        guard let data = loopDoc.data(),
+              let authorId = data["authorId"] as? String,
+              authorId == currentUserId else {
+            throw NSError(domain: "FirebaseService", code: 3, userInfo: [NSLocalizedDescriptionKey: "Unauthorized to delete this loop"])
+        }
+        
+        // Delete all replies to this loop
+        let repliesSnapshot = try await db.collection("loops")
+            .whereField("parentLoopId", isEqualTo: loopId)
+            .getDocuments()
+        
+        let batch = db.batch()
+        for replyDoc in repliesSnapshot.documents {
+            batch.deleteDocument(replyDoc.reference)
+        }
+        
+        // Delete the loop itself
+        batch.deleteDocument(db.collection("loops").document(loopId))
+        
+        // If this is a reply, remove it from parent's replies array
+        if let parentLoopId = data["parentLoopId"] as? String {
+            let parentLoopRef = db.collection("loops").document(parentLoopId)
+            batch.updateData([
+                "replies": FieldValue.arrayRemove([loopId])
+            ], forDocument: parentLoopRef)
+        }
+        
+        try await batch.commit()
+        print("✅ Successfully deleted loop: \(loopId)")
+    }
+    
+    func getLoop(withId loopId: String) async throws -> Loop? {
+        let doc = try await db.collection("loops").document(loopId).getDocument()
+        guard let data = doc.data() else { return nil }
+        
+        guard let authorId = data["authorId"] as? String,
+              let content = data["content"] as? String,
+              let createdAtTimestamp = data["createdAt"] as? Timestamp else {
+            return nil
+        }
+        
+        // Parse media
+        let mediaArray = data["media"] as? [[String: Any]] ?? []
+        let media = mediaArray.compactMap { mediaData -> LoopMedia? in
+            guard let id = mediaData["id"] as? String,
+                  let typeString = mediaData["type"] as? String,
+                  let type = LoopMediaType(rawValue: typeString),
+                  let url = mediaData["url"] as? String else {
+                return nil
+            }
+            
+            return LoopMedia(
+                id: id,
+                type: type,
+                url: url,
+                thumbnailURL: mediaData["thumbnailURL"] as? String,
+                width: mediaData["width"] as? Double,
+                height: mediaData["height"] as? Double
+            )
+        }
+        
+        // Fetch author information
+        let author = try? await getUser(withId: authorId)
+        
+        return Loop(
+            id: doc.documentID,
+            authorId: authorId,
+            content: content,
+            media: media,
+            createdAt: createdAtTimestamp.dateValue(),
+            updatedAt: (data["updatedAt"] as? Timestamp)?.dateValue() ?? createdAtTimestamp.dateValue(),
+            likes: data["likes"] as? [String] ?? [],
+            replies: data["replies"] as? [String] ?? [],
+            isReply: data["isReply"] as? Bool ?? false,
+            parentLoopId: data["parentLoopId"] as? String,
+            authorDisplayName: author?.displayName,
+            authorUsername: author?.username,
+            authorAvatarURL: author?.avatarURL,
+            authorBadgeType: author?.badgeType
+        )
+    }
+    
+    func getReplies(for loopId: String) async throws -> [Loop] {
+        let snapshot = try await db.collection("loops")
+            .whereField("parentLoopId", isEqualTo: loopId)
+            .order(by: "createdAt", descending: false)
+            .getDocuments()
+        
+        var replies: [Loop] = []
+        for doc in snapshot.documents {
+            if let loop = try? await parseLoopFromDocument(doc) {
+                replies.append(loop)
+            }
+        }
+        
+        return replies
+    }
+    
+    private func parseLoopFromDocument(_ doc: QueryDocumentSnapshot) async throws -> Loop? {
+        let data = doc.data()
+        
+        guard let authorId = data["authorId"] as? String,
+              let content = data["content"] as? String,
+              let createdAtTimestamp = data["createdAt"] as? Timestamp else {
+            return nil
+        }
+        
+        // Parse media
+        let mediaArray = data["media"] as? [[String: Any]] ?? []
+        let media = mediaArray.compactMap { mediaData -> LoopMedia? in
+            guard let id = mediaData["id"] as? String,
+                  let typeString = mediaData["type"] as? String,
+                  let type = LoopMediaType(rawValue: typeString),
+                  let url = mediaData["url"] as? String else {
+                return nil
+            }
+            
+            return LoopMedia(
+                id: id,
+                type: type,
+                url: url,
+                thumbnailURL: mediaData["thumbnailURL"] as? String,
+                width: mediaData["width"] as? Double,
+                height: mediaData["height"] as? Double
+            )
+        }
+        
+        // Fetch author information
+        let author = try? await getUser(withId: authorId)
+        
+        return Loop(
+            id: doc.documentID,
+            authorId: authorId,
+            content: content,
+            media: media,
+            createdAt: createdAtTimestamp.dateValue(),
+            updatedAt: (data["updatedAt"] as? Timestamp)?.dateValue() ?? createdAtTimestamp.dateValue(),
+            likes: data["likes"] as? [String] ?? [],
+            replies: data["replies"] as? [String] ?? [],
+            isReply: data["isReply"] as? Bool ?? false,
+            parentLoopId: data["parentLoopId"] as? String,
+            authorDisplayName: author?.displayName,
+            authorUsername: author?.username,
+            authorAvatarURL: author?.avatarURL,
+            authorBadgeType: author?.badgeType
+        )
+    }
+    
+    /// Uploads a loop media file and returns the download URL
+    func uploadLoopMedia(_ image: UIImage, type: LoopMediaType) async throws -> LoopMedia {
+        guard let userId = Auth.auth().currentUser?.uid else {
+            throw NSError(domain: "FirebaseService", code: 2, userInfo: [NSLocalizedDescriptionKey: "No authenticated user"])
+        }
+        
+        // Compress image to JPEG (0.8 quality for posts)
+        guard let imageData = image.jpegData(compressionQuality: 0.8) else {
+            throw NSError(domain: "FirebaseService", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to compress image"])
+        }
+        
+        // Create storage reference
+        let storageRef = storage.reference()
+        let mediaId = UUID().uuidString
+        let mediaRef = storageRef.child("loops/\(userId)/\(mediaId).jpg")
+        
+        // Upload image
+        let metadata = StorageMetadata()
+        metadata.contentType = "image/jpeg"
+        
+        _ = try await mediaRef.putDataAsync(imageData, metadata: metadata)
+        
+        // Get download URL
+        let downloadURL = try await mediaRef.downloadURL()
+        
+        return LoopMedia(
+            id: mediaId,
+            type: type,
+            url: downloadURL.absoluteString,
+            width: Double(image.size.width),
+            height: Double(image.size.height)
+        )
+    }
 }
