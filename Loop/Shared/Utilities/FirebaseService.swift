@@ -407,6 +407,8 @@ class FirebaseService {
     }
 
     func getMessages(forChatId chatId: String) async throws -> [Message] {
+        guard let currentUserId = Auth.auth().currentUser?.uid else { return [] }
+        
         let snapshot = try await db.collection("chats").document(chatId).collection("messages")
             .order(by: "timestamp", descending: false)
             .getDocuments()
@@ -414,12 +416,15 @@ class FirebaseService {
         return snapshot.documents.compactMap { doc in
             let data = doc.data()
             guard let content = data["content"] as? String,
-                  let timestamp = data["timestamp"] as? Timestamp,
-                  let isFromUser = data["isFromUser"] as? Bool else {
+                  let timestamp = data["timestamp"] as? Timestamp else {
                 return nil
             }
 
             let messageId = data["id"] as? String ?? doc.documentID
+            let senderId = data["senderId"] as? String ?? ""
+            
+            // Determine if message is from current user by comparing sender ID
+            let isFromUser = senderId == currentUserId
 
             return Message(
                 id: UUID(uuidString: messageId) ?? UUID(),
@@ -505,6 +510,10 @@ class FirebaseService {
     }
 
     func listenForMessages(chatId: String, completion: @escaping ([Message]) -> Void) -> ListenerRegistration {
+        guard let currentUserId = Auth.auth().currentUser?.uid else {
+            return db.collection("chats").document(chatId).collection("messages").addSnapshotListener { _, _ in }
+        }
+        
         return db.collection("chats").document(chatId).collection("messages")
             .order(by: "timestamp", descending: false)
             .addSnapshotListener { snapshot, error in
@@ -516,12 +525,15 @@ class FirebaseService {
                 let messages = documents.compactMap { doc -> Message? in
                     let data = doc.data()
                     guard let content = data["content"] as? String,
-                          let timestamp = data["timestamp"] as? Timestamp,
-                          let isFromUser = data["isFromUser"] as? Bool else {
+                          let timestamp = data["timestamp"] as? Timestamp else {
                         return nil
                     }
 
                     let messageId = data["id"] as? String ?? doc.documentID
+                    let senderId = data["senderId"] as? String ?? ""
+                    
+                    // Determine if message is from current user by comparing sender ID
+                    let isFromUser = senderId == currentUserId
 
                     return Message(
                         id: UUID(uuidString: messageId) ?? UUID(),

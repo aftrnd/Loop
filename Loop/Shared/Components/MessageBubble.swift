@@ -23,15 +23,16 @@ struct MessageBubble: View {
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
                     .background(
-                        ZStack {
+                        Group {
                             if message.isFromUser {
+                                // Sent messages: gradient on the right
                                 LinearGradient(colors: [Color.blue, Color.purple], startPoint: .topLeading, endPoint: .bottomTrailing)
-                                    .clipShape(RoundedRectangle(cornerRadius: 18))
                             } else {
-                                Color.clear
-                                    .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 18))
+                                // Received messages: system gray on the left
+                                Color(.systemGray5)
                             }
                         }
+                        .clipShape(RoundedRectangle(cornerRadius: 18))
                     )
                 
                 Text(formatTime(message.timestamp))
