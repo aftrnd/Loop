@@ -10,8 +10,9 @@ struct Chat: Identifiable, Hashable {
     var participants: [String] // Array of user IDs
     var otherParticipantId: String? // For 1-on-1 chats, the other user's ID
     var otherParticipantDisplayName: String? // For 1-on-1 chats, the other user's current display name
+    var otherParticipantAvatarURL: String? // For 1-on-1 chats, the other user's avatar URL
 
-    init(id: UUID = UUID(), title: String, lastMessagePreview: String, unreadCount: Int = 0, messages: [Message] = [], lastMessageTime: Date = Date(), participants: [String] = [], otherParticipantId: String? = nil, otherParticipantDisplayName: String? = nil) {
+    init(id: UUID = UUID(), title: String, lastMessagePreview: String, unreadCount: Int = 0, messages: [Message] = [], lastMessageTime: Date = Date(), participants: [String] = [], otherParticipantId: String? = nil, otherParticipantDisplayName: String? = nil, otherParticipantAvatarURL: String? = nil) {
         self.id = id
         self.title = title
         self.lastMessagePreview = lastMessagePreview
@@ -21,6 +22,7 @@ struct Chat: Identifiable, Hashable {
         self.participants = participants
         self.otherParticipantId = otherParticipantId
         self.otherParticipantDisplayName = otherParticipantDisplayName
+        self.otherParticipantAvatarURL = otherParticipantAvatarURL
     }
     
     // MARK: - Computed Properties

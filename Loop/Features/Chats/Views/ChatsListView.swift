@@ -291,18 +291,38 @@ struct PinnedMessagesView: View {
     private func pinnedChatItem(chat: Chat, isLongPressed: Bool, selectedUserId: Binding<String?>, showUserProfile: Binding<Bool>) -> some View {
         VStack(spacing: 8) {
             ZStack {
-                Circle()
-                    .fill(Color(.systemGray5))
-                    .frame(width: 90, height: 90)
+                if let avatarURLString = chat.otherParticipantAvatarURL, let avatarURL = URL(string: avatarURLString) {
+                    // Show actual user avatar
+                    CachedAsyncImage(url: avatarURL) { image in
+                        image
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: 90, height: 90)
+                            .clipShape(Circle())
+                    } placeholder: {
+                        // Placeholder while loading
+                        Circle()
+                            .fill(Color(.systemGray5))
+                            .frame(width: 90, height: 90)
+                            .overlay {
+                                ProgressView()
+                            }
+                    }
+                } else {
+                    // Default avatar with initials
+                    Circle()
+                        .fill(Color(.systemGray5))
+                        .frame(width: 90, height: 90)
 
-                Color.clear
-                    .frame(width: 90, height: 90)
-                    .glassEffect(.regular, in: Circle())
+                    Color.clear
+                        .frame(width: 90, height: 90)
+                        .glassEffect(.regular, in: Circle())
 
-                Text(String(chat.displayTitle.prefix(1)).uppercased())
-                    .font(.largeTitle)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.primary)
+                    Text(String(chat.displayTitle.prefix(1)).uppercased())
+                        .font(.largeTitle)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                }
             }
             .onTapGesture(count: 1) {
                 // Avatar tap - show profile for 1:1 chats

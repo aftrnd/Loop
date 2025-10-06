@@ -215,11 +215,13 @@ class FirebaseService {
                 let chatId = data["id"] as? String ?? doc.documentID
                 let otherParticipantId = participants.first { $0 != currentUserId }
                 
-                // For 1:1 chats, fetch the other user's current display name
+                // For 1:1 chats, fetch the other user's current display name and avatar
                 var otherParticipantDisplayName: String?
+                var otherParticipantAvatarURL: String?
                 if participants.count == 2, let otherUserId = otherParticipantId {
                     if let otherUser = try? await getUser(withId: otherUserId) {
                         otherParticipantDisplayName = otherUser.displayName
+                        otherParticipantAvatarURL = otherUser.avatarURL
                     }
                 }
                 
@@ -232,7 +234,8 @@ class FirebaseService {
                     lastMessageTime: timestamp.dateValue(),
                     participants: participants,
                     otherParticipantId: otherParticipantId,
-                    otherParticipantDisplayName: otherParticipantDisplayName
+                    otherParticipantDisplayName: otherParticipantDisplayName,
+                    otherParticipantAvatarURL: otherParticipantAvatarURL
                 )
             }
         }
@@ -294,11 +297,13 @@ class FirebaseService {
         let participants = data["participants"] as? [String] ?? []
         let otherParticipantId = participants.first { $0 != currentUserId }
         
-        // For 1:1 chats, fetch the other user's current display name
+        // For 1:1 chats, fetch the other user's current display name and avatar
         var otherParticipantDisplayName: String?
+        var otherParticipantAvatarURL: String?
         if participants.count == 2, let otherUserId = otherParticipantId {
             if let otherUser = try? await getUser(withId: otherUserId) {
                 otherParticipantDisplayName = otherUser.displayName
+                otherParticipantAvatarURL = otherUser.avatarURL
             }
         }
 
@@ -311,7 +316,8 @@ class FirebaseService {
             lastMessageTime: timestamp.dateValue(),
             participants: participants,
             otherParticipantId: otherParticipantId,
-            otherParticipantDisplayName: otherParticipantDisplayName
+            otherParticipantDisplayName: otherParticipantDisplayName,
+            otherParticipantAvatarURL: otherParticipantAvatarURL
         )
     }
 
@@ -350,11 +356,13 @@ class FirebaseService {
             let participants = data["participants"] as? [String] ?? []
             let otherParticipantId = participants.first { $0 != currentUserId }
             
-            // For 1:1 chats, fetch the other user's current display name
+            // For 1:1 chats, fetch the other user's current display name and avatar
             var otherParticipantDisplayName: String?
+            var otherParticipantAvatarURL: String?
             if participants.count == 2, let otherUserId = otherParticipantId {
                 if let otherUser = try? await getUser(withId: otherUserId) {
                     otherParticipantDisplayName = otherUser.displayName
+                    otherParticipantAvatarURL = otherUser.avatarURL
                 }
             }
 
@@ -367,7 +375,8 @@ class FirebaseService {
                 lastMessageTime: timestamp.dateValue(),
                 participants: participants,
                 otherParticipantId: otherParticipantId,
-                otherParticipantDisplayName: otherParticipantDisplayName
+                otherParticipantDisplayName: otherParticipantDisplayName,
+                otherParticipantAvatarURL: otherParticipantAvatarURL
             ))
         }
         
@@ -466,11 +475,13 @@ class FirebaseService {
                         let participants = data["participants"] as? [String] ?? []
                         let otherParticipantId = participants.first { $0 != currentUserId }
                         
-                        // For 1:1 chats, fetch the other user's current display name
+                        // For 1:1 chats, fetch the other user's current display name and avatar
                         var otherParticipantDisplayName: String?
+                        var otherParticipantAvatarURL: String?
                         if participants.count == 2, let otherUserId = otherParticipantId {
                             if let otherUser = try? await self.getUser(withId: otherUserId) {
                                 otherParticipantDisplayName = otherUser.displayName
+                                otherParticipantAvatarURL = otherUser.avatarURL
                             }
                         }
                         
@@ -483,7 +494,8 @@ class FirebaseService {
                             lastMessageTime: timestamp.dateValue(),
                             participants: participants,
                             otherParticipantId: otherParticipantId,
-                            otherParticipantDisplayName: otherParticipantDisplayName
+                            otherParticipantDisplayName: otherParticipantDisplayName,
+                            otherParticipantAvatarURL: otherParticipantAvatarURL
                         ))
                     }
                     

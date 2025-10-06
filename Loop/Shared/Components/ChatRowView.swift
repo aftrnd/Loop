@@ -10,18 +10,39 @@ struct ChatRowView: View {
         HStack(spacing: 16) {
             // Avatar
             ZStack {
-                Circle()
-                    .fill(Color(.systemGray5))
-                    .frame(width: 50, height: 50)
-                
-                Color.clear
-                    .frame(width: 50, height: 50)
-                    .glassEffect(.regular, in: Circle())
-                
-                Text(String(chat.displayTitle.prefix(1)).uppercased())
-                    .font(.headline)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.primary)
+                if let avatarURLString = chat.otherParticipantAvatarURL, let avatarURL = URL(string: avatarURLString) {
+                    // Show actual user avatar
+                    CachedAsyncImage(url: avatarURL) { image in
+                        image
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: 50, height: 50)
+                            .clipShape(Circle())
+                    } placeholder: {
+                        // Placeholder while loading
+                        Circle()
+                            .fill(Color(.systemGray5))
+                            .frame(width: 50, height: 50)
+                            .overlay {
+                                ProgressView()
+                                    .scaleEffect(0.7)
+                            }
+                    }
+                } else {
+                    // Default avatar with initials
+                    Circle()
+                        .fill(Color(.systemGray5))
+                        .frame(width: 50, height: 50)
+                    
+                    Color.clear
+                        .frame(width: 50, height: 50)
+                        .glassEffect(.regular, in: Circle())
+                    
+                    Text(String(chat.displayTitle.prefix(1)).uppercased())
+                        .font(.headline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                }
             }
             .onTapGesture {
                 // Only show profile for 1:1 chats
