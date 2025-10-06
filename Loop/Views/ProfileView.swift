@@ -361,7 +361,7 @@ struct ProfileView: View {
             } else {
                 HStack(spacing: 6) {
                     Text(currentUser?.displayName ?? "Display Name")
-                        .font(.title2)
+                        .font(.title)
                         .fontWeight(.bold)
                         .foregroundStyle(.primary)
                     
@@ -415,9 +415,9 @@ struct ProfileView: View {
                 // Location - only show if exists, with consistent styling
                 if let location = currentUser?.location, !location.isEmpty {
                     HStack(spacing: 4) {
-                        Image(systemName: "location.fill")
+                        Image(systemName: "location")
                             .font(.callout)
-                            .fontWeight(.medium)
+                            .fontWeight(.heavy)
                             .foregroundStyle(.secondary)
                         
                         Text(location)
@@ -432,9 +432,9 @@ struct ProfileView: View {
     
     private var locationView: some View {
         HStack(spacing: 4) {
-            Image(systemName: "location.fill")
+            Image(systemName: "location")
                 .font(.callout)
-                .fontWeight(.medium)
+                .fontWeight(.heavy)
                 .foregroundStyle(.secondary)
             
             TextField("Add location...", text: $editLocation)
