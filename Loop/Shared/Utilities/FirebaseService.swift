@@ -215,6 +215,14 @@ class FirebaseService {
                 let chatId = data["id"] as? String ?? doc.documentID
                 let otherParticipantId = participants.first { $0 != currentUserId }
                 
+                // For 1:1 chats, fetch the other user's current display name
+                var otherParticipantDisplayName: String?
+                if participants.count == 2, let otherUserId = otherParticipantId {
+                    if let otherUser = try? await getUser(withId: otherUserId) {
+                        otherParticipantDisplayName = otherUser.displayName
+                    }
+                }
+                
                 return Chat(
                     id: UUID(uuidString: chatId) ?? UUID(),
                     title: title,
@@ -223,7 +231,8 @@ class FirebaseService {
                     messages: [],
                     lastMessageTime: timestamp.dateValue(),
                     participants: participants,
-                    otherParticipantId: otherParticipantId
+                    otherParticipantId: otherParticipantId,
+                    otherParticipantDisplayName: otherParticipantDisplayName
                 )
             }
         }
@@ -284,6 +293,14 @@ class FirebaseService {
         let unreadCount = data["unreadCount"] as? Int ?? 0
         let participants = data["participants"] as? [String] ?? []
         let otherParticipantId = participants.first { $0 != currentUserId }
+        
+        // For 1:1 chats, fetch the other user's current display name
+        var otherParticipantDisplayName: String?
+        if participants.count == 2, let otherUserId = otherParticipantId {
+            if let otherUser = try? await getUser(withId: otherUserId) {
+                otherParticipantDisplayName = otherUser.displayName
+            }
+        }
 
         return Chat(
             id: UUID(uuidString: chatId) ?? UUID(),
@@ -293,7 +310,8 @@ class FirebaseService {
             messages: [],
             lastMessageTime: timestamp.dateValue(),
             participants: participants,
-            otherParticipantId: otherParticipantId
+            otherParticipantId: otherParticipantId,
+            otherParticipantDisplayName: otherParticipantDisplayName
         )
     }
 
@@ -317,20 +335,30 @@ class FirebaseService {
             .order(by: "lastMessageTime", descending: true)
             .getDocuments()
 
-        return snapshot.documents.compactMap { doc in
+        // Use async map to fetch user data for 1:1 chats
+        var chats: [Chat] = []
+        for doc in snapshot.documents {
             let data = doc.data()
             guard let title = data["title"] as? String,
                   let lastMessage = data["lastMessage"] as? String,
                   let timestamp = data["lastMessageTime"] as? Timestamp else {
-                return nil
+                continue
             }
 
             let unreadCount = data["unreadCount"] as? Int ?? 0
             let chatId = data["id"] as? String ?? doc.documentID
             let participants = data["participants"] as? [String] ?? []
             let otherParticipantId = participants.first { $0 != currentUserId }
+            
+            // For 1:1 chats, fetch the other user's current display name
+            var otherParticipantDisplayName: String?
+            if participants.count == 2, let otherUserId = otherParticipantId {
+                if let otherUser = try? await getUser(withId: otherUserId) {
+                    otherParticipantDisplayName = otherUser.displayName
+                }
+            }
 
-            return Chat(
+            chats.append(Chat(
                 id: UUID(uuidString: chatId) ?? UUID(),
                 title: title,
                 lastMessagePreview: lastMessage,
@@ -338,9 +366,12 @@ class FirebaseService {
                 messages: [],
                 lastMessageTime: timestamp.dateValue(),
                 participants: participants,
-                otherParticipantId: otherParticipantId
-            )
+                otherParticipantId: otherParticipantId,
+                otherParticipantDisplayName: otherParticipantDisplayName
+            ))
         }
+        
+        return chats
     }
 
     // MARK: - Message Operations
@@ -401,38 +432,63 @@ class FirebaseService {
         return db.collection("chats")
             .whereField("participants", arrayContains: currentUserId)
             .order(by: "lastMessageTime", descending: true)
-            .addSnapshotListener { snapshot, error in
+            .addSnapshotListener { [weak self] snapshot, error in
+                guard let self = self else { return }
                 guard let documents = snapshot?.documents else {
                     print("Error fetching chats: \(error?.localizedDescription ?? "Unknown error")")
                     return
                 }
 
-                let chats = documents.compactMap { doc -> Chat? in
+                // Parse basic chat data first
+                let chatData: [(data: [String: Any], doc: QueryDocumentSnapshot)] = documents.compactMap { doc in
                     let data = doc.data()
-                    guard let title = data["title"] as? String,
-                          let lastMessage = data["lastMessage"] as? String,
-                          let timestamp = data["lastMessageTime"] as? Timestamp else {
+                    guard data["title"] != nil,
+                          data["lastMessage"] != nil,
+                          data["lastMessageTime"] != nil else {
                         return nil
                     }
-
-                    let unreadCount = data["unreadCount"] as? Int ?? 0
-                    let chatId = data["id"] as? String ?? doc.documentID
-                    let participants = data["participants"] as? [String] ?? []
-                    let otherParticipantId = participants.first { $0 != currentUserId }
-
-                    return Chat(
-                        id: UUID(uuidString: chatId) ?? UUID(),
-                        title: title,
-                        lastMessagePreview: lastMessage,
-                        unreadCount: unreadCount,
-                        messages: [],
-                        lastMessageTime: timestamp.dateValue(),
-                        participants: participants,
-                        otherParticipantId: otherParticipantId
-                    )
+                    return (data: data, doc: doc)
                 }
-
-                completion(chats)
+                
+                // Fetch user data asynchronously for 1:1 chats
+                Task {
+                    var chats: [Chat] = []
+                    
+                    for (data, doc) in chatData {
+                        guard let title = data["title"] as? String,
+                              let lastMessage = data["lastMessage"] as? String,
+                              let timestamp = data["lastMessageTime"] as? Timestamp else {
+                            continue
+                        }
+                        
+                        let unreadCount = data["unreadCount"] as? Int ?? 0
+                        let chatId = data["id"] as? String ?? doc.documentID
+                        let participants = data["participants"] as? [String] ?? []
+                        let otherParticipantId = participants.first { $0 != currentUserId }
+                        
+                        // For 1:1 chats, fetch the other user's current display name
+                        var otherParticipantDisplayName: String?
+                        if participants.count == 2, let otherUserId = otherParticipantId {
+                            if let otherUser = try? await self.getUser(withId: otherUserId) {
+                                otherParticipantDisplayName = otherUser.displayName
+                            }
+                        }
+                        
+                        chats.append(Chat(
+                            id: UUID(uuidString: chatId) ?? UUID(),
+                            title: title,
+                            lastMessagePreview: lastMessage,
+                            unreadCount: unreadCount,
+                            messages: [],
+                            lastMessageTime: timestamp.dateValue(),
+                            participants: participants,
+                            otherParticipantId: otherParticipantId,
+                            otherParticipantDisplayName: otherParticipantDisplayName
+                        ))
+                    }
+                    
+                    completion(chats)
+                }
             }
     }
 

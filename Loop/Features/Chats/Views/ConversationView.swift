@@ -30,7 +30,7 @@ struct ConversationView: View {
                                     .fontWeight(.semibold)
                                     .foregroundColor(.secondary)
 
-                                Text("Send a message to begin chatting with \(chat.title)")
+                                Text("Send a message to begin chatting with \(chat.displayTitle)")
                                     .font(.body)
                                     .foregroundColor(.secondary)
                                     .multilineTextAlignment(.center)
@@ -67,7 +67,7 @@ struct ConversationView: View {
                 .interactiveKeyboardDismiss()
             }
             }
-            .navigationTitle(chat.title)
+            .navigationTitle(chat.displayTitle)
             .navigationBarTitleDisplayMode(.inline)
             .safeAreaInset(edge: .bottom, alignment: .center, spacing: 0) {
                 MessageInputView(messageText: $viewModel.messageText) {

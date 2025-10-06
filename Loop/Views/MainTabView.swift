@@ -10,7 +10,7 @@ struct MainTabView: View {
             return []
         }
         return (chatsViewModel.recent + chatsViewModel.pinned).filter { chat in
-            chat.title.localizedCaseInsensitiveContains(searchText) ||
+            chat.displayTitle.localizedCaseInsensitiveContains(searchText) ||
             chat.lastMessagePreview.localizedCaseInsensitiveContains(searchText)
         }
     }

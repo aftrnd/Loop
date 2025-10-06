@@ -284,7 +284,7 @@ struct PinnedMessagesView: View {
                     .frame(width: 90, height: 90)
                     .glassEffect(.regular, in: Circle())
 
-                Text(String(chat.title.prefix(1)).uppercased())
+                Text(String(chat.displayTitle.prefix(1)).uppercased())
                     .font(.largeTitle)
                     .fontWeight(.semibold)
                     .foregroundColor(.primary)
@@ -325,7 +325,7 @@ struct PinnedMessagesView: View {
                 }
             }
             
-            Text(chat.title)
+            Text(chat.displayTitle)
                 .font(.caption)
                 .foregroundColor(.primary)
                 .lineLimit(1)

@@ -17,7 +17,7 @@ struct ChatRowView: View {
                     .frame(width: 50, height: 50)
                     .glassEffect(.regular, in: Circle())
                 
-                Text(String(chat.title.prefix(1)).uppercased())
+                Text(String(chat.displayTitle.prefix(1)).uppercased())
                     .font(.headline)
                     .fontWeight(.semibold)
                     .foregroundColor(.primary)
@@ -41,7 +41,7 @@ struct ChatRowView: View {
             
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .center) {
-                    Text(chat.title)
+                    Text(chat.displayTitle)
                         .font(.headline)
                         .fontWeight(.semibold)
                         .lineLimit(1)
