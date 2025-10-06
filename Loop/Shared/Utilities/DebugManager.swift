@@ -2,6 +2,11 @@ import SwiftUI
 import Combine
 import FirebaseAuth
 
+// MARK: - Notification Extension
+extension Notification.Name {
+    static let AuthStateDidChange = Notification.Name("AuthStateDidChange")
+}
+
 // MARK: - Debug Manager
 class DebugManager: ObservableObject {
     static let shared = DebugManager()
@@ -18,6 +23,8 @@ class DebugManager: ObservableObject {
         do {
             try Auth.auth().signOut()
             print("🔧 DEBUG: User signed out successfully")
+            // Notify UI to update authentication state
+            NotificationCenter.default.post(name: .AuthStateDidChange, object: nil)
         } catch {
             print("🔧 DEBUG: Sign out error: \(error)")
         }
@@ -36,6 +43,8 @@ class DebugManager: ObservableObject {
         resetAuthentication()
         clearUserDefaults()
         print("🔧 DEBUG: App state reset to fresh install")
+        // Notify UI to update authentication state
+        NotificationCenter.default.post(name: .AuthStateDidChange, object: nil)
     }
     
     /// Toggle between mock and real Firebase auth
@@ -71,7 +80,7 @@ struct DebugMenuView: View {
     var body: some View {
         NavigationView {
             List {
-                Section("🔧 Authentication Debug") {
+                Section("Authentication Debug") {
                     Button("🔄 Reset Authentication") {
                         debugManager.resetAuthentication()
                     }
@@ -88,7 +97,7 @@ struct DebugMenuView: View {
                     .foregroundColor(.red)
                 }
                 
-                Section("🧪 Testing Options") {
+                Section("Testing Options") {
                     Toggle("Use Mock Authentication", isOn: $debugManager.debugSettings.useMockAuth)
                     
                     Toggle("Show Debug Logs", isOn: $debugManager.debugSettings.showDebugLogs)
@@ -103,7 +112,7 @@ struct DebugMenuView: View {
                     }
                 }
                 
-                Section("📱 App Info") {
+                Section("App Info") {
                     HStack {
                         Text("Bundle ID")
                         Spacer()
@@ -140,7 +149,7 @@ struct DebugMenuView: View {
                     .foregroundColor(.red)
                 }
             }
-            .navigationTitle("🔧 Debug Menu")
+            .navigationTitle("Debug Menu")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -159,18 +168,6 @@ struct DebugGestureModifier: ViewModifier {
     
     func body(content: Content) -> some View {
         content
-            .onShake {
-                // Shake gesture to show debug menu
-                #if DEBUG
-                debugManager.showDebugMenu()
-                #endif
-            }
-            .onLongPressGesture(minimumDuration: 3.0) {
-                // Long press (3 seconds) to show debug menu
-                #if DEBUG
-                debugManager.showDebugMenu()
-                #endif
-            }
             .sheet(isPresented: $debugManager.isDebugMenuVisible) {
                 DebugMenuView()
             }

@@ -2,16 +2,28 @@ import SwiftUI
 import UIKit
 
 struct ChatsListView: View {
-    @StateObject private var viewModel = ChatsListViewModel()
+    @State private var viewModel = ChatsListViewModel()
     @State private var topDistance: CGFloat = 0
     @State private var scrollOffset: CGFloat = 0
     @State private var contentHeight: CGFloat = 0
     @State private var scrollViewHeight: CGFloat = 0
     @State private var navigationPath = NavigationPath()
+    @State private var showNewMessage = false
+    @State private var showProfile = false
+    @State private var profileUserToShow: ProfileUser?
     @Environment(\.colorScheme) private var colorScheme
+    @ObservedObject private var debugManager = DebugManager.shared
     
     var body: some View {
         mainView
+    }
+    
+    // MARK: - Methods
+    
+    private func refreshChats() async {
+        print("🔄 Pull-to-refresh triggered...")
+        await viewModel.refreshChats()
+        print("✅ Pull-to-refresh completed")
     }
     
     private var mainView: some View {
@@ -20,19 +32,32 @@ struct ChatsListView: View {
                 .navigationTitle("")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button(action: {
+                            showNewMessage = true
+                        }) {
+                            Image(systemName: "square.and.pencil")
+                                .font(.body)
+                                .fontWeight(.medium)
+                        }
+                        .buttonStyle(.plain)
+                    }
+
                     ToolbarItem(placement: .principal) {
                         toolbarContent
                     }
                     
-                    #if DEBUG
                     ToolbarItem(placement: .topBarTrailing) {
                         Button(action: {
-                            DebugManager.shared.showDebugMenu()
+                            showProfile = true
                         }) {
-                            Image(systemName: "gear")
+                            Image(systemName: "person")
+                                .font(.body)
+                                .fontWeight(.medium)
                         }
+                        .buttonStyle(.plain)
                     }
-                    #endif
+
                 }
                 .toolbarBackground(.hidden, for: .navigationBar)
                 .navigationDestination(for: ChatsRoute.self) { route in
@@ -41,6 +66,22 @@ struct ChatsListView: View {
                         ConversationView(chat: chat)
                     }
                 }
+        }
+        .sheet(isPresented: $showNewMessage) {
+            NewMessageView(chatsViewModel: viewModel)
+        }
+        .sheet(isPresented: $showProfile) {
+            ProfileView()
+                .presentationDetents([.height(340), .large])
+                .presentationDragIndicator(.visible)
+        }
+        .sheet(item: $profileUserToShow) { profileUser in
+            ProfileView(userId: profileUser.userId)
+                .presentationDetents([.height(340), .large])
+                .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $debugManager.isDebugMenuVisible) {
+            DebugMenuView()
         }
     }
     
@@ -59,18 +100,37 @@ struct ChatsListView: View {
             List {
                 scrollSentinel
                 
+                // Show loading indicator while initial data loads
+                if viewModel.isLoadingInitialData {
+                    HStack {
+                        Spacer()
+                        VStack(spacing: 12) {
+                            ProgressView()
+                                .scaleEffect(1.2)
+                            Text("Loading chats...")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(.vertical, 40)
+                        Spacer()
+                    }
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                }
+                
                 if !viewModel.pinned.isEmpty {
                     PinnedMessagesView(
                         pinnedChats: viewModel.pinned,
                         colorScheme: colorScheme,
-                        navigationPath: $navigationPath
+                        navigationPath: $navigationPath,
+                        viewModel: viewModel,
+                        profileUserToShow: $profileUserToShow
                     )
-                    .padding(.horizontal, 16)
                     .padding(.top, 0) // No top padding for pinned items
                     .padding(.bottom, 8)
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
-                    .listRowInsets(EdgeInsets())
+                    .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
                 }
                 
                 ForEach(Array(viewModel.recent.enumerated()), id: \.element.id) { index, chat in
@@ -79,19 +139,31 @@ struct ChatsListView: View {
                         index: index,
                         totalCount: viewModel.recent.count,
                         isLastItem: index == viewModel.recent.count - 1,
-                        isAtListStart: index == 0 && viewModel.pinned.isEmpty,
+                        isAtListStart: index == 0 && scrollOffset <= 32,
+                        hasPinnedMessages: !viewModel.pinned.isEmpty,
                         scrollOffset: scrollOffset,
                         contentHeight: contentHeight,
                         scrollViewHeight: scrollViewHeight,
-                        navigationPath: $navigationPath
+                        navigationPath: $navigationPath,
+                        profileUserToShow: $profileUserToShow
                     )
                     .frame(height: 84)
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
                     .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
+                    .swipeActions(edge: .leading, allowsFullSwipe: false) {
+                        Button {
+                            viewModel.pinChat(chat)
+                        } label: {
+                            Image(systemName: "pin.fill")
+                        }
+                        .tint(.yellow)
+                    }
                     .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                         Button {
-                            viewModel.deleteRecentChats(at: IndexSet([index]))
+                            Task {
+                                try? await viewModel.deleteChat(withId: chat.id)
+                            }
                         } label: {
                             Image(systemName: "trash")
                         }
@@ -117,6 +189,9 @@ struct ChatsListView: View {
             .coordinateSpace(name: "chatScroll")
             .scrollIndicators(.hidden)
             .contentMargins(.top, -32)
+            .refreshable {
+                await refreshChats()
+            }
             .onAppear {
                 scrollViewHeight = scrollGeometry.size.height
             }
@@ -189,51 +264,120 @@ struct PinnedMessagesView: View {
     let pinnedChats: [Chat]
     let colorScheme: ColorScheme
     @Binding var navigationPath: NavigationPath
+    let viewModel: ChatsListViewModel
+    @State private var longPressedChat: Chat?
+    @Binding var profileUserToShow: ProfileUser?
     
     var body: some View {
         VStack(spacing: 16) {
             // First row of 3
-            HStack {
+            HStack(spacing: 0) {
                 ForEach(Array(pinnedChats.prefix(3).enumerated()), id: \.element.id) { index, chat in
-                    pinnedChatItem(chat: chat)
-                    if index < pinnedChats.prefix(3).count - 1 {
-                        Spacer()
-                    }
+                    pinnedChatItem(chat: chat, isLongPressed: longPressedChat?.id == chat.id, profileUserToShow: $profileUserToShow)
+                        .frame(maxWidth: .infinity)
+                        .onLongPressGesture {
+                            withAnimation {
+                                longPressedChat = longPressedChat?.id == chat.id ? nil : chat
+                            }
+                        }
                 }
             }
             
             // Second row of 3 if we have more than 3 pinned
             if pinnedChats.count > 3 {
-                HStack {
+                HStack(spacing: 0) {
                     ForEach(Array(pinnedChats.dropFirst(3).prefix(3).enumerated()), id: \.element.id) { index, chat in
-                        pinnedChatItem(chat: chat)
-                        if index < pinnedChats.dropFirst(3).prefix(3).count - 1 {
-                            Spacer()
-                        }
+                        pinnedChatItem(chat: chat, isLongPressed: longPressedChat?.id == chat.id, profileUserToShow: $profileUserToShow)
+                            .frame(maxWidth: .infinity)
+                            .onLongPressGesture {
+                                withAnimation {
+                                    longPressedChat = longPressedChat?.id == chat.id ? nil : chat
+                                }
+                            }
                     }
                 }
             }
         }
+        .background {
+            // Background tap to dismiss long press (behind content)
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    withAnimation {
+                        longPressedChat = nil
+                    }
+                }
+                .zIndex(-1)
+        }
     }
     
-    private func pinnedChatItem(chat: Chat) -> some View {
+    private func pinnedChatItem(chat: Chat, isLongPressed: Bool, profileUserToShow: Binding<ProfileUser?>) -> some View {
         VStack(spacing: 8) {
             ZStack {
-                Circle()
-                    .fill(Color(.systemGray5))
-                    .frame(width: 90, height: 90)
-                
-                Color.clear
-                    .frame(width: 90, height: 90)
-                    .glassEffect(.regular, in: Circle())
-                
-                Text(String(chat.title.prefix(1)).uppercased())
-                    .font(.largeTitle)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.primary)
+                if let avatarURLString = chat.otherParticipantAvatarURL, let avatarURL = URL(string: avatarURLString) {
+                    // Show actual user avatar
+                    CachedAsyncImage(url: avatarURL) { image in
+                        image
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: 90, height: 90)
+                            .clipShape(Circle())
+                    } placeholder: {
+                        // Placeholder while loading
+                        Circle()
+                            .fill(Color(.systemGray5))
+                            .frame(width: 90, height: 90)
+                            .overlay {
+                                ProgressView()
+                            }
+                    }
+                } else {
+                    // Default avatar with initials
+                    Circle()
+                        .fill(Color(.systemGray5))
+                        .frame(width: 90, height: 90)
+
+                    Color.clear
+                        .frame(width: 90, height: 90)
+                        .glassEffect(.regular, in: Circle())
+
+                    Text(String(chat.displayTitle.prefix(1)).uppercased())
+                        .font(.largeTitle)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                }
+            }
+            .onTapGesture(count: 1) {
+                // Avatar tap - show profile for 1:1 chats
+                if !chat.isGroupChat, let otherUserId = chat.otherParticipantId {
+                    print("👆 Pinned avatar tapped - opening profile for user: \(otherUserId)")
+                    profileUserToShow.wrappedValue = ProfileUser(userId: otherUserId)
+                    print("   profileUserToShow set to: \(profileUserToShow.wrappedValue?.userId ?? "nil")")
+                }
             }
             .overlay(alignment: .topTrailing) {
-                if chat.unreadCount > 0 {
+                if isLongPressed {
+                    Circle()
+                        .fill(Color.clear)
+                        .frame(width: 30, height: 30)
+                        .overlay {
+                            Image(systemName: "minus")
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundColor(.primary)
+                        }
+                        .background(
+                            Circle()
+                                .fill(Color(.systemBackground))
+                                .glassEffect(.regular, in: Circle())
+                        )
+                        .onTapGesture {
+                            withAnimation {
+                                viewModel.unpinChat(chat)
+                                longPressedChat = nil
+                            }
+                        }
+                        .offset(x: 8, y: -8)
+                } else if chat.unreadCount > 0 {
                     Circle()
                         .fill(colorScheme == .light ? Color.red : Color.blue)
                         .frame(width: 30, height: 30)
@@ -247,7 +391,7 @@ struct PinnedMessagesView: View {
                 }
             }
             
-            Text(chat.title)
+            Text(chat.displayTitle)
                 .font(.caption)
                 .foregroundColor(.primary)
                 .lineLimit(1)
@@ -256,7 +400,15 @@ struct PinnedMessagesView: View {
         }
         .contentShape(Rectangle())
         .onTapGesture {
-            navigationPath.append(ChatsRoute.conversation(chat))
+            if longPressedChat?.id == chat.id {
+                // If long pressed, tapping should dismiss the long press state
+                withAnimation {
+                    longPressedChat = nil
+                }
+            } else {
+                // Normal tap - navigate to conversation
+                navigationPath.append(ChatsRoute.conversation(chat))
+            }
         }
     }
 }
@@ -267,10 +419,12 @@ struct ChatItemView: View {
     let totalCount: Int
     let isLastItem: Bool
     let isAtListStart: Bool
+    let hasPinnedMessages: Bool
     let scrollOffset: CGFloat
     let contentHeight: CGFloat
     let scrollViewHeight: CGFloat
     @Binding var navigationPath: NavigationPath
+    @Binding var profileUserToShow: ProfileUser?
     
     var body: some View {
         GeometryReader { geo in
@@ -304,7 +458,13 @@ struct ChatItemView: View {
         var bottomEffectGate: CGFloat = 1
         
         // At the very top of the list
-        if isAtListStart && isAtAbsoluteTop {
+        // When there are no pinned messages, the first item should still get parallax effect
+        // because it's not at the visual "top" of the interface
+        if isAtListStart && isAtAbsoluteTop && !hasPinnedMessages {
+            // Don't disable top effect when there are no pinned messages
+            topEffectGate = 1
+        } else if isAtListStart && isAtAbsoluteTop {
+            // Only disable when there are pinned messages and we're at the very top
             topEffectGate = 0
         }
         
@@ -326,7 +486,14 @@ struct ChatItemView: View {
         let parallaxDistance = (midY - screenMid) / 24
         let parallax = parallaxDistance * effective
         
-        return ChatRowView(chat: chat)
+        return ChatRowView(chat: chat,             onAvatarTap: {
+                // Open the other user's profile for 1:1 chats
+                if let otherUserId = chat.otherParticipantId, !chat.isGroupChat {
+                    print("👆 Avatar tapped - opening profile for user: \(otherUserId)")
+                    profileUserToShow = ProfileUser(userId: otherUserId)
+                    print("   profileUserToShow set to: \(profileUserToShow?.userId ?? "nil")")
+                }
+            })
             .frame(height: 84)
             .frame(maxWidth: .infinity)
             .compositingGroup()
@@ -350,6 +517,17 @@ struct ChatItemView: View {
         .opacity(opacity)
         .blur(radius: blur)
         .offset(y: parallax)
+    }
+}
+
+// Helper struct for presenting user profiles
+struct ProfileUser: Identifiable {
+    let id: String
+    let userId: String
+    
+    init(userId: String) {
+        self.id = userId
+        self.userId = userId
     }
 }
 
