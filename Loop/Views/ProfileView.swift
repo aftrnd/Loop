@@ -31,10 +31,10 @@ struct ProfileView: View {
     @State private var selectedBanner: UIImage?
     
     // Layout constants
-    private let avatarMaskSize: CGFloat = 120
+    private let avatarMaskSize: CGFloat = 110
     private let avatarImageSize: CGFloat = 100
     private let avatarLeadingPadding: CGFloat = 16
-    private let avatarOverlapOffset: CGFloat = -60
+    private let avatarOverlapOffset: CGFloat = -55
     
     var body: some View {
         NavigationStack {
