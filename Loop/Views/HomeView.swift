@@ -3,8 +3,6 @@ import SwiftUI
 struct HomeView: View {
     @StateObject private var viewModel = HomeFeedViewModel()
     @State private var scrollOffset: CGFloat = 0
-    @State private var contentHeight: CGFloat = 0
-    @State private var scrollViewHeight: CGFloat = 0
     @State private var isComposing = false
     @State private var composeText = ""
     @State private var profileUserToShow: ProfileUser?
@@ -18,7 +16,6 @@ struct HomeView: View {
                     .ignoresSafeArea()
                 
                 feedListView
-                fadeOverlays
                 
                 // Bottom compose input (hidden when scrolling)
                 VStack {
@@ -113,8 +110,19 @@ struct HomeView: View {
     private var feedListView: some View {
         GeometryReader { scrollGeometry in
             List {
-                scrollSentinel
-                
+                // Scroll sentinel
+                GeometryReader { geo in
+                    let topMinY = geo.frame(in: .named("loopScroll")).minY
+                    Color.clear
+                        .onChange(of: topMinY) { _, newValue in
+                            let offset = max(0, -newValue)
+                            scrollOffset = offset
+                        }
+                }
+                .frame(height: 0)
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets())
                 // Feed content
                 if viewModel.isLoading && viewModel.loops.isEmpty {
                     // Loading state
@@ -160,18 +168,35 @@ struct HomeView: View {
                     .listRowBackground(Color.clear)
                 } else {
                     ForEach(Array(viewModel.loops.enumerated()), id: \.element.id) { index, loop in
-                        LoopItemView(
+                        LoopCardView(
                             loop: loop,
-                            index: index,
-                            totalCount: viewModel.loops.count,
-                            isLastItem: index == viewModel.loops.count - 1,
-                            isAtListStart: index == 0 && scrollOffset <= 32,
-                            scrollOffset: scrollOffset,
-                            contentHeight: contentHeight,
-                            scrollViewHeight: scrollViewHeight,
-                            viewModel: viewModel,
-                            profileUserToShow: $profileUserToShow
+                            isLiked: viewModel.isLikedByCurrentUser(loop),
+                            onLike: {
+                                Task {
+                                    await viewModel.toggleLike(for: loop)
+                                }
+                            },
+                            onReply: {
+                                viewModel.replyToLoop(loop)
+                            },
+                            onDelete: viewModel.canDeleteLoop(loop) ? {
+                                Task {
+                                    await viewModel.deleteLoop(loop)
+                                }
+                            } : nil,
+                            onAvatarTap: {
+                                print("👆 Avatar tapped - opening profile for user: \(loop.authorId)")
+                                profileUserToShow = ProfileUser(userId: loop.authorId)
+                            }
                         )
+                        .overlay(alignment: .bottom) {
+                            if index < viewModel.loops.count - 1 {
+                                Rectangle()
+                                    .fill(Color(.separator))
+                                    .frame(height: 0.5)
+                                    .padding(.horizontal, 16)
+                            }
+                        }
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
                         .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
@@ -197,132 +222,21 @@ struct HomeView: View {
                         .listRowBackground(Color.clear)
                     }
                 }
-                
-                // Bottom sentinel to track content height
-                GeometryReader { geo in
-                    Color.clear
-                        .onChange(of: geo.frame(in: .named("loopScroll")).maxY) { _, newValue in
-                            contentHeight = newValue
-                        }
-                }
-                .frame(height: 0)
-                .listRowSeparator(.hidden)
-                .listRowBackground(Color.clear)
-                .listRowInsets(EdgeInsets())
+            
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .listSectionSeparator(.hidden)
             .coordinateSpace(name: "loopScroll")
             .scrollIndicators(.hidden)
-            .contentMargins(.top, AppConstants.Layout.homeListContentTopMargin)
+            .contentMargins(.top, AppConstants.Layout.listContentTopMargin)
             .refreshable {
                 await viewModel.refreshFeed()
             }
-            .onAppear {
-                scrollViewHeight = scrollGeometry.size.height
-            }
-            .onChange(of: scrollGeometry.size.height) { _, newValue in
-                scrollViewHeight = newValue
-            }
         }
-    }
-    
-    private var scrollSentinel: some View {
-        GeometryReader { geo in
-            let topMinY = geo.frame(in: .named("loopScroll")).minY
-            Color.clear
-                .onChange(of: topMinY) { _, newValue in
-                    let offset = max(0, -newValue)
-                    scrollOffset = offset
-                }
-        }
-        .frame(height: 0)
-        .listRowSeparator(.hidden)
-        .listRowBackground(Color.clear)
-        .listRowInsets(EdgeInsets())
-    }
-    
-    private var fadeOverlays: some View {
-        VStack {
-            LinearGradient(
-                colors: [
-                    Color(.systemBackground),
-                    Color(.systemBackground).opacity(0)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .frame(height: 40)
-            .allowsHitTesting(false)
-            
-            Spacer()
-            
-            LinearGradient(
-                colors: [
-                    Color(.systemBackground).opacity(0),
-                    Color(.systemBackground)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .frame(height: 40)
-            .allowsHitTesting(false)
-        }
-        .ignoresSafeArea(.container, edges: .vertical)
     }
 }
 
-struct LoopItemView: View {
-    let loop: Loop
-    let index: Int
-    let totalCount: Int
-    let isLastItem: Bool
-    let isAtListStart: Bool
-    let scrollOffset: CGFloat
-    let contentHeight: CGFloat
-    let scrollViewHeight: CGFloat
-    let viewModel: HomeFeedViewModel
-    @Binding var profileUserToShow: ProfileUser?
-    
-    var body: some View {
-        createLoopItem()
-    }
-    
-    private func createLoopItem() -> some View {
-        LoopCardView(
-            loop: loop,
-            isLiked: viewModel.isLikedByCurrentUser(loop),
-            onLike: {
-                Task {
-                    await viewModel.toggleLike(for: loop)
-                }
-            },
-            onReply: {
-                viewModel.replyToLoop(loop)
-            },
-            onDelete: viewModel.canDeleteLoop(loop) ? {
-                Task {
-                    await viewModel.deleteLoop(loop)
-                }
-            } : nil,
-            onAvatarTap: {
-                // Open the loop author's profile (exact same logic as Messages)
-                print("👆 Avatar tapped - opening profile for user: \(loop.authorId)")
-                profileUserToShow = ProfileUser(userId: loop.authorId)
-                print("   profileUserToShow set to: \(profileUserToShow?.userId ?? "nil")")
-            }
-        )
-        .overlay(alignment: .bottom) {
-            if index < totalCount - 1 {
-                Rectangle()
-                    .fill(Color(.separator))
-                    .frame(height: 0.5)
-                    .padding(.horizontal, 16) // Inset divider like Twitter
-            }
-        }
-    }
-}
 
 struct InlineComposeView: View {
     @Binding var isComposing: Bool

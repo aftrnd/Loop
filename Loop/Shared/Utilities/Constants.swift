@@ -8,10 +8,8 @@ struct AppConstants {
     }
     
     struct Layout {
-        // Standard list content margin to align with navigation bar
+        // Standard list content margin to align with navigation bar (shared across all feeds)
         static let listContentTopMargin: CGFloat = -32
-        // Adjusted margin for Home feed to match Messages positioning
-        static let homeListContentTopMargin: CGFloat = -27
     }
     
     struct Animation {

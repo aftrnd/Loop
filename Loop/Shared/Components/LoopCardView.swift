@@ -194,8 +194,10 @@ struct LoopCardView: View {
                 }
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.leading, 16)
+        .padding(.trailing, 16)
+        .padding(.top, 8)
+        .padding(.bottom, 12)
         .background(Color.clear)
     }
 }

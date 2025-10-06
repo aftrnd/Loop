@@ -106,6 +106,8 @@ struct ChatRowView: View {
         .offset(y: 0)
         .padding(.leading, 16)
         .padding(.trailing, 0) // No trailing padding to allow time to extend to edge
+        .padding(.top, 8)
+        .padding(.bottom, 12)
         .contentShape(RoundedRectangle(cornerRadius: 18))
         .compositingGroup()
         // Parallax is now applied at the row container level in ChatsListView
