@@ -3,6 +3,7 @@ import FirebaseAuth
 import PhotosUI
 
 struct ProfileView: View {
+    @Environment(\.colorScheme) private var colorScheme
     @State private var currentUser: User?
     @State private var isLoading = true
     @State private var showSettings = false
@@ -377,10 +378,16 @@ struct ProfileView: View {
                         .glassEffect(.regular, in: .rect(cornerRadius: 12))
                 }
             } else {
-                Text("@\(currentUser?.username ?? "username")")
-                    .font(.callout)
-                    .fontWeight(.regular)
-                    .foregroundStyle(.secondary)
+                HStack(spacing: 4) {
+                    Image(systemName: "at")
+                        .font(.callout)
+                        .fontWeight(.bold)
+                        .foregroundStyle(.secondary)
+                    Text(currentUser?.username ?? "username")
+                        .font(.callout)
+                        .fontWeight(.regular)
+                        .foregroundStyle(.secondary)
+                }
                 
                 Image(systemName: "checkmark.seal.fill")
                     .foregroundStyle(.blue)
@@ -474,7 +481,7 @@ struct ProfileView: View {
                         .font(.title3)
                 }
                 .padding(.vertical, 4)
-                .listRowBackground(Color(.systemGray6))
+                .listRowBackground(colorScheme == .dark ? Color.black : Color(.systemGray6))
             } footer: {
                 Text("Not public and only visible to you")
                     .font(.caption)
@@ -502,7 +509,7 @@ struct ProfileView: View {
                             .foregroundColor(.secondary)
                     }
                 }
-                .listRowBackground(Color(.systemGray6))
+                .listRowBackground(colorScheme == .dark ? Color.black : Color(.systemGray6))
                 
                 Button {
                     showLogoutConfirmation = true
@@ -519,7 +526,7 @@ struct ProfileView: View {
                         Spacer()
                     }
                 }
-                .listRowBackground(Color(.systemGray6))
+                .listRowBackground(colorScheme == .dark ? Color.black : Color(.systemGray6))
             }
         }
         .listStyle(.insetGrouped)
