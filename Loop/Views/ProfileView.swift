@@ -30,6 +30,12 @@ struct ProfileView: View {
     @State private var bannerPickerItem: PhotosPickerItem?
     @State private var selectedBanner: UIImage?
     
+    // Layout constants
+    private let avatarMaskSize: CGFloat = 120
+    private let avatarImageSize: CGFloat = 100
+    private let avatarLeadingPadding: CGFloat = 16
+    private let avatarOverlapOffset: CGFloat = -60
+    
     var body: some View {
         NavigationStack {
             GeometryReader { geometry in
@@ -48,7 +54,7 @@ struct ProfileView: View {
                             // Avatar
                             avatarView
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.leading, 16)
+                                .padding(.leading, avatarLeadingPadding)
                             
                             // Profile info
                             VStack(alignment: .leading, spacing: 0) {
@@ -80,8 +86,8 @@ struct ProfileView: View {
                             .padding(.top, 8)
                             .padding(.bottom, 16)
                         }
-                        .offset(y: -60)
-                        .padding(.bottom, -60)
+                        .offset(y: avatarOverlapOffset)
+                        .padding(.bottom, avatarOverlapOffset)
                         
                         // Settings section with fade effect
                         if !isEditing {
@@ -208,33 +214,49 @@ struct ProfileView: View {
     private var bannerContent: some View {
         GeometryReader { geometry in
             ZStack(alignment: .bottomTrailing) {
-                if let banner = selectedBanner {
-                    // Show locally selected image (while uploading or editing)
-                    Image(uiImage: banner)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(width: geometry.size.width, height: geometry.size.height)
-                        .clipped()
-                } else if let bannerURL = currentUser?.bannerURL, let url = URL(string: bannerURL) {
-                    // Load from Firebase Storage URL with caching
-                    CachedAsyncImage(url: url) { image in
-                        image
+                Group {
+                    if let banner = selectedBanner {
+                        // Show locally selected image (while uploading or editing)
+                        Image(uiImage: banner)
                             .resizable()
                             .aspectRatio(contentMode: .fill)
                             .frame(width: geometry.size.width, height: geometry.size.height)
                             .clipped()
-                    } placeholder: {
-                        ZStack {
-                            Color(.systemGray5)
+                    } else if let bannerURL = currentUser?.bannerURL, let url = URL(string: bannerURL) {
+                        // Load from Firebase Storage URL with caching
+                        CachedAsyncImage(url: url) { image in
+                            image
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
                                 .frame(width: geometry.size.width, height: geometry.size.height)
-                            
-                            ProgressView()
+                                .clipped()
+                        } placeholder: {
+                            ZStack {
+                                Color(.systemGray5)
+                                    .frame(width: geometry.size.width, height: geometry.size.height)
+                                
+                                ProgressView()
+                            }
                         }
+                    } else {
+                        // Default gray background
+                        Color(.systemGray5)
+                            .frame(width: geometry.size.width, height: geometry.size.height)
                     }
-                } else {
-                    // Default gray background
-                    Color(.systemGray5)
-                        .frame(width: geometry.size.width, height: geometry.size.height)
+                }
+                .mask {
+                    ZStack {
+                        Rectangle()
+                        // Cut out avatar ring area - positioned exactly where avatar will be
+                        // Avatar center: x = leadingPadding + (maskSize / 2), y = banner bottom (height)
+                        Circle()
+                            .frame(width: avatarMaskSize, height: avatarMaskSize)
+                            .offset(
+                                x: -(geometry.size.width / 2) + avatarLeadingPadding + (avatarMaskSize / 2),
+                                y: (geometry.size.height / 2)
+                            )
+                            .blendMode(.destinationOut)
+                    }
                 }
                 
                 if isEditing {
@@ -263,33 +285,21 @@ struct ProfileView: View {
                 Image(uiImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
-                    .frame(width: 120, height: 120)
+                    .frame(width: avatarImageSize, height: avatarImageSize)
                     .clipShape(Circle())
-                    .overlay {
-                        Circle()
-                            .strokeBorder(Color(.systemBackground), lineWidth: 4)
-                    }
             } else if let avatarURL = currentUser?.avatarURL, let url = URL(string: avatarURL) {
                 // Load from Firebase Storage URL with caching
                 CachedAsyncImage(url: url) { image in
                     image
                         .resizable()
                         .aspectRatio(contentMode: .fill)
-                        .frame(width: 120, height: 120)
+                        .frame(width: avatarImageSize, height: avatarImageSize)
                         .clipShape(Circle())
-                        .overlay {
-                            Circle()
-                                .strokeBorder(Color(.systemBackground), lineWidth: 4)
-                        }
                 } placeholder: {
                     ZStack {
                         Circle()
                             .fill(Color(.systemGray5))
-                            .frame(width: 120, height: 120)
-                            .overlay {
-                                Circle()
-                                    .strokeBorder(Color(.systemBackground), lineWidth: 4)
-                            }
+                            .frame(width: avatarImageSize, height: avatarImageSize)
                         
                         ProgressView()
                     }
@@ -298,14 +308,10 @@ struct ProfileView: View {
                 // Default initials view
                 Circle()
                     .fill(Color(.systemGray5))
-                    .frame(width: 120, height: 120)
-                    .overlay {
-                        Circle()
-                            .strokeBorder(Color(.systemBackground), lineWidth: 4)
-                    }
+                    .frame(width: avatarImageSize, height: avatarImageSize)
                 
                 Color.clear
-                    .frame(width: 120, height: 120)
+                    .frame(width: avatarImageSize, height: avatarImageSize)
                     .glassEffect(.regular, in: Circle())
                 
                 Text(userInitials)
@@ -324,9 +330,10 @@ struct ProfileView: View {
                                 .glassEffect(.regular, in: Circle())
                         }
                 }
-                .offset(x: 42, y: 42)
+                .offset(x: avatarImageSize / 2 - 8, y: avatarImageSize / 2 - 8)
             }
         }
+        .frame(width: avatarMaskSize, height: avatarMaskSize) // Keep the overall frame for layout
     }
     
     // MARK: - User Info
