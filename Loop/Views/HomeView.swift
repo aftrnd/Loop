@@ -2,12 +2,13 @@ import SwiftUI
 
 struct HomeView: View {
     @StateObject private var viewModel = HomeFeedViewModel()
-    @State private var showingProfile = false
     @State private var scrollOffset: CGFloat = 0
     @State private var contentHeight: CGFloat = 0
     @State private var scrollViewHeight: CGFloat = 0
     @State private var isComposing = false
     @State private var composeText = ""
+    @State private var profileUserToShow: ProfileUser?
+    @State private var showProfile = false
     @FocusState private var isComposeFieldFocused: Bool
     
     var body: some View {
@@ -23,7 +24,7 @@ struct HomeView: View {
                 VStack {
                     Spacer()
                     
-                    if scrollOffset < 50 { // Show when not scrolling much
+                    if scrollOffset < 5 { // Show when not scrolling much
                         InlineComposeView(
                             isComposing: $isComposing,
                             composeText: $composeText,
@@ -41,8 +42,13 @@ struct HomeView: View {
                                 }
                             }
                         )
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                        .animation(.easeInOut(duration: 0.3), value: scrollOffset < 50)
+                        .transition(
+                            .asymmetric(
+                                insertion: .move(edge: .bottom).combined(with: .opacity).combined(with: .scale(scale: 0.95)),
+                                removal: .move(edge: .bottom).combined(with: .opacity).combined(with: .scale(scale: 1.05))
+                            )
+                        )
+                        .animation(.spring(response: 0.4, dampingFraction: 0.8, blendDuration: 0), value: scrollOffset < 5)
                     }
                 }
             }
@@ -60,6 +66,21 @@ struct HomeView: View {
                                 .glassEffect(.regular, in: Capsule())
                         )
                 }
+                
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(action: {
+                        // Haptic feedback
+                        let impactFeedback = UIImpactFeedbackGenerator(style: .light)
+                        impactFeedback.impactOccurred()
+                        
+                        showProfile = true
+                    }) {
+                        Image(systemName: "person")
+                            .font(.body)
+                            .fontWeight(.medium)
+                    }
+                    .buttonStyle(.plain)
+                }
             }
             .toolbarBackground(.hidden, for: .navigationBar)
         }
@@ -72,9 +93,11 @@ struct HomeView: View {
                 }
             )
         }
-        .sheet(isPresented: $showingProfile) {
-            // TODO: Present ProfileView
-            Text("Profile View")
+        .sheet(isPresented: $showProfile) {
+            ProfileView()
+        }
+        .sheet(item: $profileUserToShow) { profileUser in
+            ProfileView(userId: profileUser.userId)
         }
         .alert("Error", isPresented: .constant(viewModel.errorMessage != nil)) {
             Button("OK") {
@@ -146,7 +169,8 @@ struct HomeView: View {
                             scrollOffset: scrollOffset,
                             contentHeight: contentHeight,
                             scrollViewHeight: scrollViewHeight,
-                            viewModel: viewModel
+                            viewModel: viewModel,
+                            profileUserToShow: $profileUserToShow
                         )
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
@@ -191,7 +215,7 @@ struct HomeView: View {
             .listSectionSeparator(.hidden)
             .coordinateSpace(name: "loopScroll")
             .scrollIndicators(.hidden)
-            .contentMargins(.top, -32)
+            .contentMargins(.top, AppConstants.Layout.homeListContentTopMargin)
             .refreshable {
                 await viewModel.refreshFeed()
             }
@@ -259,6 +283,7 @@ struct LoopItemView: View {
     let contentHeight: CGFloat
     let scrollViewHeight: CGFloat
     let viewModel: HomeFeedViewModel
+    @Binding var profileUserToShow: ProfileUser?
     
     var body: some View {
         createLoopItem()
@@ -276,11 +301,16 @@ struct LoopItemView: View {
             onReply: {
                 viewModel.replyToLoop(loop)
             },
-            onShare: {
-                viewModel.shareLoop(loop)
-            },
+            onDelete: viewModel.canDeleteLoop(loop) ? {
+                Task {
+                    await viewModel.deleteLoop(loop)
+                }
+            } : nil,
             onAvatarTap: {
-                // TODO: Navigate to user profile
+                // Open the loop author's profile (exact same logic as Messages)
+                print("👆 Avatar tapped - opening profile for user: \(loop.authorId)")
+                profileUserToShow = ProfileUser(userId: loop.authorId)
+                print("   profileUserToShow set to: \(profileUserToShow?.userId ?? "nil")")
             }
         )
         .overlay(alignment: .bottom) {
@@ -326,7 +356,7 @@ struct InlineComposeView: View {
                     .padding(.horizontal, 20)
                     .padding(.top, 12)
                     
-                    TextField("What's happening in the loop?", text: $composeText, axis: .vertical)
+                    TextField("Keep everyone in the loop. What's new?", text: $composeText, axis: .vertical)
                         .font(.body)
                         .focused(isComposeFieldFocused)
                         .lineLimit(5...10)
@@ -340,36 +370,43 @@ struct InlineComposeView: View {
                 .padding(.horizontal, 20)
                 .padding(.bottom, 8)
             } else {
-                // Collapsed compose bar
-                Button(action: {
-                    isComposing = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                        isComposeFieldFocused.wrappedValue = true
+                // Collapsed compose bar - separated + button and text field
+                HStack(spacing: 8) {
+                    // Circular + button
+                    Button(action: {
+                        showingImagePicker = true
+                    }) {
+                        Image(systemName: "plus")
+                            .font(.system(size: 18, weight: .medium))
+                            .foregroundColor(.primary)
+                            .frame(width: 44, height: 44)
+                            .background(
+                                Color.clear
+                                    .glassEffect(.regular, in: Circle())
+                            )
                     }
-                }) {
-                    HStack(spacing: 12) {
-                        Text("What's happening in the loop?")
+                    .buttonStyle(.plain)
+                    
+                    // Text field area
+                    Button(action: {
+                        isComposing = true
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            isComposeFieldFocused.wrappedValue = true
+                        }
+                    }) {
+                        Text("What's new?")
                             .font(.body)
                             .foregroundColor(.secondary)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                        
-                        Button(action: {
-                            showingImagePicker = true
-                        }) {
-                            Image(systemName: "plus")
-                                .font(.system(size: 18, weight: .medium))
-                                .foregroundColor(.accentColor)
-                        }
-                        .buttonStyle(.plain)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 12)
+                            .background(
+                                Color.clear
+                                    .glassEffect(.regular, in: Capsule())
+                            )
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-                    .background(
-                        Color.clear
-                            .glassEffect(.regular, in: Capsule())
-                    )
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
                 .padding(.horizontal, 20) // Standard tab bar side padding
                 .padding(.bottom, 8)
             }
@@ -381,6 +418,7 @@ struct InlineComposeView: View {
         }
     }
 }
+
 
 #Preview {
     HomeView()

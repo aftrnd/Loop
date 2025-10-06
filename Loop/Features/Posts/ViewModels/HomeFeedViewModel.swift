@@ -228,9 +228,20 @@ class HomeFeedViewModel: ObservableObject {
         showingCompose = true
     }
     
-    func shareLoop(_ loop: Loop) {
-        // TODO: Implement sharing functionality
-        // This could include native iOS sharing sheet
+    func canDeleteLoop(_ loop: Loop) -> Bool {
+        guard let currentUserId = Auth.auth().currentUser?.uid else { return false }
+        return loop.authorId == currentUserId
+    }
+    
+    func deleteLoop(_ loop: Loop) async {
+        guard canDeleteLoop(loop) else { return }
+        
+        do {
+            try await FirebaseService.shared.deleteLoop(loop.id)
+            // The real-time listener will automatically update the UI
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
     
     // MARK: - Helper Methods

@@ -5,7 +5,7 @@ struct LoopCardView: View {
     let isLiked: Bool
     let onLike: () -> Void
     let onReply: () -> Void
-    let onShare: () -> Void
+    let onDelete: (() -> Void)?
     let onAvatarTap: (() -> Void)?
     
     @State private var showingFullText = false
@@ -70,15 +70,6 @@ struct LoopCardView: View {
                                     .font(.system(size: 14))
                                     .foregroundColor(badgeType.color)
                             }
-                            
-                            // Username on the same line to save space
-                            if let username = loop.formattedUsername {
-                                Text(username)
-                                    .font(.subheadline)
-                                    .foregroundColor(.secondary)
-                                    .lineLimit(1)
-                                    .truncationMode(.tail)
-                            }
                         }
                         
                         Spacer()
@@ -91,7 +82,24 @@ struct LoopCardView: View {
                                 .lineLimit(1)
                                 .truncationMode(.tail)
                         }
-                        .padding(.trailing, 16)
+                    }
+                    
+                    // Username on its own line below the name (exact ProfileView styling)
+                    if let username = loop.authorUsername, !username.isEmpty {
+                        HStack {
+                            HStack(spacing: 4) {
+                                Image(systemName: "at")
+                                    .font(.callout)
+                                    .fontWeight(.heavy)
+                                    .foregroundStyle(.secondary)
+                                Text(username)
+                                    .font(.callout)
+                                    .fontWeight(.regular)
+                                    .foregroundStyle(.secondary)
+                            }
+                            
+                            Spacer()
+                        }
                     }
                 }
                 .frame(maxHeight: .infinity, alignment: .center)
@@ -171,15 +179,19 @@ struct LoopCardView: View {
                 }
                 .buttonStyle(.plain)
                 
-                // Share button
-                Button(action: onShare) {
-                    Image(systemName: "square.and.arrow.up")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(.secondary)
-                }
-                .buttonStyle(.plain)
-                
                 Spacer()
+                
+                // Three dots menu (only show if user can delete)
+                if let onDelete = onDelete {
+                    Menu {
+                        Button("Delete", role: .destructive, action: onDelete)
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
             }
         }
         .padding(.horizontal, 16)
@@ -275,7 +287,7 @@ struct MultipleMediaView: View {
             isLiked: false,
             onLike: {},
             onReply: {},
-            onShare: {},
+            onDelete: {},
             onAvatarTap: {}
         )
         
@@ -301,7 +313,7 @@ struct MultipleMediaView: View {
             isLiked: true,
             onLike: {},
             onReply: {},
-            onShare: {},
+            onDelete: nil,
             onAvatarTap: {}
         )
     }

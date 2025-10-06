@@ -188,7 +188,7 @@ struct ChatsListView: View {
             .listSectionSeparator(.hidden)
             .coordinateSpace(name: "chatScroll")
             .scrollIndicators(.hidden)
-            .contentMargins(.top, -32)
+            .contentMargins(.top, AppConstants.Layout.listContentTopMargin)
             .refreshable {
                 await refreshChats()
             }
@@ -520,16 +520,6 @@ struct ChatItemView: View {
     }
 }
 
-// Helper struct for presenting user profiles
-struct ProfileUser: Identifiable {
-    let id: String
-    let userId: String
-    
-    init(userId: String) {
-        self.id = userId
-        self.userId = userId
-    }
-}
 
 #Preview {
     NavigationStack {
