@@ -3,6 +3,7 @@ import SwiftUI
 struct ConversationView: View {
     let chat: Chat
     @State private var viewModel: ConversationViewModel
+    @State private var showingProfile = false
 
     init(chat: Chat) {
         self.chat = chat
@@ -69,12 +70,32 @@ struct ConversationView: View {
             }
             .navigationTitle(chat.displayTitle)
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Button(action: {
+                        // Only show profile for 1:1 chats
+                        if !chat.isGroupChat {
+                            showingProfile = true
+                        }
+                    }) {
+                        Text(chat.displayTitle)
+                            .font(.headline)
+                            .foregroundColor(.primary)
+                    }
+                    .disabled(chat.isGroupChat) // Disable for group chats
+                }
+            }
             .safeAreaInset(edge: .bottom, alignment: .center, spacing: 0) {
                 MessageInputView(messageText: $viewModel.messageText) {
                     viewModel.sendMessage()
                 }
                 .zIndex(1)
                 .background(Color.clear)
+            }
+            .sheet(isPresented: $showingProfile) {
+                if let otherUserId = chat.otherParticipantId {
+                    ProfileView(userId: otherUserId)
+                }
             }
     }
 }

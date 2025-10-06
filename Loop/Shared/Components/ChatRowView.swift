@@ -3,6 +3,7 @@ import SwiftUI
 struct ChatRowView: View {
     let chat: Chat
     var parallax: CGFloat = 0
+    var onAvatarTap: (() -> Void)?
     @Environment(\.colorScheme) private var colorScheme
     
     var body: some View {
@@ -21,6 +22,12 @@ struct ChatRowView: View {
                     .font(.headline)
                     .fontWeight(.semibold)
                     .foregroundColor(.primary)
+            }
+            .onTapGesture {
+                // Only show profile for 1:1 chats
+                if !chat.isGroupChat {
+                    onAvatarTap?()
+                }
             }
             .overlay(alignment: .topTrailing) {
                 if chat.unreadCount > 0 {

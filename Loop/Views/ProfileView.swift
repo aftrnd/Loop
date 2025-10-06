@@ -3,6 +3,10 @@ import FirebaseAuth
 import PhotosUI
 
 struct ProfileView: View {
+    // Optional userId - if nil, shows current user's profile (editable)
+    // If provided, shows that user's profile (read-only)
+    let userId: String?
+    
     @Environment(\.colorScheme) private var colorScheme
     @State private var currentUser: User?
     @State private var isLoading = true
@@ -36,6 +40,16 @@ struct ProfileView: View {
     private let avatarLeadingPadding: CGFloat = 16
     private let avatarOverlapOffset: CGFloat = -55
     
+    // Computed property to determine if viewing own profile
+    private var isOwnProfile: Bool {
+        guard let currentUserId = Auth.auth().currentUser?.uid else { return false }
+        return userId == nil || userId == currentUserId
+    }
+    
+    init(userId: String? = nil) {
+        self.userId = userId
+    }
+    
     var body: some View {
         NavigationStack {
             GeometryReader { geometry in
@@ -61,7 +75,7 @@ struct ProfileView: View {
                                 displayNameView
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                 
-                                if isEditing {
+                                if isEditing && isOwnProfile {
                                     // Username and Location on same line when editing
                                     HStack(spacing: 8) {
                                         usernameView
@@ -77,7 +91,7 @@ struct ProfileView: View {
                                     .padding(.vertical, 8)
                                 }
                                 
-                                if let bio = currentUser?.bio, !bio.isEmpty || isEditing {
+                                if let bio = currentUser?.bio, !bio.isEmpty || (isEditing && isOwnProfile) {
                                     bioView
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                 }
@@ -89,8 +103,8 @@ struct ProfileView: View {
                         .offset(y: avatarOverlapOffset)
                         .padding(.bottom, avatarOverlapOffset)
                         
-                        // Settings section with fade effect
-                        if !isEditing {
+                        // Settings section with fade effect (only for own profile)
+                        if !isEditing && isOwnProfile {
                             GeometryReader { settingsGeo in
                                 let minY = settingsGeo.frame(in: .global).minY
                                 let screenHeight = UIScreen.main.bounds.height
@@ -129,24 +143,26 @@ struct ProfileView: View {
                 }
                 
                 ToolbarItem(placement: .topBarTrailing) {
-                    if isEditing {
-                        Button {
-                            if isSaving { return }
-                            saveProfile()
-                        } label: {
-                            if isSaving {
-                                ProgressView()
-                            } else {
-                                Text("Done")
-                                    .fontWeight(.medium)
+                    if isOwnProfile {
+                        if isEditing {
+                            Button {
+                                if isSaving { return }
+                                saveProfile()
+                            } label: {
+                                if isSaving {
+                                    ProgressView()
+                                } else {
+                                    Text("Done")
+                                        .fontWeight(.medium)
+                                }
                             }
+                            .disabled(isSaving)
+                        } else {
+                            Button("Edit") {
+                                startEditing()
+                            }
+                            .fontWeight(.medium)
                         }
-                        .disabled(isSaving)
-                    } else {
-                        Button("Edit") {
-                            startEditing()
-                        }
-                        .fontWeight(.medium)
                     }
                 }
             }
@@ -259,7 +275,7 @@ struct ProfileView: View {
                     }
                 }
                 
-                if isEditing {
+                if isEditing && isOwnProfile {
                     PhotosPicker(selection: $bannerPickerItem, matching: .images) {
                         Image(systemName: "camera.fill")
                             .font(.caption)
@@ -319,7 +335,7 @@ struct ProfileView: View {
                     .foregroundColor(.primary)
             }
             
-            if isEditing {
+            if isEditing && isOwnProfile {
                 PhotosPicker(selection: $avatarPickerItem, matching: .images) {
                     Image(systemName: "camera.fill")
                         .font(.caption)
@@ -340,7 +356,7 @@ struct ProfileView: View {
     
     private var displayNameView: some View {
         Group {
-            if isEditing {
+            if isEditing && isOwnProfile {
                 TextField("Display Name", text: $editDisplayName)
                     .font(.title3)
                     .fontWeight(.bold)
@@ -363,7 +379,7 @@ struct ProfileView: View {
     
     private var usernameView: some View {
         HStack(spacing: 4) {
-            if isEditing {
+            if isEditing && isOwnProfile {
                 HStack(spacing: 4) {
                     Text("@")
                         .font(.callout)
@@ -436,7 +452,7 @@ struct ProfileView: View {
     
     private var bioView: some View {
         Group {
-            if isEditing {
+            if isEditing && isOwnProfile {
                 TextField("Add a bio...", text: $editBio, axis: .vertical)
                     .font(.callout)
                     .lineLimit(2...4)
@@ -600,14 +616,22 @@ struct ProfileView: View {
         
         Task {
             do {
-                if let firebaseUser = Auth.auth().currentUser {
-                    if let firestoreUser = try await FirebaseService.shared.getUser(withId: firebaseUser.uid) {
-                        currentUser = firestoreUser
-                    } else {
-                        currentUser = try await FirebaseService.shared.createUserIfNotExists(
-                            phoneNumber: firebaseUser.phoneNumber ?? "",
-                            displayName: firebaseUser.displayName
-                        )
+                if let targetUserId = userId {
+                    // Loading another user's profile
+                    if let user = try await FirebaseService.shared.getUser(withId: targetUserId) {
+                        currentUser = user
+                    }
+                } else {
+                    // Loading own profile
+                    if let firebaseUser = Auth.auth().currentUser {
+                        if let firestoreUser = try await FirebaseService.shared.getUser(withId: firebaseUser.uid) {
+                            currentUser = firestoreUser
+                        } else {
+                            currentUser = try await FirebaseService.shared.createUserIfNotExists(
+                                phoneNumber: firebaseUser.phoneNumber ?? "",
+                                displayName: firebaseUser.displayName
+                            )
+                        }
                     }
                 }
                 isLoading = false

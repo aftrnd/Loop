@@ -77,7 +77,7 @@ struct MainTabView: View {
                             // Search results
                             List {
                                 ForEach(filteredChats) { chat in
-                                    ChatRowView(chat: chat)
+                                    ChatRowView(chat: chat, onAvatarTap: nil)
                                         .listRowSeparator(.hidden)
                                         .listRowBackground(Color.clear)
                                 }

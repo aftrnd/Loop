@@ -10,6 +10,8 @@ struct ChatsListView: View {
     @State private var navigationPath = NavigationPath()
     @State private var showNewMessage = false
     @State private var showProfile = false
+    @State private var showUserProfile = false
+    @State private var selectedUserId: String?
     @Environment(\.colorScheme) private var colorScheme
     @ObservedObject private var debugManager = DebugManager.shared
     
@@ -66,6 +68,13 @@ struct ChatsListView: View {
                 .presentationDetents([.height(340), .large])
                 .presentationDragIndicator(.visible)
         }
+        .sheet(isPresented: $showUserProfile) {
+            if let userId = selectedUserId {
+                ProfileView(userId: userId)
+                    .presentationDetents([.height(340), .large])
+                    .presentationDragIndicator(.visible)
+            }
+        }
         .sheet(isPresented: $debugManager.isDebugMenuVisible) {
             DebugMenuView()
         }
@@ -91,7 +100,9 @@ struct ChatsListView: View {
                         pinnedChats: viewModel.pinned,
                         colorScheme: colorScheme,
                         navigationPath: $navigationPath,
-                        viewModel: viewModel
+                        viewModel: viewModel,
+                        selectedUserId: $selectedUserId,
+                        showUserProfile: $showUserProfile
                     )
                     .padding(.top, 0) // No top padding for pinned items
                     .padding(.bottom, 8)
@@ -111,7 +122,9 @@ struct ChatsListView: View {
                         scrollOffset: scrollOffset,
                         contentHeight: contentHeight,
                         scrollViewHeight: scrollViewHeight,
-                        navigationPath: $navigationPath
+                        navigationPath: $navigationPath,
+                        selectedUserId: $selectedUserId,
+                        showUserProfile: $showUserProfile
                     )
                     .frame(height: 84)
                     .listRowSeparator(.hidden)
@@ -229,13 +242,15 @@ struct PinnedMessagesView: View {
     @Binding var navigationPath: NavigationPath
     let viewModel: ChatsListViewModel
     @State private var longPressedChat: Chat?
+    @Binding var selectedUserId: String?
+    @Binding var showUserProfile: Bool
     
     var body: some View {
         VStack(spacing: 16) {
             // First row of 3
             HStack(spacing: 0) {
                 ForEach(Array(pinnedChats.prefix(3).enumerated()), id: \.element.id) { index, chat in
-                    pinnedChatItem(chat: chat, isLongPressed: longPressedChat?.id == chat.id)
+                    pinnedChatItem(chat: chat, isLongPressed: longPressedChat?.id == chat.id, selectedUserId: $selectedUserId, showUserProfile: $showUserProfile)
                         .frame(maxWidth: .infinity)
                         .onLongPressGesture {
                             withAnimation {
@@ -249,7 +264,7 @@ struct PinnedMessagesView: View {
             if pinnedChats.count > 3 {
                 HStack(spacing: 0) {
                     ForEach(Array(pinnedChats.dropFirst(3).prefix(3).enumerated()), id: \.element.id) { index, chat in
-                        pinnedChatItem(chat: chat, isLongPressed: longPressedChat?.id == chat.id)
+                        pinnedChatItem(chat: chat, isLongPressed: longPressedChat?.id == chat.id, selectedUserId: $selectedUserId, showUserProfile: $showUserProfile)
                             .frame(maxWidth: .infinity)
                             .onLongPressGesture {
                                 withAnimation {
@@ -273,7 +288,7 @@ struct PinnedMessagesView: View {
         }
     }
     
-    private func pinnedChatItem(chat: Chat, isLongPressed: Bool) -> some View {
+    private func pinnedChatItem(chat: Chat, isLongPressed: Bool, selectedUserId: Binding<String?>, showUserProfile: Binding<Bool>) -> some View {
         VStack(spacing: 8) {
             ZStack {
                 Circle()
@@ -288,6 +303,13 @@ struct PinnedMessagesView: View {
                     .font(.largeTitle)
                     .fontWeight(.semibold)
                     .foregroundColor(.primary)
+            }
+            .onTapGesture(count: 1) {
+                // Avatar tap - show profile for 1:1 chats
+                if !chat.isGroupChat, let otherUserId = chat.otherParticipantId {
+                    selectedUserId.wrappedValue = otherUserId
+                    showUserProfile.wrappedValue = true
+                }
             }
             .overlay(alignment: .topTrailing) {
                 if isLongPressed {
@@ -358,6 +380,8 @@ struct ChatItemView: View {
     let contentHeight: CGFloat
     let scrollViewHeight: CGFloat
     @Binding var navigationPath: NavigationPath
+    @Binding var selectedUserId: String?
+    @Binding var showUserProfile: Bool
     
     var body: some View {
         GeometryReader { geo in
@@ -419,7 +443,13 @@ struct ChatItemView: View {
         let parallaxDistance = (midY - screenMid) / 24
         let parallax = parallaxDistance * effective
         
-        return ChatRowView(chat: chat)
+        return ChatRowView(chat: chat, onAvatarTap: {
+                // Open the other user's profile for 1:1 chats
+                if let otherUserId = chat.otherParticipantId, !chat.isGroupChat {
+                    selectedUserId = otherUserId
+                    showUserProfile = true
+                }
+            })
             .frame(height: 84)
             .frame(maxWidth: .infinity)
             .compositingGroup()
