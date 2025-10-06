@@ -72,13 +72,9 @@ struct ChatsListView: View {
         }
         .sheet(isPresented: $showProfile) {
             ProfileView()
-                .presentationDetents([.height(340), .large])
-                .presentationDragIndicator(.visible)
         }
         .sheet(item: $profileUserToShow) { profileUser in
             ProfileView(userId: profileUser.userId)
-                .presentationDetents([.height(340), .large])
-                .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $debugManager.isDebugMenuVisible) {
             DebugMenuView()

@@ -40,6 +40,9 @@ struct ProfileView: View {
     @State private var isFollowLoading = false
     @State private var triggerSparkles = false
     
+    // Dynamic sheet height
+    @State private var contentHeight: CGFloat = 0
+    
     // Layout constants
     private let avatarMaskSize: CGFloat = 110
     private let avatarImageSize: CGFloat = 100
@@ -50,6 +53,20 @@ struct ProfileView: View {
     private var isOwnProfile: Bool {
         guard let currentUserId = Auth.auth().currentUser?.uid else { return false }
         return userId == nil || userId == currentUserId
+    }
+    
+    // Calculate minimum height needed for profile content
+    private var minimumProfileHeight: CGFloat {
+        let bannerHeight: CGFloat = 180
+        let avatarSection: CGFloat = 30 // Avatar overlap area (reduced)
+        let nameHeight: CGFloat = 28 // Display name
+        let usernameHeight: CGFloat = 18 // Username/location line
+        let followersHeight: CGFloat = 18 // Followers/following line
+        let bioMinHeight: CGFloat = 44 // Minimum 2 lines for bio
+        let spacing: CGFloat = 8 * 3 // 3 gaps of 8px each
+        let padding: CGFloat = 24 // Reduced bottom padding
+        
+        return bannerHeight + avatarSection + nameHeight + usernameHeight + followersHeight + bioMinHeight + spacing + padding
     }
     
     init(userId: String? = nil) {
@@ -217,6 +234,8 @@ struct ProfileView: View {
             } message: {
                 Text(saveErrorMessage)
             }
+            .presentationDetents([.height(minimumProfileHeight), .large])
+            .presentationDragIndicator(.visible)
         }
     }
     
@@ -507,7 +526,7 @@ struct ProfileView: View {
                 .padding(.leading, avatarLeadingPadding)
             
             // Profile info
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 8) {
                 displayNameView
                     .frame(maxWidth: .infinity, alignment: .leading)
                 
@@ -556,10 +575,11 @@ struct ProfileView: View {
                 bioView
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .frame(minHeight: 44) // Minimum height for two lines
+                    .fixedSize(horizontal: false, vertical: true) // Allow vertical expansion
             }
             .padding(.horizontal, 16)
             .padding(.top, 8)
-            .padding(.bottom, 16)
+            .padding(.bottom, 16) // Reduced bottom padding
         }
         .offset(y: avatarOverlapOffset)
         .padding(.bottom, avatarOverlapOffset)
@@ -578,7 +598,7 @@ struct ProfileView: View {
             }
         }
         
-        Spacer(minLength: 40)
+        Spacer(minLength: 20) // Minimal bottom space
     }
     
     // MARK: - Settings
