@@ -42,6 +42,12 @@ struct ProfileView: View {
     
     // Dynamic sheet height
     @State private var contentHeight: CGFloat = 0
+    @State private var currentDetent: PresentationDetent = .height(366)
+    
+    // Computed property to check if sheet is fully expanded
+    private var isSheetFullyExpanded: Bool {
+        currentDetent == .large
+    }
     
     // Layout constants
     private let avatarMaskSize: CGFloat = 110
@@ -126,7 +132,7 @@ struct ProfileView: View {
                 .scrollIndicators(.hidden)
                 .scrollClipDisabled()
                 .ignoresSafeArea(edges: .top)
-                .refreshable {
+                .conditionalRefreshable(isEnabled: isSheetFullyExpanded) {
                     await refreshProfile()
                 }
             }
@@ -234,7 +240,7 @@ struct ProfileView: View {
             } message: {
                 Text(saveErrorMessage)
             }
-            .presentationDetents([.height(minimumProfileHeight), .large])
+            .presentationDetents([.height(minimumProfileHeight), .large], selection: $currentDetent)
             .presentationDragIndicator(.visible)
         }
     }
@@ -689,6 +695,10 @@ struct ProfileView: View {
     
     private var compactFollowButton: some View {
         Button(action: {
+            // Haptic feedback
+            let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
+            impactFeedback.impactOccurred()
+            
             Task {
                 await toggleFollow()
             }

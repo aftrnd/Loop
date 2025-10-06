@@ -49,6 +49,10 @@ struct ChatsListView: View {
                     
                     ToolbarItem(placement: .topBarTrailing) {
                         Button(action: {
+                            // Haptic feedback
+                            let impactFeedback = UIImpactFeedbackGenerator(style: .light)
+                            impactFeedback.impactOccurred()
+                            
                             showProfile = true
                         }) {
                             Image(systemName: "person")
