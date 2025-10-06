@@ -35,6 +35,11 @@ struct ProfileView: View {
     @State private var bannerPickerItem: PhotosPickerItem?
     @State private var selectedBanner: UIImage?
     
+    // Follow system
+    @State private var isFollowing = false
+    @State private var isFollowLoading = false
+    @State private var triggerSparkles = false
+    
     // Layout constants
     private let avatarMaskSize: CGFloat = 110
     private let avatarImageSize: CGFloat = 100
@@ -360,16 +365,25 @@ struct ProfileView: View {
                     }
             } else {
                 HStack(spacing: 6) {
-                    Text(currentUser?.displayName ?? "Display Name")
-                        .font(.title)
-                        .fontWeight(.bold)
-                        .foregroundStyle(.primary)
+                    HStack(spacing: 6) {
+                        Text(currentUser?.displayName ?? "Display Name")
+                            .font(.title)
+                            .fontWeight(.bold)
+                            .foregroundStyle(.primary)
+                        
+                        // Badge inline with name
+                        if let badgeType = currentUser?.badgeType {
+                            Image(systemName: badgeType.iconName)
+                                .foregroundStyle(badgeType.color)
+                                .font(.title3)
+                        }
+                    }
                     
-                    // Badge inline with name
-                    if let badgeType = currentUser?.badgeType {
-                        Image(systemName: badgeType.iconName)
-                            .foregroundStyle(badgeType.color)
-                            .font(.title3)
+                    Spacer()
+                    
+                    // Follow button inline with name (only for other users)
+                    if !isOwnProfile {
+                        compactFollowButton
                     }
                 }
             }
@@ -465,12 +479,12 @@ struct ProfileView: View {
                             .glassEffect(.regular, in: .rect(cornerRadius: 12))
                     }
             } else {
-                if let bio = currentUser?.bio, !bio.isEmpty {
-                    Text(bio)
-                        .font(.callout)
-                        .foregroundStyle(.primary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                // Always show bio area, even if empty
+                Text(currentUser?.bio ?? "")
+                    .font(.callout)
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
             }
         }
     }
@@ -493,7 +507,7 @@ struct ProfileView: View {
                 .padding(.leading, avatarLeadingPadding)
             
             // Profile info
-            VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 6) {
                 displayNameView
                     .frame(maxWidth: .infinity, alignment: .leading)
                 
@@ -503,20 +517,45 @@ struct ProfileView: View {
                         usernameView
                         locationView
                     }
-                    .padding(.vertical, 8)
                 } else {
-                    // Stacked when viewing
-                    VStack(alignment: .leading, spacing: 4) {
-                        usernameView
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .padding(.vertical, 8)
-                }
-                
-                if user.bio != nil && !user.bio!.isEmpty || (isEditing && isOwnProfile) {
-                    bioView
+                    // Username and location with consistent spacing
+                    usernameView
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                
+                // Follower counts (inline format)
+                if !isEditing {
+                    HStack(spacing: 16) {
+                        HStack(spacing: 4) {
+                            Text("\(user.followerCount)")
+                                .font(.callout)
+                                .fontWeight(.heavy)
+                                .foregroundColor(.primary)
+                            Text("Followers")
+                                .font(.callout)
+                                .fontWeight(.regular)
+                                .foregroundStyle(.secondary)
+                        }
+                        
+                        HStack(spacing: 4) {
+                            Text("\(user.followingCount)")
+                                .font(.callout)
+                                .fontWeight(.heavy)
+                                .foregroundColor(.primary)
+                            Text("Following")
+                                .font(.callout)
+                                .fontWeight(.regular)
+                                .foregroundStyle(.secondary)
+                        }
+                        
+                        Spacer()
+                    }
+                }
+                
+                // Bio - always visible with minimum two-line height
+                bioView
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(minHeight: 44) // Minimum height for two lines
             }
             .padding(.horizontal, 16)
             .padding(.top, 8)
@@ -626,6 +665,55 @@ struct ProfileView: View {
         .frame(height: 250)
     }
     
+    // MARK: - Follow Button
+    
+    private var compactFollowButton: some View {
+        Button(action: {
+            Task {
+                await toggleFollow()
+            }
+        }) {
+            HStack(spacing: 6) {
+                if isFollowLoading {
+                    ProgressView()
+                        .scaleEffect(0.7)
+                        .tint(.white)
+                } else {
+                    Image(systemName: isFollowing ? "checkmark" : "plus")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(.white)
+                }
+                
+                Text(isFollowing ? "Following" : "Follow")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.white)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background {
+                RoundedRectangle(cornerRadius: 18)
+                    .fill(isFollowing ? Color.gray : Color.blue)
+            }
+            .scaleEffect(isFollowLoading ? 0.95 : 1.0)
+            .animation(.easeInOut(duration: 0.1), value: isFollowLoading)
+        }
+        .disabled(isFollowLoading)
+        .overlay {
+            SparkleAnimation()
+                .opacity(triggerSparkles ? 1 : 0)
+                .allowsHitTesting(false)
+                .onChange(of: triggerSparkles) { _, newValue in
+                    if newValue {
+                        // Reset trigger after animation
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                            triggerSparkles = false
+                        }
+                    }
+                }
+        }
+    }
+    
     // MARK: - Helper Properties
     
     private var userInitials: String {
@@ -676,6 +764,53 @@ struct ProfileView: View {
         return String(String.UnicodeScalarView(filtered))
     }
     
+    // MARK: - Follow Methods
+    
+    private func toggleFollow() async {
+        guard let targetUserId = userId else { return }
+        
+        isFollowLoading = true
+        
+        do {
+            if isFollowing {
+                try await FirebaseService.shared.unfollowUser(targetUserId)
+                await MainActor.run {
+                    isFollowing = false
+                }
+            } else {
+                try await FirebaseService.shared.followUser(targetUserId)
+                await MainActor.run {
+                    isFollowing = true
+                    // Trigger sparkle animation on follow
+                    triggerSparkles = true
+                }
+            }
+            
+            // Refresh user data to get updated follower counts
+            await loadCurrentUserAsync()
+            
+        } catch {
+            print("❌ Error toggling follow: \(error)")
+        }
+        
+        await MainActor.run {
+            isFollowLoading = false
+        }
+    }
+    
+    private func checkFollowStatus() async {
+        guard let targetUserId = userId else { return }
+        
+        do {
+            let following = try await FirebaseService.shared.isFollowing(targetUserId)
+            await MainActor.run {
+                isFollowing = following
+            }
+        } catch {
+            print("❌ Error checking follow status: \(error)")
+        }
+    }
+    
     // MARK: - Methods
     
     private func loadCurrentUserAsync() async {
@@ -699,6 +834,9 @@ struct ProfileView: View {
                         print("✅ UI updated with cached user: \(cachedUser.displayName ?? "Unknown")")
                     }
                     
+                    // Check follow status for other users
+                    await checkFollowStatus()
+                    
                     // Then fetch fresh data in background
                     if let freshUser = try? await FirebaseService.shared.getUser(withId: targetUserId, forceRefresh: true) {
                         print("🔄 Updated with fresh data: \(freshUser.displayName ?? "Unknown")")
@@ -713,6 +851,9 @@ struct ProfileView: View {
                         self.currentUser = user
                         self.isLoading = false
                     }
+                    
+                    // Check follow status for other users
+                    await checkFollowStatus()
                 } else {
                     print("❌ User not found: \(targetUserId)")
                     await MainActor.run {

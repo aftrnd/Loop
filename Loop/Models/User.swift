@@ -31,8 +31,14 @@ struct User: Identifiable, Codable, Equatable {
     let avatarURL: String?
     let bannerURL: String?
     let badgeType: BadgeType?
+    let followers: [String] // Array of user IDs who follow this user
+    let following: [String] // Array of user IDs this user follows
     let createdAt: Date
     let lastSeen: Date
+    
+    // Computed properties for counts
+    var followerCount: Int { followers.count }
+    var followingCount: Int { following.count }
     
     init(from firebaseUser: FirebaseAuth.User) {
         self.id = firebaseUser.uid
@@ -44,11 +50,13 @@ struct User: Identifiable, Codable, Equatable {
         self.avatarURL = nil // Will be loaded from Firestore
         self.bannerURL = nil // Will be loaded from Firestore
         self.badgeType = nil // Will be loaded from Firestore
+        self.followers = [] // Will be loaded from Firestore
+        self.following = [] // Will be loaded from Firestore
         self.createdAt = Date()
         self.lastSeen = Date()
     }
     
-    init(id: String, phoneNumber: String, displayName: String? = nil, username: String? = nil, bio: String? = nil, location: String? = nil, avatarURL: String? = nil, bannerURL: String? = nil, badgeType: BadgeType? = nil) {
+    init(id: String, phoneNumber: String, displayName: String? = nil, username: String? = nil, bio: String? = nil, location: String? = nil, avatarURL: String? = nil, bannerURL: String? = nil, badgeType: BadgeType? = nil, followers: [String] = [], following: [String] = []) {
         self.id = id
         self.phoneNumber = phoneNumber
         self.displayName = displayName
@@ -58,6 +66,8 @@ struct User: Identifiable, Codable, Equatable {
         self.avatarURL = avatarURL
         self.bannerURL = bannerURL
         self.badgeType = badgeType
+        self.followers = followers
+        self.following = following
         self.createdAt = Date()
         self.lastSeen = Date()
     }

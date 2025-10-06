@@ -48,7 +48,9 @@ class FirebaseService {
             location: data["location"] as? String,
             avatarURL: data["avatarURL"] as? String,
             bannerURL: data["bannerURL"] as? String,
-            badgeType: badgeType
+            badgeType: badgeType,
+            followers: data["followers"] as? [String] ?? [],
+            following: data["following"] as? [String] ?? []
         )
     }
     
@@ -78,7 +80,9 @@ class FirebaseService {
             location: data["location"] as? String,
             avatarURL: data["avatarURL"] as? String,
             bannerURL: data["bannerURL"] as? String,
-            badgeType: badgeType
+            badgeType: badgeType,
+            followers: data["followers"] as? [String] ?? [],
+            following: data["following"] as? [String] ?? []
         )
     }
 
@@ -111,7 +115,9 @@ class FirebaseService {
                 location: data["location"] as? String,
                 avatarURL: data["avatarURL"] as? String,
                 bannerURL: data["bannerURL"] as? String,
-                badgeType: badgeType
+                badgeType: badgeType,
+                followers: data["followers"] as? [String] ?? [],
+                following: data["following"] as? [String] ?? []
             )
         } else {
             // Create new user
@@ -122,6 +128,8 @@ class FirebaseService {
                 "username": user.username ?? "",
                 "bio": user.bio ?? "",
                 "location": user.location ?? "",
+                "followers": user.followers,
+                "following": user.following,
                 "createdAt": Timestamp(date: user.createdAt),
                 "lastSeen": Timestamp(date: user.lastSeen)
             ])
@@ -582,5 +590,64 @@ class FirebaseService {
 
                 completion(messages)
             }
+    }
+    
+    // MARK: - Follow System
+    
+    func followUser(_ targetUserId: String) async throws {
+        guard let currentUserId = Auth.auth().currentUser?.uid else {
+            throw NSError(domain: "FirebaseService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
+        }
+        
+        // Can't follow yourself
+        guard currentUserId != targetUserId else {
+            throw NSError(domain: "FirebaseService", code: 2, userInfo: [NSLocalizedDescriptionKey: "Cannot follow yourself"])
+        }
+        
+        let batch = db.batch()
+        
+        // Add targetUserId to current user's following list
+        let currentUserRef = db.collection("users").document(currentUserId)
+        batch.updateData([
+            "following": FieldValue.arrayUnion([targetUserId])
+        ], forDocument: currentUserRef)
+        
+        // Add currentUserId to target user's followers list
+        let targetUserRef = db.collection("users").document(targetUserId)
+        batch.updateData([
+            "followers": FieldValue.arrayUnion([currentUserId])
+        ], forDocument: targetUserRef)
+        
+        try await batch.commit()
+        print("✅ Successfully followed user: \(targetUserId)")
+    }
+    
+    func unfollowUser(_ targetUserId: String) async throws {
+        guard let currentUserId = Auth.auth().currentUser?.uid else {
+            throw NSError(domain: "FirebaseService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
+        }
+        
+        let batch = db.batch()
+        
+        // Remove targetUserId from current user's following list
+        let currentUserRef = db.collection("users").document(currentUserId)
+        batch.updateData([
+            "following": FieldValue.arrayRemove([targetUserId])
+        ], forDocument: currentUserRef)
+        
+        // Remove currentUserId from target user's followers list
+        let targetUserRef = db.collection("users").document(targetUserId)
+        batch.updateData([
+            "followers": FieldValue.arrayRemove([currentUserId])
+        ], forDocument: targetUserRef)
+        
+        try await batch.commit()
+        print("✅ Successfully unfollowed user: \(targetUserId)")
+    }
+    
+    func isFollowing(_ targetUserId: String) async throws -> Bool {
+        guard let currentUserId = Auth.auth().currentUser?.uid else { return false }
+        guard let currentUser = try await getUser(withId: currentUserId) else { return false }
+        return currentUser.following.contains(targetUserId)
     }
 }
