@@ -2,41 +2,11 @@ import SwiftUI
 import FirebaseAuth
 
 struct SettingsView: View {
-    @State private var currentUser: User?
     @State private var showDebugSettings = false
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         List {
-            // Account Section
-            Section {
-                HStack(spacing: 12) {
-                    Image(systemName: "phone.fill")
-                        .foregroundColor(.green)
-                        .font(.title3)
-                        .frame(width: 30)
-                    
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Phone Number")
-                            .font(.body)
-                        
-                        Text(formattedPhoneNumber)
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    Spacer()
-                    
-                    // Verified badge
-                    Image(systemName: "checkmark.seal.fill")
-                        .foregroundColor(.green)
-                        .font(.title3)
-                }
-                .padding(.vertical, 4)
-            } header: {
-                Text("Account")
-            }
-
             // Developer Section
             Section {
                 Button {
@@ -79,39 +49,6 @@ struct SettingsView: View {
         .toolbarBackground(.hidden, for: .navigationBar)
         .sheet(isPresented: $showDebugSettings) {
             DebugMenuView()
-        }
-        .onAppear {
-            loadCurrentUser()
-        }
-    }
-
-    private var formattedPhoneNumber: String {
-        guard let phoneNumber = currentUser?.phoneNumber else {
-            return "No phone number"
-        }
-
-        // Format phone number for display (assuming US format)
-        let digits = phoneNumber.replacingOccurrences(of: "[^0-9]", with: "", options: .regularExpression)
-        guard digits.count == 11 && digits.hasPrefix("1") else {
-            return phoneNumber // Return as-is if not in expected format
-        }
-
-        let areaCode = String(digits.dropFirst(1).prefix(3))
-        let firstPart = String(digits.dropFirst(4).prefix(3))
-        let lastPart = String(digits.dropFirst(7))
-
-        return "(\(areaCode)) \(firstPart)-\(lastPart)"
-    }
-
-    private func loadCurrentUser() {
-        Task {
-            do {
-                if let firebaseUser = FirebaseAuth.Auth.auth().currentUser {
-                    currentUser = try await FirebaseService.shared.getUser(withId: firebaseUser.uid)
-                }
-            } catch {
-                print("Error loading user: \(error)")
-            }
         }
     }
 }

@@ -76,9 +76,8 @@ struct ProfileView: View {
                                 }
                             }
                             .padding(.horizontal, 16)
-                            .padding(.leading, isEditing ? 0 : 8)
                             .padding(.top, 8)
-                            .padding(.bottom, 32)
+                            .padding(.bottom, 16)
                         }
                         .offset(y: -60)
                         .padding(.bottom, -60)
@@ -224,21 +223,17 @@ struct ProfileView: View {
                             .frame(width: geometry.size.width, height: geometry.size.height)
                             .clipped()
                     } placeholder: {
-                        LinearGradient(
-                            colors: [.blue, .purple],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                        .frame(width: geometry.size.width, height: geometry.size.height)
+                        ZStack {
+                            Color(.systemGray5)
+                                .frame(width: geometry.size.width, height: geometry.size.height)
+                            
+                            ProgressView()
+                        }
                     }
                 } else {
-                    // Default gradient
-                    LinearGradient(
-                        colors: [.blue, .purple],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                    .frame(width: geometry.size.width, height: geometry.size.height)
+                    // Default gray background
+                    Color(.systemGray5)
+                        .frame(width: geometry.size.width, height: geometry.size.height)
                 }
                 
                 if isEditing {
@@ -453,54 +448,85 @@ struct ProfileView: View {
     // MARK: - Settings
     
     private var settingsSection: some View {
-        VStack(spacing: 0) {
-            Divider()
-                .padding(.horizontal, 24)
-            
-            Button {
-                showSettings = true
-            } label: {
+        List {
+            // Phone Number Section
+            Section {
                 HStack(spacing: 12) {
-                    Image(systemName: "gearshape.fill")
-                        .foregroundColor(.gray)
-                        .frame(width: 28)
+                    Image(systemName: "phone.fill")
+                        .foregroundColor(.green)
+                        .font(.title3)
+                        .frame(width: 30)
                     
-                    Text("Settings")
-                        .foregroundColor(.primary)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Phone Number")
+                            .font(.body)
+                        
+                        Text(formattedPhoneNumber)
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
                     
                     Spacer()
                     
-                    Image(systemName: "chevron.right")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                    // Verified badge
+                    Image(systemName: "checkmark.seal.fill")
+                        .foregroundColor(.green)
+                        .font(.title3)
                 }
-                .padding(.horizontal, 24)
-                .padding(.vertical, 14)
+                .padding(.vertical, 4)
+                .listRowBackground(Color(.systemGray6))
+            } footer: {
+                Text("Not public and only visible to you")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
             
-            Divider()
-                .padding(.horizontal, 24)
-            
-            Button {
-                showLogoutConfirmation = true
-            } label: {
-                HStack(spacing: 12) {
-                    Image(systemName: "rectangle.portrait.and.arrow.right")
-                        .foregroundColor(.red)
-                        .frame(width: 28)
-                    
-                    Text("Log Out")
-                        .foregroundColor(.red)
-                    
-                    Spacer()
+            // Settings & Actions Section
+            Section {
+                Button {
+                    showSettings = true
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "gear")
+                            .foregroundColor(.gray)
+                            .font(.title3)
+                            .frame(width: 30)
+                        
+                        Text("Settings")
+                            .foregroundColor(.primary)
+                        
+                        Spacer()
+                        
+                        Image(systemName: "chevron.right")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
                 }
-                .padding(.horizontal, 24)
-                .padding(.vertical, 14)
+                .listRowBackground(Color(.systemGray6))
+                
+                Button {
+                    showLogoutConfirmation = true
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "person.crop.circle")
+                            .foregroundColor(.red)
+                            .font(.title3)
+                            .frame(width: 30)
+                        
+                        Text("Log Out")
+                            .foregroundColor(.red)
+                        
+                        Spacer()
+                    }
+                }
+                .listRowBackground(Color(.systemGray6))
             }
-            
-            Divider()
-                .padding(.horizontal, 24)
         }
+        .listStyle(.insetGrouped)
+        .scrollDisabled(true)
+        .scrollContentBackground(.hidden)
+        .contentMargins(.top, 0, for: .scrollContent)
+        .frame(height: 250)
     }
     
     // MARK: - Helper Properties
@@ -520,6 +546,24 @@ struct ProfileView: View {
         }
         
         return "?"
+    }
+    
+    private var formattedPhoneNumber: String {
+        guard let phoneNumber = currentUser?.phoneNumber else {
+            return "No phone number"
+        }
+        
+        // Format phone number for display (assuming US format)
+        let digits = phoneNumber.replacingOccurrences(of: "[^0-9]", with: "", options: .regularExpression)
+        guard digits.count == 11 && digits.hasPrefix("1") else {
+            return phoneNumber // Return as-is if not in expected format
+        }
+        
+        let areaCode = String(digits.dropFirst(1).prefix(3))
+        let firstPart = String(digits.dropFirst(4).prefix(3))
+        let lastPart = String(digits.dropFirst(7))
+        
+        return "(\(areaCode)) \(firstPart)-\(lastPart)"
     }
     
     // MARK: - Helper Methods

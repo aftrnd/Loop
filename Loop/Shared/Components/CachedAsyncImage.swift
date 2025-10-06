@@ -3,6 +3,7 @@ import SwiftUI
 /// A cached version of AsyncImage that stores loaded images in memory
 struct CachedAsyncImage<Content: View, Placeholder: View>: View {
     @State private var cachedImage: UIImage?
+    @State private var isLoading = false
     private let url: URL?
     private let content: (Image) -> Content
     private let placeholder: () -> Placeholder
@@ -21,51 +22,53 @@ struct CachedAsyncImage<Content: View, Placeholder: View>: View {
         Group {
             if let cachedImage = cachedImage {
                 content(Image(uiImage: cachedImage))
-            } else if let url = url {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .success(let image):
-                        content(image)
-                            .onAppear {
-                                // Cache the image once loaded
-                                if let uiImage = loadUIImage(from: url) {
-                                    cachedImage = uiImage
-                                }
-                            }
-                    case .failure(_):
-                        placeholder()
-                    case .empty:
-                        placeholder()
-                    @unknown default:
-                        placeholder()
-                    }
-                }
             } else {
                 placeholder()
             }
         }
         .task {
+            guard let url = url, cachedImage == nil, !isLoading else { return }
+            
             // Try to load from cache first
-            if let url = url, let cached = ImageCache.shared.get(url: url) {
+            if let cached = ImageCache.shared.get(url: url) {
                 cachedImage = cached
+                return
             }
+            
+            // Load asynchronously from URL
+            isLoading = true
+            await loadUIImage(from: url)
+            isLoading = false
         }
     }
     
-    private func loadUIImage(from url: URL) -> UIImage? {
+    private func loadUIImage(from url: URL) async {
         // Try to get from cache first
         if let cached = ImageCache.shared.get(url: url) {
-            return cached
+            cachedImage = cached
+            return
         }
         
-        // Load from URL and cache it
-        if let data = try? Data(contentsOf: url),
-           let image = UIImage(data: data) {
-            ImageCache.shared.set(image: image, for: url)
-            return image
+        // Load from URL asynchronously using URLSession
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            
+            // Decode image on background thread
+            let image = await Task.detached(priority: .userInitiated) {
+                UIImage(data: data)
+            }.value
+            
+            if let image = image {
+                // Cache and update UI on main thread
+                ImageCache.shared.set(image: image, for: url)
+                await MainActor.run {
+                    cachedImage = image
+                }
+            }
+        } catch {
+            // Silent failure - just show placeholder
+            print("Failed to load image from \(url): \(error.localizedDescription)")
         }
-        
-        return nil
     }
 }
 
