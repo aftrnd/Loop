@@ -9,9 +9,10 @@ struct ProfileView: View {
     
     @Environment(\.colorScheme) private var colorScheme
     @State private var currentUser: User?
-    @State private var isLoading = true
+    @State private var isLoading = false
     @State private var showSettings = false
     @State private var isEditing = false
+    @State private var loadError: String?
     
     // Editable fields
     @State private var editDisplayName: String = ""
@@ -48,6 +49,11 @@ struct ProfileView: View {
     
     init(userId: String? = nil) {
         self.userId = userId
+        // Start in loading state if we need to fetch a user
+        if userId != nil {
+            _isLoading = State(initialValue: true)
+        }
+        print("🎯 ProfileView.init(userId: \(userId ?? "nil"))")
     }
     
     var body: some View {
@@ -57,72 +63,50 @@ struct ProfileView: View {
                 
                 ScrollView {
                     VStack(spacing: 0) {
-                        // Banner - extends to top edge
-                        bannerContent
-                            .frame(height: bannerHeight + geometry.safeAreaInsets.top)
-                            .offset(y: -geometry.safeAreaInsets.top)
-                            .padding(.bottom, -geometry.safeAreaInsets.top) // Collapse the extra space
-                        
-                        // Avatar and profile info - moves up to overlap banner
-                        VStack(alignment: .leading, spacing: 0) {
-                            // Avatar
-                            avatarView
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.leading, avatarLeadingPadding)
-                            
-                            // Profile info
-                            VStack(alignment: .leading, spacing: 0) {
-                                displayNameView
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                
-                                if isEditing && isOwnProfile {
-                                    // Username and Location on same line when editing
-                                    HStack(spacing: 8) {
-                                        usernameView
-                                        locationView
-                                    }
-                                    .padding(.vertical, 8)
-                                } else {
-                                    // Stacked when viewing
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        usernameView
-                                            .frame(maxWidth: .infinity, alignment: .leading)
-                                    }
-                                    .padding(.vertical, 8)
-                                }
-                                
-                                if let bio = currentUser?.bio, !bio.isEmpty || (isEditing && isOwnProfile) {
-                                    bioView
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                }
+                        if let user = currentUser {
+                            // Profile content - show when user is loaded
+                            profileContent(for: user, bannerHeight: bannerHeight, geometry: geometry)
+                        } else if isLoading {
+                            // Loading state - show while fetching
+                            VStack(spacing: 20) {
+                                ProgressView()
+                                    .scaleEffect(1.5)
+                                    .padding(.top, 100)
+                                Text("Loading profile...")
+                                    .foregroundColor(.secondary)
                             }
-                            .padding(.horizontal, 16)
-                            .padding(.top, 8)
-                            .padding(.bottom, 16)
-                        }
-                        .offset(y: avatarOverlapOffset)
-                        .padding(.bottom, avatarOverlapOffset)
-                        
-                        // Settings section with fade effect (only for own profile)
-                        if !isEditing && isOwnProfile {
-                            GeometryReader { settingsGeo in
-                                let minY = settingsGeo.frame(in: .global).minY
-                                let screenHeight = UIScreen.main.bounds.height
-                                let fadeStart = screenHeight * 0.7
-                                let fadeEnd = screenHeight * 0.5
-                                let opacity = min(max((fadeStart - minY) / (fadeStart - fadeEnd), 0), 1)
-                                
-                                settingsSection
-                                    .opacity(opacity)
+                            .frame(maxWidth: .infinity)
+                            .frame(minHeight: 400)
+                        } else if loadError != nil {
+                            // Error state
+                            VStack(spacing: 20) {
+                                Image(systemName: "exclamationmark.triangle")
+                                    .font(.system(size: 50))
+                                    .foregroundColor(.orange)
+                                Text("Failed to load profile")
+                                    .font(.headline)
+                                Text(loadError ?? "Unknown error")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                                    .multilineTextAlignment(.center)
+                                    .padding(.horizontal, 40)
+                                Button("Retry") {
+                                    loadCurrentUser()
+                                }
+                                .buttonStyle(.borderedProminent)
                             }
+                            .frame(maxWidth: .infinity)
+                            .frame(minHeight: 400)
+                            .padding(.top, 100)
                         }
-                        
-                        Spacer(minLength: 40)
                     }
                 }
                 .scrollIndicators(.hidden)
                 .scrollClipDisabled()
                 .ignoresSafeArea(edges: .top)
+                .refreshable {
+                    await refreshProfile()
+                }
             }
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
@@ -167,8 +151,14 @@ struct ProfileView: View {
                 }
             }
             .navigationBarBackButtonHidden(true)
+            .task(id: userId) {
+                // Load profile immediately when view appears or userId changes
+                // Using task ensures it's properly cancelled/restarted
+                print("📋 .task(id: \(userId ?? "nil")) triggered")
+                await loadCurrentUserAsync()
+            }
             .onAppear {
-                loadCurrentUser()
+                print("👀 ProfileView.onAppear - userId: \(userId ?? "nil"), currentUser: \(currentUser?.displayName ?? "nil"), isLoading: \(isLoading)")
             }
             .navigationDestination(isPresented: $showSettings) {
                 SettingsView()
@@ -475,6 +465,73 @@ struct ProfileView: View {
         }
     }
     
+    // MARK: - Profile Content
+    
+    @ViewBuilder
+    private func profileContent(for user: User, bannerHeight: CGFloat, geometry: GeometryProxy) -> some View {
+        // Banner - extends to top edge
+        bannerContent
+            .frame(height: bannerHeight + geometry.safeAreaInsets.top)
+            .offset(y: -geometry.safeAreaInsets.top)
+            .padding(.bottom, -geometry.safeAreaInsets.top)
+        
+        // Avatar and profile info - moves up to overlap banner
+        VStack(alignment: .leading, spacing: 0) {
+            // Avatar
+            avatarView
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.leading, avatarLeadingPadding)
+            
+            // Profile info
+            VStack(alignment: .leading, spacing: 0) {
+                displayNameView
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                
+                if isEditing && isOwnProfile {
+                    // Username and Location on same line when editing
+                    HStack(spacing: 8) {
+                        usernameView
+                        locationView
+                    }
+                    .padding(.vertical, 8)
+                } else {
+                    // Stacked when viewing
+                    VStack(alignment: .leading, spacing: 4) {
+                        usernameView
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .padding(.vertical, 8)
+                }
+                
+                if user.bio != nil && !user.bio!.isEmpty || (isEditing && isOwnProfile) {
+                    bioView
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .padding(.bottom, 16)
+        }
+        .offset(y: avatarOverlapOffset)
+        .padding(.bottom, avatarOverlapOffset)
+        
+        // Settings section with fade effect (only for own profile)
+        if !isEditing && isOwnProfile {
+            GeometryReader { settingsGeo in
+                let minY = settingsGeo.frame(in: .global).minY
+                let screenHeight = UIScreen.main.bounds.height
+                let fadeStart = screenHeight * 0.7
+                let fadeEnd = screenHeight * 0.5
+                let opacity = min(max((fadeStart - minY) / (fadeStart - fadeEnd), 0), 1)
+                
+                settingsSection
+                    .opacity(opacity)
+            }
+        }
+        
+        Spacer(minLength: 40)
+    }
+    
     // MARK: - Settings
     
     private var settingsSection: some View {
@@ -611,35 +668,95 @@ struct ProfileView: View {
     
     // MARK: - Methods
     
-    private func loadCurrentUser() {
-        isLoading = true
+    private func loadCurrentUserAsync() async {
+        await MainActor.run {
+            isLoading = true
+            loadError = nil
+            currentUser = nil // Clear any stale data
+        }
         
-        Task {
-            do {
-                if let targetUserId = userId {
-                    // Loading another user's profile
-                    if let user = try await FirebaseService.shared.getUser(withId: targetUserId) {
-                        currentUser = user
+        do {
+            if let targetUserId = userId {
+                // Loading another user's profile
+                print("🔵 Loading profile for user: \(targetUserId)")
+                
+                // Try cache first for immediate display
+                if let cachedUser = try? await FirebaseService.shared.getUser(withId: targetUserId, forceRefresh: false) {
+                    print("⚡️ Loaded from cache: \(cachedUser.displayName ?? "Unknown")")
+                    await MainActor.run {
+                        self.currentUser = cachedUser
+                        self.isLoading = false
+                        print("✅ UI updated with cached user: \(cachedUser.displayName ?? "Unknown")")
                     }
-                } else {
-                    // Loading own profile
-                    if let firebaseUser = Auth.auth().currentUser {
-                        if let firestoreUser = try await FirebaseService.shared.getUser(withId: firebaseUser.uid) {
-                            currentUser = firestoreUser
-                        } else {
-                            currentUser = try await FirebaseService.shared.createUserIfNotExists(
-                                phoneNumber: firebaseUser.phoneNumber ?? "",
-                                displayName: firebaseUser.displayName
-                            )
+                    
+                    // Then fetch fresh data in background
+                    if let freshUser = try? await FirebaseService.shared.getUser(withId: targetUserId, forceRefresh: true) {
+                        print("🔄 Updated with fresh data: \(freshUser.displayName ?? "Unknown")")
+                        await MainActor.run {
+                            self.currentUser = freshUser
+                            print("✅ UI updated with fresh user: \(freshUser.displayName ?? "Unknown")")
                         }
                     }
+                } else if let user = try await FirebaseService.shared.getUser(withId: targetUserId, forceRefresh: true) {
+                    print("✅ Profile loaded from server: \(user.displayName ?? "Unknown")")
+                    await MainActor.run {
+                        self.currentUser = user
+                        self.isLoading = false
+                    }
+                } else {
+                    print("❌ User not found: \(targetUserId)")
+                    await MainActor.run {
+                        self.loadError = "User not found"
+                        self.isLoading = false
+                    }
                 }
-                isLoading = false
-            } catch {
-                print("Error loading user: \(error)")
-                isLoading = false
+            } else {
+                // Loading own profile - can use cache for better performance
+                if let firebaseUser = Auth.auth().currentUser {
+                    print("🔵 Loading own profile: \(firebaseUser.uid)")
+                    if let firestoreUser = try await FirebaseService.shared.getUser(withId: firebaseUser.uid, forceRefresh: false) {
+                        print("✅ Own profile loaded successfully")
+                        await MainActor.run {
+                            self.currentUser = firestoreUser
+                            self.isLoading = false
+                        }
+                    } else {
+                        print("⚠️ Creating new user profile")
+                        let newUser = try await FirebaseService.shared.createUserIfNotExists(
+                            phoneNumber: firebaseUser.phoneNumber ?? "",
+                            displayName: firebaseUser.displayName
+                        )
+                        await MainActor.run {
+                            self.currentUser = newUser
+                            self.isLoading = false
+                        }
+                    }
+                } else {
+                    print("❌ Not authenticated")
+                    await MainActor.run {
+                        self.loadError = "Not authenticated"
+                        self.isLoading = false
+                    }
+                }
+            }
+        } catch {
+            print("❌ Error loading user: \(error)")
+            await MainActor.run {
+                self.loadError = error.localizedDescription
+                self.isLoading = false
             }
         }
+    }
+    
+    private func loadCurrentUser() {
+        Task {
+            await loadCurrentUserAsync()
+        }
+    }
+    
+    private func refreshProfile() async {
+        // Reuse the same loading logic
+        await loadCurrentUserAsync()
     }
     
     private func startEditing() {

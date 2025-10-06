@@ -18,8 +18,17 @@ class FirebaseService {
         return User(from: firebaseUser)
     }
 
-    func getUser(withId userId: String) async throws -> User? {
-        let doc = try await db.collection("users").document(userId).getDocument()
+    func getUser(withId userId: String, forceRefresh: Bool = false) async throws -> User? {
+        let doc: DocumentSnapshot
+        
+        if forceRefresh {
+            // Force fetch from server, bypassing cache
+            doc = try await db.collection("users").document(userId).getDocument(source: .server)
+        } else {
+            // Default: try cache first, then server
+            doc = try await db.collection("users").document(userId).getDocument()
+        }
+        
         guard let data = doc.data() else { return nil }
 
         return User(

@@ -7,11 +7,14 @@ import FirebaseFirestore
 final class ChatsListViewModel {
     private(set) var pinned: [Chat] = []
     private(set) var recent: [Chat] = []
+    private(set) var isLoadingInitialData = true
     private var chatListener: ListenerRegistration?
     private let pinnedChatsKey = "pinnedChatIDs"
 
     init() {
-        loadChats()
+        Task {
+            await loadInitialChats()
+        }
         setupRealTimeUpdates()
     }
 
@@ -22,6 +25,21 @@ final class ChatsListViewModel {
         chatListener?.remove()
     }
 
+    private func loadInitialChats() async {
+        isLoadingInitialData = true
+        print("🔵 Loading initial chat data...")
+        do {
+            let chats = try await FirebaseService.shared.getChats()
+            print("✅ Loaded \(chats.count) chats with user data")
+            mergeChats(chats)
+            applyStoredPinnedState()
+            isLoadingInitialData = false
+        } catch {
+            print("❌ Error loading initial chats: \(error)")
+            isLoadingInitialData = false
+        }
+    }
+    
     private func loadChats() {
         Task {
             do {
@@ -194,14 +212,14 @@ final class ChatsListViewModel {
         return "+1" + digits
     }
 
-    func refreshChats() {
-        Task {
-            do {
-                let chats = try await FirebaseService.shared.getChats()
-                mergeChats(chats)
-            } catch {
-                print("Error refreshing chats: \(error)")
-            }
+    func refreshChats() async {
+        do {
+            print("🔄 Fetching fresh chat data from Firebase...")
+            let chats = try await FirebaseService.shared.getChats()
+            print("✅ Received \(chats.count) chats with fresh data")
+            mergeChats(chats)
+        } catch {
+            print("❌ Error refreshing chats: \(error)")
         }
     }
     

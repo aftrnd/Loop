@@ -10,13 +10,20 @@ struct ChatsListView: View {
     @State private var navigationPath = NavigationPath()
     @State private var showNewMessage = false
     @State private var showProfile = false
-    @State private var showUserProfile = false
-    @State private var selectedUserId: String?
+    @State private var profileUserToShow: ProfileUser?
     @Environment(\.colorScheme) private var colorScheme
     @ObservedObject private var debugManager = DebugManager.shared
     
     var body: some View {
         mainView
+    }
+    
+    // MARK: - Methods
+    
+    private func refreshChats() async {
+        print("🔄 Pull-to-refresh triggered...")
+        await viewModel.refreshChats()
+        print("✅ Pull-to-refresh completed")
     }
     
     private var mainView: some View {
@@ -68,12 +75,10 @@ struct ChatsListView: View {
                 .presentationDetents([.height(340), .large])
                 .presentationDragIndicator(.visible)
         }
-        .sheet(isPresented: $showUserProfile) {
-            if let userId = selectedUserId {
-                ProfileView(userId: userId)
-                    .presentationDetents([.height(340), .large])
-                    .presentationDragIndicator(.visible)
-            }
+        .sheet(item: $profileUserToShow) { profileUser in
+            ProfileView(userId: profileUser.userId)
+                .presentationDetents([.height(340), .large])
+                .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $debugManager.isDebugMenuVisible) {
             DebugMenuView()
@@ -95,14 +100,31 @@ struct ChatsListView: View {
             List {
                 scrollSentinel
                 
+                // Show loading indicator while initial data loads
+                if viewModel.isLoadingInitialData {
+                    HStack {
+                        Spacer()
+                        VStack(spacing: 12) {
+                            ProgressView()
+                                .scaleEffect(1.2)
+                            Text("Loading chats...")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(.vertical, 40)
+                        Spacer()
+                    }
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                }
+                
                 if !viewModel.pinned.isEmpty {
                     PinnedMessagesView(
                         pinnedChats: viewModel.pinned,
                         colorScheme: colorScheme,
                         navigationPath: $navigationPath,
                         viewModel: viewModel,
-                        selectedUserId: $selectedUserId,
-                        showUserProfile: $showUserProfile
+                        profileUserToShow: $profileUserToShow
                     )
                     .padding(.top, 0) // No top padding for pinned items
                     .padding(.bottom, 8)
@@ -123,8 +145,7 @@ struct ChatsListView: View {
                         contentHeight: contentHeight,
                         scrollViewHeight: scrollViewHeight,
                         navigationPath: $navigationPath,
-                        selectedUserId: $selectedUserId,
-                        showUserProfile: $showUserProfile
+                        profileUserToShow: $profileUserToShow
                     )
                     .frame(height: 84)
                     .listRowSeparator(.hidden)
@@ -168,6 +189,9 @@ struct ChatsListView: View {
             .coordinateSpace(name: "chatScroll")
             .scrollIndicators(.hidden)
             .contentMargins(.top, -32)
+            .refreshable {
+                await refreshChats()
+            }
             .onAppear {
                 scrollViewHeight = scrollGeometry.size.height
             }
@@ -242,15 +266,14 @@ struct PinnedMessagesView: View {
     @Binding var navigationPath: NavigationPath
     let viewModel: ChatsListViewModel
     @State private var longPressedChat: Chat?
-    @Binding var selectedUserId: String?
-    @Binding var showUserProfile: Bool
+    @Binding var profileUserToShow: ProfileUser?
     
     var body: some View {
         VStack(spacing: 16) {
             // First row of 3
             HStack(spacing: 0) {
                 ForEach(Array(pinnedChats.prefix(3).enumerated()), id: \.element.id) { index, chat in
-                    pinnedChatItem(chat: chat, isLongPressed: longPressedChat?.id == chat.id, selectedUserId: $selectedUserId, showUserProfile: $showUserProfile)
+                    pinnedChatItem(chat: chat, isLongPressed: longPressedChat?.id == chat.id, profileUserToShow: $profileUserToShow)
                         .frame(maxWidth: .infinity)
                         .onLongPressGesture {
                             withAnimation {
@@ -264,7 +287,7 @@ struct PinnedMessagesView: View {
             if pinnedChats.count > 3 {
                 HStack(spacing: 0) {
                     ForEach(Array(pinnedChats.dropFirst(3).prefix(3).enumerated()), id: \.element.id) { index, chat in
-                        pinnedChatItem(chat: chat, isLongPressed: longPressedChat?.id == chat.id, selectedUserId: $selectedUserId, showUserProfile: $showUserProfile)
+                        pinnedChatItem(chat: chat, isLongPressed: longPressedChat?.id == chat.id, profileUserToShow: $profileUserToShow)
                             .frame(maxWidth: .infinity)
                             .onLongPressGesture {
                                 withAnimation {
@@ -288,7 +311,7 @@ struct PinnedMessagesView: View {
         }
     }
     
-    private func pinnedChatItem(chat: Chat, isLongPressed: Bool, selectedUserId: Binding<String?>, showUserProfile: Binding<Bool>) -> some View {
+    private func pinnedChatItem(chat: Chat, isLongPressed: Bool, profileUserToShow: Binding<ProfileUser?>) -> some View {
         VStack(spacing: 8) {
             ZStack {
                 if let avatarURLString = chat.otherParticipantAvatarURL, let avatarURL = URL(string: avatarURLString) {
@@ -327,8 +350,9 @@ struct PinnedMessagesView: View {
             .onTapGesture(count: 1) {
                 // Avatar tap - show profile for 1:1 chats
                 if !chat.isGroupChat, let otherUserId = chat.otherParticipantId {
-                    selectedUserId.wrappedValue = otherUserId
-                    showUserProfile.wrappedValue = true
+                    print("👆 Pinned avatar tapped - opening profile for user: \(otherUserId)")
+                    profileUserToShow.wrappedValue = ProfileUser(userId: otherUserId)
+                    print("   profileUserToShow set to: \(profileUserToShow.wrappedValue?.userId ?? "nil")")
                 }
             }
             .overlay(alignment: .topTrailing) {
@@ -400,8 +424,7 @@ struct ChatItemView: View {
     let contentHeight: CGFloat
     let scrollViewHeight: CGFloat
     @Binding var navigationPath: NavigationPath
-    @Binding var selectedUserId: String?
-    @Binding var showUserProfile: Bool
+    @Binding var profileUserToShow: ProfileUser?
     
     var body: some View {
         GeometryReader { geo in
@@ -463,11 +486,12 @@ struct ChatItemView: View {
         let parallaxDistance = (midY - screenMid) / 24
         let parallax = parallaxDistance * effective
         
-        return ChatRowView(chat: chat, onAvatarTap: {
+        return ChatRowView(chat: chat,             onAvatarTap: {
                 // Open the other user's profile for 1:1 chats
                 if let otherUserId = chat.otherParticipantId, !chat.isGroupChat {
-                    selectedUserId = otherUserId
-                    showUserProfile = true
+                    print("👆 Avatar tapped - opening profile for user: \(otherUserId)")
+                    profileUserToShow = ProfileUser(userId: otherUserId)
+                    print("   profileUserToShow set to: \(profileUserToShow?.userId ?? "nil")")
                 }
             })
             .frame(height: 84)
@@ -493,6 +517,17 @@ struct ChatItemView: View {
         .opacity(opacity)
         .blur(radius: blur)
         .offset(y: parallax)
+    }
+}
+
+// Helper struct for presenting user profiles
+struct ProfileUser: Identifiable {
+    let id: String
+    let userId: String
+    
+    init(userId: String) {
+        self.id = userId
+        self.userId = userId
     }
 }
 
