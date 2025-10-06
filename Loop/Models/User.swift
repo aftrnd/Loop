@@ -1,5 +1,25 @@
 import Foundation
 import FirebaseAuth
+import SwiftUI
+
+// Badge system for verified users
+enum BadgeType: String, Codable, Equatable {
+    case verified = "verified"  // Blue checkmark
+    case premium = "premium"     // Gold checkmark
+    
+    var color: Color {
+        switch self {
+        case .verified:
+            return .blue
+        case .premium:
+            return Color(red: 1.0, green: 0.84, blue: 0.0) // Gold
+        }
+    }
+    
+    var iconName: String {
+        return "checkmark.seal.fill"
+    }
+}
 
 struct User: Identifiable, Codable, Equatable {
     let id: String
@@ -10,6 +30,7 @@ struct User: Identifiable, Codable, Equatable {
     let location: String?
     let avatarURL: String?
     let bannerURL: String?
+    let badgeType: BadgeType?
     let createdAt: Date
     let lastSeen: Date
     
@@ -22,11 +43,12 @@ struct User: Identifiable, Codable, Equatable {
         self.location = nil // Will be loaded from Firestore
         self.avatarURL = nil // Will be loaded from Firestore
         self.bannerURL = nil // Will be loaded from Firestore
+        self.badgeType = nil // Will be loaded from Firestore
         self.createdAt = Date()
         self.lastSeen = Date()
     }
     
-    init(id: String, phoneNumber: String, displayName: String? = nil, username: String? = nil, bio: String? = nil, location: String? = nil, avatarURL: String? = nil, bannerURL: String? = nil) {
+    init(id: String, phoneNumber: String, displayName: String? = nil, username: String? = nil, bio: String? = nil, location: String? = nil, avatarURL: String? = nil, bannerURL: String? = nil, badgeType: BadgeType? = nil) {
         self.id = id
         self.phoneNumber = phoneNumber
         self.displayName = displayName
@@ -35,6 +57,7 @@ struct User: Identifiable, Codable, Equatable {
         self.location = location
         self.avatarURL = avatarURL
         self.bannerURL = bannerURL
+        self.badgeType = badgeType
         self.createdAt = Date()
         self.lastSeen = Date()
     }

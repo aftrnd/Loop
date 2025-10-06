@@ -348,27 +348,36 @@ struct ProfileView: View {
         Group {
             if isEditing && isOwnProfile {
                 TextField("Display Name", text: $editDisplayName)
-                    .font(.title3)
+                    .font(.title2)
                     .fontWeight(.bold)
                     .textFieldStyle(.plain)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
-                    .frame(height: 36)
+                    .frame(height: 40)
                     .background {
                         Color.clear
                             .glassEffect(.regular, in: .rect(cornerRadius: 12))
                     }
             } else {
-                Text(currentUser?.displayName ?? "Display Name")
-                    .font(.title3)
-                    .fontWeight(.bold)
-                    .foregroundStyle(.primary)
+                HStack(spacing: 6) {
+                    Text(currentUser?.displayName ?? "Display Name")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .foregroundStyle(.primary)
+                    
+                    // Badge inline with name
+                    if let badgeType = currentUser?.badgeType {
+                        Image(systemName: badgeType.iconName)
+                            .foregroundStyle(badgeType.color)
+                            .font(.title3)
+                    }
+                }
             }
         }
     }
     
     private var usernameView: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 8) {
             if isEditing && isOwnProfile {
                 HStack(spacing: 4) {
                     Text("@")
@@ -391,10 +400,11 @@ struct ProfileView: View {
                         .glassEffect(.regular, in: .rect(cornerRadius: 12))
                 }
             } else {
+                // Username
                 HStack(spacing: 4) {
                     Image(systemName: "at")
                         .font(.callout)
-                        .fontWeight(.bold)
+                        .fontWeight(.heavy)
                         .foregroundStyle(.secondary)
                     Text(currentUser?.username ?? "username")
                         .font(.callout)
@@ -402,20 +412,19 @@ struct ProfileView: View {
                         .foregroundStyle(.secondary)
                 }
                 
-                Image(systemName: "checkmark.seal.fill")
-                    .foregroundStyle(.blue)
-                    .font(.callout)
-                
-                // Location - only show if exists
+                // Location - only show if exists, with consistent styling
                 if let location = currentUser?.location, !location.isEmpty {
-                    Image(systemName: "location.fill")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                    
-                    Text(location)
-                        .font(.callout)
-                        .fontWeight(.regular)
-                        .foregroundStyle(.secondary)
+                    HStack(spacing: 4) {
+                        Image(systemName: "location.fill")
+                            .font(.callout)
+                            .fontWeight(.medium)
+                            .foregroundStyle(.secondary)
+                        
+                        Text(location)
+                            .font(.callout)
+                            .fontWeight(.regular)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
         }
@@ -424,7 +433,8 @@ struct ProfileView: View {
     private var locationView: some View {
         HStack(spacing: 4) {
             Image(systemName: "location.fill")
-                .font(.caption2)
+                .font(.callout)
+                .fontWeight(.medium)
                 .foregroundStyle(.secondary)
             
             TextField("Add location...", text: $editLocation)

@@ -30,6 +30,14 @@ class FirebaseService {
         }
         
         guard let data = doc.data() else { return nil }
+        
+        // Parse badge type from string
+        let badgeType: BadgeType?
+        if let badgeString = data["badgeType"] as? String {
+            badgeType = BadgeType(rawValue: badgeString)
+        } else {
+            badgeType = nil
+        }
 
         return User(
             id: userId,
@@ -39,7 +47,8 @@ class FirebaseService {
             bio: data["bio"] as? String,
             location: data["location"] as? String,
             avatarURL: data["avatarURL"] as? String,
-            bannerURL: data["bannerURL"] as? String
+            bannerURL: data["bannerURL"] as? String,
+            badgeType: badgeType
         )
     }
     
@@ -52,6 +61,14 @@ class FirebaseService {
         guard let doc = snapshot.documents.first else { return nil }
         let data = doc.data()
         
+        // Parse badge type from string
+        let badgeType: BadgeType?
+        if let badgeString = data["badgeType"] as? String {
+            badgeType = BadgeType(rawValue: badgeString)
+        } else {
+            badgeType = nil
+        }
+        
         return User(
             id: doc.documentID,
             phoneNumber: data["phoneNumber"] as? String ?? "",
@@ -60,7 +77,8 @@ class FirebaseService {
             bio: data["bio"] as? String,
             location: data["location"] as? String,
             avatarURL: data["avatarURL"] as? String,
-            bannerURL: data["bannerURL"] as? String
+            bannerURL: data["bannerURL"] as? String,
+            badgeType: badgeType
         )
     }
 
@@ -75,6 +93,14 @@ class FirebaseService {
             guard let data = doc.data() else {
                 throw NSError(domain: "FirebaseService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to load user data"])
             }
+            
+            // Parse badge type from string
+            let badgeType: BadgeType?
+            if let badgeString = data["badgeType"] as? String {
+                badgeType = BadgeType(rawValue: badgeString)
+            } else {
+                badgeType = nil
+            }
 
             return User(
                 id: userId,
@@ -84,7 +110,8 @@ class FirebaseService {
                 bio: data["bio"] as? String,
                 location: data["location"] as? String,
                 avatarURL: data["avatarURL"] as? String,
-                bannerURL: data["bannerURL"] as? String
+                bannerURL: data["bannerURL"] as? String,
+                badgeType: badgeType
             )
         } else {
             // Create new user
