@@ -61,6 +61,13 @@ struct ProfileView: View {
         return userId == nil || userId == currentUserId
     }
     
+    // Date formatter for joined date (Month Year format)
+    private var joinedDateFormatter: DateFormatter {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM yyyy"
+        return formatter
+    }
+    
     // Calculate minimum height needed for profile content
     private var minimumProfileHeight: CGFloat {
         let bannerHeight: CGFloat = 180
@@ -460,6 +467,21 @@ struct ProfileView: View {
                             .foregroundStyle(.secondary)
                         
                         Text(location)
+                            .font(.callout)
+                            .fontWeight(.regular)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                
+                // Joined date - with calendar icon, styled exactly like username and location
+                if let user = currentUser {
+                    HStack(spacing: 4) {
+                        Image(systemName: "calendar")
+                            .font(.callout)
+                            .fontWeight(.heavy)
+                            .foregroundStyle(.secondary)
+                        
+                        Text(joinedDateFormatter.string(from: user.createdAt))
                             .font(.callout)
                             .fontWeight(.regular)
                             .foregroundStyle(.secondary)
