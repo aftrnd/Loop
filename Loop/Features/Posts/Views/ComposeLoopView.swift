@@ -1,5 +1,6 @@
 import SwiftUI
 import PhotosUI
+import UIKit
 
 struct ComposeLoopView: View {
     @Binding var draft: LoopDraft
@@ -8,6 +9,8 @@ struct ComposeLoopView: View {
     
     @State private var selectedPhotos: [PhotosPickerItem] = []
     @State private var isUploadingMedia = false
+    @State private var showingImageSourceActionSheet = false
+    @State private var showingCamera = false
     @FocusState private var isTextFieldFocused: Bool
     
     private var characterCountColor: Color {
@@ -144,23 +147,11 @@ struct ComposeLoopView: View {
                     Divider()
                     
                     HStack(spacing: 20) {
-                        // Photo picker
-                        PhotosPicker(
-                            selection: $selectedPhotos,
-                            maxSelectionCount: 4,
-                            matching: .images
-                        ) {
-                            Image(systemName: "photo")
-                                .font(.system(size: 20))
-                                .foregroundColor(.accentColor)
-                        }
-                        .disabled(isUploadingMedia)
-                        
-                        // Camera button (placeholder)
+                        // Combined photo/camera button
                         Button(action: {
-                            // TODO: Implement camera functionality
+                            showingImageSourceActionSheet = true
                         }) {
-                            Image(systemName: "camera")
+                            Image(systemName: "photo")
                                 .font(.system(size: 20))
                                 .foregroundColor(.accentColor)
                         }
@@ -192,6 +183,30 @@ struct ComposeLoopView: View {
                     await processSelectedPhotos(newPhotos)
                 }
             }
+            .confirmationDialog("Add Photo", isPresented: $showingImageSourceActionSheet) {
+                Button("Camera") {
+                    showingCamera = true
+                }
+                
+                PhotosPicker(
+                    selection: $selectedPhotos,
+                    maxSelectionCount: 4,
+                    matching: .images
+                ) {
+                    Text("Photo Library")
+                }
+                
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("Choose how you'd like to add a photo")
+            }
+            .fullScreenCover(isPresented: $showingCamera) {
+                ImagePicker(sourceType: .camera) { image in
+                    Task {
+                        await processCameraImage(image)
+                    }
+                }
+            }
         }
     }
     
@@ -220,6 +235,24 @@ struct ComposeLoopView: View {
         
         isUploadingMedia = false
         selectedPhotos = []
+    }
+    
+    private func processCameraImage(_ image: UIImage) async {
+        isUploadingMedia = true
+        
+        do {
+            // Upload to Firebase and get LoopMedia
+            let loopMedia = try await FirebaseService.shared.uploadLoopMedia(image, type: .image)
+            
+            // Add to draft
+            await MainActor.run {
+                draft.media.append(loopMedia)
+            }
+        } catch {
+            print("Error processing camera image: \(error)")
+        }
+        
+        isUploadingMedia = false
     }
 }
 

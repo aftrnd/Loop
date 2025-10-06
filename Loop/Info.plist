@@ -13,5 +13,9 @@
 			</array>
 		</dict>
 	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>Loop needs access to your camera to take photos for your posts.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Loop needs access to your photo library to select photos for your posts.</string>
 </dict>
 </plist>

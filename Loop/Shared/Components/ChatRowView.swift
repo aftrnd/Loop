@@ -16,13 +16,13 @@ struct ChatRowView: View {
                         image
                             .resizable()
                             .aspectRatio(contentMode: .fill)
-                            .frame(width: 50, height: 50)
+                            .frame(width: 56, height: 56)
                             .clipShape(Circle())
                     } placeholder: {
                         // Placeholder while loading
                         Circle()
                             .fill(Color(.systemGray5))
-                            .frame(width: 50, height: 50)
+                            .frame(width: 56, height: 56)
                             .overlay {
                                 ProgressView()
                                     .scaleEffect(0.7)
@@ -32,10 +32,10 @@ struct ChatRowView: View {
                     // Default avatar with initials
                     Circle()
                         .fill(Color(.systemGray5))
-                        .frame(width: 50, height: 50)
+                        .frame(width: 56, height: 56)
                     
                     Color.clear
-                        .frame(width: 50, height: 50)
+                        .frame(width: 56, height: 56)
                         .glassEffect(.regular, in: Circle())
                     
                     Text(String(chat.displayTitle.prefix(1)).uppercased())
@@ -88,7 +88,7 @@ struct ChatRowView: View {
                             .font(.subheadline) // Match the time font size
                             .foregroundColor(.secondary)
                     }
-                    .padding(.trailing, 16)
+                    .padding(.trailing, 12)
                 }
                 
                 HStack {
@@ -104,7 +104,7 @@ struct ChatRowView: View {
             .frame(maxHeight: .infinity, alignment: .center)
         }
         .offset(y: 0)
-        .padding(.leading, 16)
+        .padding(.leading, 12)
         .padding(.trailing, 0) // No trailing padding to allow time to extend to edge
         .padding(.top, 8)
         .padding(.bottom, 12)

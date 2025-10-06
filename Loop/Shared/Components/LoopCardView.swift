@@ -24,13 +24,13 @@ struct LoopCardView: View {
                             image
                                 .resizable()
                                 .aspectRatio(contentMode: .fill)
-                                .frame(width: 50, height: 50)
+                                .frame(width: 56, height: 56)
                                 .clipShape(Circle())
                         } placeholder: {
                             // Placeholder while loading
                             Circle()
                                 .fill(Color(.systemGray5))
-                                .frame(width: 50, height: 50)
+                                .frame(width: 56, height: 56)
                                 .overlay {
                                     ProgressView()
                                         .scaleEffect(0.7)
@@ -84,19 +84,13 @@ struct LoopCardView: View {
                         }
                     }
                     
-                    // Username on its own line below the name (exact ProfileView styling)
+                    // Username on its own line below the name
                     if let username = loop.authorUsername, !username.isEmpty {
                         HStack {
-                            HStack(spacing: 4) {
-                                Image(systemName: "at")
-                                    .font(.callout)
-                                    .fontWeight(.heavy)
-                                    .foregroundStyle(.secondary)
-                                Text(username)
-                                    .font(.callout)
-                                    .fontWeight(.regular)
-                                    .foregroundStyle(.secondary)
-                            }
+                            Text("@\(username)")
+                                .font(.callout)
+                                .fontWeight(.regular)
+                                .foregroundStyle(.secondary)
                             
                             Spacer()
                         }
@@ -106,7 +100,7 @@ struct LoopCardView: View {
             }
             
             // Content
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 0) {
                 // Text content
                 if !loop.content.isEmpty {
                     let shouldTruncate = loop.content.count > maxPreviewLength && !showingFullText
@@ -137,6 +131,7 @@ struct LoopCardView: View {
                             .foregroundColor(.accentColor)
                         }
                     }
+                    .padding(.bottom, loop.hasMedia ? 12 : 0)
                 }
                 
                 // Media content
@@ -194,9 +189,9 @@ struct LoopCardView: View {
                 }
             }
         }
-        .padding(.leading, 16)
-        .padding(.trailing, 16)
-        .padding(.top, 8)
+        .padding(.leading, 12)
+        .padding(.trailing, 12)
+        .padding(.top, 12)
         .padding(.bottom, 12)
         .background(Color.clear)
     }
@@ -220,20 +215,26 @@ struct SingleMediaView: View {
     var body: some View {
         switch media.type {
         case .image:
+            let displayMode = determineDisplayMode(media: media)
+            
             CachedAsyncImage(url: URL(string: media.url)) { image in
-                image
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
+                GeometryReader { geometry in
+                    image
+                        .resizable()
+                        .aspectRatio(contentMode: displayMode.contentMode)
+                        .frame(width: geometry.size.width, height: displayMode.height)
+                        .clipped()
+                }
+                .frame(height: displayMode.height)
             } placeholder: {
                 RoundedRectangle(cornerRadius: 12)
                     .fill(Color.secondary.opacity(0.2))
-                    .frame(height: 200)
+                    .frame(height: displayMode.height)
                     .overlay(
                         ProgressView()
-                            .scaleEffect(1.2)
+                            .scaleEffect(1.0)
                     )
             }
-            .frame(maxHeight: 400)
             .clipShape(RoundedRectangle(cornerRadius: 12))
             
         case .video:
@@ -256,6 +257,32 @@ struct SingleMediaView: View {
             EmptyView()
         }
     }
+    
+    private func determineDisplayMode(media: LoopMedia) -> ImageDisplayMode {
+        guard let width = media.width, let height = media.height, height > 0 else {
+            // Default to square if no dimensions
+            return ImageDisplayMode(height: 300, contentMode: .fill)
+        }
+        
+        let aspectRatio = width / height
+        
+        // Social media best practices for image display
+        if aspectRatio >= 0.8 && aspectRatio <= 1.25 {
+            // Square-ish images (0.8 to 1.25 ratio) - display as square
+            return ImageDisplayMode(height: 300, contentMode: .fill)
+        } else if aspectRatio > 1.25 {
+            // Landscape images - display as landscape rectangle
+            return ImageDisplayMode(height: 200, contentMode: .fill)
+        } else {
+            // Portrait images - display as portrait rectangle
+            return ImageDisplayMode(height: 400, contentMode: .fill)
+        }
+    }
+}
+
+struct ImageDisplayMode {
+    let height: CGFloat
+    let contentMode: ContentMode
 }
 
 struct MultipleMediaView: View {
@@ -266,10 +293,10 @@ struct MultipleMediaView: View {
             HStack(spacing: 8) {
                 ForEach(media, id: \.id) { mediaItem in
                     SingleMediaView(media: mediaItem)
-                        .frame(width: 200)
+                        .frame(width: 280) // Consistent width for carousel
                 }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, 8)
         }
         .scrollTargetBehavior(.viewAligned)
     }

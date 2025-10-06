@@ -3,11 +3,8 @@ import SwiftUI
 struct HomeView: View {
     @StateObject private var viewModel = HomeFeedViewModel()
     @State private var scrollOffset: CGFloat = 0
-    @State private var isComposing = false
-    @State private var composeText = ""
     @State private var profileUserToShow: ProfileUser?
     @State private var showProfile = false
-    @FocusState private var isComposeFieldFocused: Bool
     
     var body: some View {
         NavigationStack {
@@ -17,35 +14,32 @@ struct HomeView: View {
                 
                 feedListView
                 
-                // Bottom compose input (hidden when scrolling)
+                // Floating Action Button
                 VStack {
                     Spacer()
-                    
-                    if scrollOffset < 5 { // Show when not scrolling much
-                        InlineComposeView(
-                            isComposing: $isComposing,
-                            composeText: $composeText,
-                            isComposeFieldFocused: $isComposeFieldFocused,
-                            onPost: {
-                                Task {
-                                    // Create a draft and post
-                                    viewModel.composeDraft.content = composeText
-                                    await viewModel.postLoop()
-                                    
-                                    // Reset state
-                                    composeText = ""
-                                    isComposing = false
-                                    isComposeFieldFocused = false
-                                }
-                            }
-                        )
-                        .transition(
-                            .asymmetric(
-                                insertion: .move(edge: .bottom).combined(with: .opacity).combined(with: .scale(scale: 0.95)),
-                                removal: .move(edge: .bottom).combined(with: .opacity).combined(with: .scale(scale: 1.05))
-                            )
-                        )
-                        .animation(.spring(response: 0.4, dampingFraction: 0.8, blendDuration: 0), value: scrollOffset < 5)
+                    HStack {
+                        Button(action: {
+                            // Haptic feedback
+                            let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
+                            impactFeedback.impactOccurred()
+                            
+                            // Open compose sheet
+                            viewModel.showCompose()
+                        }) {
+                            Image(systemName: "plus")
+                                .font(.system(size: 24, weight: .semibold))
+                                .foregroundColor(.primary)
+                                .frame(width: 64, height: 64)
+                                .background(
+                                    Color.clear
+                                        .glassEffect(.regular, in: Circle())
+                                )
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.leading, 16)
+                        .padding(.bottom, 16)
+                        
+                        Spacer()
                     }
                 }
             }
@@ -194,12 +188,12 @@ struct HomeView: View {
                                 Rectangle()
                                     .fill(Color(.separator))
                                     .frame(height: 0.5)
-                                    .padding(.horizontal, 16)
+                                    .padding(.horizontal, 12)
                             }
                         }
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
-                        .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
+                        .listRowInsets(EdgeInsets(top: 0, leading: 12, bottom: 0, trailing: 12))
                         .onAppear {
                             // Load more content when near the end
                             if loop.id == viewModel.loops.last?.id {
@@ -233,102 +227,6 @@ struct HomeView: View {
             .refreshable {
                 await viewModel.refreshFeed()
             }
-        }
-    }
-}
-
-
-struct InlineComposeView: View {
-    @Binding var isComposing: Bool
-    @Binding var composeText: String
-    var isComposeFieldFocused: FocusState<Bool>.Binding
-    let onPost: () -> Void
-    @State private var showingImagePicker = false
-    
-    var body: some View {
-        VStack(spacing: 0) {
-            if isComposing {
-                // Expanded compose area
-                VStack(spacing: 12) {
-                    HStack {
-                        Button("Cancel") {
-                            isComposing = false
-                            composeText = ""
-                            isComposeFieldFocused.wrappedValue = false
-                        }
-                        .foregroundColor(.secondary)
-                        
-                        Spacer()
-                        
-                        Button("Post") {
-                            onPost()
-                        }
-                        .fontWeight(.semibold)
-                        .disabled(composeText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                        .foregroundColor(composeText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .secondary : .accentColor)
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 12)
-                    
-                    TextField("Keep everyone in the loop. What's new?", text: $composeText, axis: .vertical)
-                        .font(.body)
-                        .focused(isComposeFieldFocused)
-                        .lineLimit(5...10)
-                        .padding(.horizontal, 20)
-                        .padding(.bottom, 12)
-                }
-                .background(
-                    Color(.systemBackground)
-                        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16))
-                )
-                .padding(.horizontal, 20)
-                .padding(.bottom, 8)
-            } else {
-                // Collapsed compose bar - separated + button and text field
-                HStack(spacing: 8) {
-                    // Circular + button
-                    Button(action: {
-                        showingImagePicker = true
-                    }) {
-                        Image(systemName: "plus")
-                            .font(.system(size: 18, weight: .medium))
-                            .foregroundColor(.primary)
-                            .frame(width: 44, height: 44)
-                            .background(
-                                Color.clear
-                                    .glassEffect(.regular, in: Circle())
-                            )
-                    }
-                    .buttonStyle(.plain)
-                    
-                    // Text field area
-                    Button(action: {
-                        isComposing = true
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                            isComposeFieldFocused.wrappedValue = true
-                        }
-                    }) {
-                        Text("What's new?")
-                            .font(.body)
-                            .foregroundColor(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 12)
-                            .background(
-                                Color.clear
-                                    .glassEffect(.regular, in: Capsule())
-                            )
-                    }
-                    .buttonStyle(.plain)
-                }
-                .padding(.horizontal, 20) // Standard tab bar side padding
-                .padding(.bottom, 8)
-            }
-        }
-        .animation(.easeInOut(duration: 0.3), value: isComposing)
-        .sheet(isPresented: $showingImagePicker) {
-            // TODO: Implement image picker
-            Text("Image Picker")
         }
     }
 }

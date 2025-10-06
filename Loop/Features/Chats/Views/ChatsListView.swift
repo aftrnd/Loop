@@ -137,7 +137,7 @@ struct ChatsListView: View {
                     .padding(.bottom, 8)
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
-                    .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
+                    .listRowInsets(EdgeInsets(top: 0, leading: 12, bottom: 0, trailing: 12))
                 }
                 
                 ForEach(Array(viewModel.recent.enumerated()), id: \.element.id) { index, chat in
@@ -154,7 +154,7 @@ struct ChatsListView: View {
                                 .fill(Color(.separator))
                                 .frame(height: 1.15)
                                 .padding(.leading, 82)
-                                .padding(.trailing, 16)
+                                .padding(.trailing, 12)
                         }
                     }
                     .contentShape(RoundedRectangle(cornerRadius: 18))
@@ -163,7 +163,7 @@ struct ChatsListView: View {
                     }
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
-                    .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
+                    .listRowInsets(EdgeInsets(top: 0, leading: 12, bottom: 0, trailing: 12))
                     .swipeActions(edge: .leading, allowsFullSwipe: false) {
                         Button {
                             viewModel.pinChat(chat)
