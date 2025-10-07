@@ -13,39 +13,26 @@ struct HomeView: View {
                     .ignoresSafeArea()
                 
                 feedListView
-                
-                // Floating Action Button
-                VStack {
-                    Spacer()
-                    HStack {
-                        Button(action: {
-                            // Haptic feedback
-                            let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
-                            impactFeedback.impactOccurred()
-                            
-                            // Open compose sheet
-                            viewModel.showCompose()
-                        }) {
-                            Image(systemName: "plus")
-                                .font(.system(size: 24, weight: .semibold))
-                                .foregroundColor(.primary)
-                                .frame(width: 64, height: 64)
-                                .background(
-                                    Color.clear
-                                        .glassEffect(.regular, in: Circle())
-                                )
-                        }
-                        .buttonStyle(.plain)
-                        .padding(.leading, 20)
-                        .padding(.bottom, 20)
-                        
-                        Spacer()
-                    }
-                }
             }
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button(action: {
+                        // Haptic feedback
+                        let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
+                        impactFeedback.impactOccurred()
+                        
+                        // Open compose sheet
+                        viewModel.showCompose()
+                    }) {
+                        Image(systemName: "plus")
+                            .font(.body)
+                            .fontWeight(.medium)
+                    }
+                    .buttonStyle(.plain)
+                }
+                
                 ToolbarItem(placement: .principal) {
                     Text("Loop")
                         .font(.headline)
