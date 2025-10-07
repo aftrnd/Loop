@@ -94,6 +94,7 @@ struct MainTabView: View {
         }
         .tabViewStyle(.sidebarAdaptable)
         .environment(\.horizontalSizeClass, .compact)
+        .tabBarMinimizeBehavior(.onScrollDown)
     }
 }
 

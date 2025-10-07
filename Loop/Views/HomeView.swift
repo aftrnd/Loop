@@ -39,20 +39,6 @@ struct HomeView: View {
                         .fontWeight(.semibold)
                 }
                 
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button(action: {
-                        // Haptic feedback
-                        let impactFeedback = UIImpactFeedbackGenerator(style: .light)
-                        impactFeedback.impactOccurred()
-                        
-                        showProfile = true
-                    }) {
-                        Image(systemName: "person")
-                            .font(.body)
-                            .fontWeight(.medium)
-                    }
-                    .buttonStyle(.plain)
-                }
             }
             .toolbarBackground(.hidden, for: .navigationBar)
         }

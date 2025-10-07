@@ -208,7 +208,7 @@ struct ComposeLoopView: View {
                                     Text("@\(username)")
                                         .font(.callout)
                                         .fontWeight(.regular)
-                                        .foregroundColor(.secondary)
+                                        .foregroundStyle(.secondary)
                                     
                                     Spacer()
                                 }
@@ -227,6 +227,8 @@ struct ComposeLoopView: View {
                                 text: $draft.content,
                                 axis: .vertical
                             )
+                            .foregroundStyle(.primary)
+                            .accentColor(.blue)
                             .font(.body)
                             .focused($isTextFieldFocused)
                             .lineLimit(isSheetExpanded ? (4...Int.max) : (3...4))
@@ -247,15 +249,7 @@ struct ComposeLoopView: View {
                                 .padding(.trailing, 16)
                                 .padding(.bottom, 12)
                         }
-                        .background(
-                            .ultraThinMaterial.opacity(0.6),
-                            in: ConcentricRectangle(
-                                topLeadingCorner: .concentric(minimum: 12),
-                                topTrailingCorner: .concentric(minimum: 12),
-                                bottomLeadingCorner: .concentric(minimum: 12),
-                                bottomTrailingCorner: .concentric(minimum: 12)
-                            )
-                        )
+                        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 12))
                         .overlay(
                             ConcentricRectangle(
                                 topLeadingCorner: .concentric(minimum: 12),
