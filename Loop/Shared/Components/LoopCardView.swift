@@ -1,5 +1,37 @@
 import SwiftUI
 
+// MARK: - Concentric Design Helper
+extension View {
+    /// Applies concentric corner radius that harmonizes with the parent container
+    /// This follows Apple's concentricity design principle from WWDC
+    func concentricCorners(
+        _ radius: CGFloat,
+        minimum: CGFloat = 0
+    ) -> some View {
+        self.clipShape(RoundedRectangle(cornerRadius: max(radius, minimum)))
+    }
+    
+    /// Creates a concentric card background with proper shadow and corner radius
+    func concentricCard(
+        cornerRadius: CGFloat = 16,
+        shadowRadius: CGFloat = 8,
+        shadowOffset: CGSize = CGSize(width: 0, height: 2)
+    ) -> some View {
+        self
+            .background {
+                RoundedRectangle(cornerRadius: cornerRadius)
+                    .fill(Color(.systemBackground))
+                    .shadow(
+                        color: .black.opacity(0.05),
+                        radius: shadowRadius,
+                        x: shadowOffset.width,
+                        y: shadowOffset.height
+                    )
+            }
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+    }
+}
+
 struct LoopCardView: View {
     let loop: Loop
     let isLiked: Bool
@@ -11,6 +43,8 @@ struct LoopCardView: View {
     @State private var showingFullText = false
     
     private let maxPreviewLength = 280
+    private let cardCornerRadius: CGFloat = 16
+    private let mediaCornerRadius: CGFloat = 12
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -202,26 +236,27 @@ struct LoopCardView: View {
         }
         .padding(.leading, 10)
         .padding(.trailing, 10)
-        .padding(.top, 8)
-        .padding(.bottom, 8)
-        .background(Color.clear)
+        .padding(.vertical, 12)
+        .concentricCard(cornerRadius: cardCornerRadius)
     }
 }
 
 struct LoopMediaView: View {
     let media: [LoopMedia]
+    private let mediaCornerRadius: CGFloat = 12
     
     var body: some View {
         if media.count == 1, let firstMedia = media.first {
-            SingleMediaView(media: firstMedia)
+            SingleMediaView(media: firstMedia, cornerRadius: mediaCornerRadius)
         } else if media.count > 1 {
-            MultipleMediaView(media: media)
+            MultipleMediaView(media: media, cornerRadius: mediaCornerRadius)
         }
     }
 }
 
 struct SingleMediaView: View {
     let media: LoopMedia
+    let cornerRadius: CGFloat
     
     var body: some View {
         switch media.type {
@@ -229,16 +264,14 @@ struct SingleMediaView: View {
             let displayMode = determineDisplayMode(media: media)
             
             CachedAsyncImage(url: URL(string: media.url)) { image in
-                GeometryReader { geometry in
-                    image
-                        .resizable()
-                        .aspectRatio(contentMode: displayMode.contentMode)
-                        .frame(width: geometry.size.width, height: displayMode.height)
-                        .clipped()
-                }
-                .frame(height: displayMode.height)
+                image
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: displayMode.height)
+                    .clipped()
             } placeholder: {
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: cornerRadius)
                     .fill(Color.secondary.opacity(0.2))
                     .frame(height: displayMode.height)
                     .overlay(
@@ -246,11 +279,12 @@ struct SingleMediaView: View {
                             .scaleEffect(1.0)
                     )
             }
-            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .frame(height: displayMode.height)
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
             
         case .video:
             // Placeholder for video - would implement video player here
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: cornerRadius)
                 .fill(Color.secondary.opacity(0.2))
                 .frame(height: 200)
                 .overlay(
@@ -277,17 +311,17 @@ struct SingleMediaView: View {
         
         let aspectRatio = width / height
         
-        // Social media best practices for image display
-        if aspectRatio >= 0.8 && aspectRatio <= 1.25 {
-            // Square-ish images (0.8 to 1.25 ratio) - display as square
-            return ImageDisplayMode(height: 300, contentMode: .fill)
-        } else if aspectRatio > 1.25 {
-            // Landscape images - display as landscape rectangle
-            return ImageDisplayMode(height: 200, contentMode: .fill)
-        } else {
-            // Portrait images - display as portrait rectangle
-            return ImageDisplayMode(height: 400, contentMode: .fill)
-        }
+        // Calculate height based on aspect ratio to show proper proportions
+        // Use a base width of ~350 (approximate card width minus padding) to calculate proportional height
+        let baseWidth: CGFloat = 350
+        let proportionalHeight = baseWidth / aspectRatio
+        
+        // Clamp height to reasonable bounds for UI
+        let minHeight: CGFloat = 150
+        let maxHeight: CGFloat = 500
+        let clampedHeight = max(minHeight, min(maxHeight, proportionalHeight))
+        
+        return ImageDisplayMode(height: clampedHeight, contentMode: .fill)
     }
 }
 
@@ -298,12 +332,13 @@ struct ImageDisplayMode {
 
 struct MultipleMediaView: View {
     let media: [LoopMedia]
+    let cornerRadius: CGFloat
     
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 ForEach(media, id: \.id) { mediaItem in
-                    SingleMediaView(media: mediaItem)
+                    SingleMediaView(media: mediaItem, cornerRadius: cornerRadius)
                         .frame(width: 280) // Consistent width for carousel
                 }
             }
@@ -314,48 +349,140 @@ struct MultipleMediaView: View {
 }
 
 #Preview {
-    VStack(spacing: 0) {
-        // Sample loop with text only
-        LoopCardView(
-            loop: Loop(
-                authorId: "user1",
-                content: "Just shipped a new feature for our app! Really excited to see how users respond to the new design. The team has been working hard on this for months. 🚀",
-                authorDisplayName: "John Doe",
-                authorUsername: "johndoe",
-                authorBadgeType: .verified
-            ),
-            isLiked: false,
-            onLike: {},
-            onReply: {},
-            onDelete: {},
-            onAvatarTap: {}
-        )
-        
-        Divider()
-            .padding(.horizontal, 16)
-        
-        // Sample loop with media
-        LoopCardView(
-            loop: Loop(
-                authorId: "user2",
-                content: "Beautiful sunset from my hike today!",
-                media: [
-                    LoopMedia(
-                        type: .image,
-                        url: "https://picsum.photos/400/300"
-                    )
-                ],
-                likes: ["user1", "user3", "user4"],
-                replies: ["reply1", "reply2"],
-                authorDisplayName: "Jane Smith",
-                authorUsername: "janesmith"
-            ),
-            isLiked: true,
-            onLike: {},
-            onReply: {},
-            onDelete: nil,
-            onAvatarTap: {}
-        )
+    ScrollView {
+        VStack(spacing: 16) {
+            // Sample loop with text only
+            LoopCardView(
+                loop: Loop(
+                    authorId: "user1",
+                    content: "Just shipped a new feature for our app! Really excited to see how users respond to the new design. The team has been working hard on this for months. 🚀",
+                    authorDisplayName: "John Doe",
+                    authorUsername: "johndoe",
+                    authorBadgeType: .verified
+                ),
+                isLiked: false,
+                onLike: {},
+                onReply: {},
+                onDelete: {},
+                onAvatarTap: {}
+            )
+            
+            // Square image (1:1)
+            LoopCardView(
+                loop: Loop(
+                    authorId: "user2",
+                    content: "Perfect square photo!",
+                    media: [
+                        LoopMedia(
+                            type: .image,
+                            url: "https://picsum.photos/400/400",
+                            width: 400,
+                            height: 400
+                        )
+                    ],
+                    authorDisplayName: "Jane Smith",
+                    authorUsername: "janesmith"
+                ),
+                isLiked: true,
+                onLike: {},
+                onReply: {},
+                onDelete: nil,
+                onAvatarTap: {}
+            )
+            
+            // 16:9 landscape
+            LoopCardView(
+                loop: Loop(
+                    authorId: "user3",
+                    content: "Cinematic landscape shot 🎬",
+                    media: [
+                        LoopMedia(
+                            type: .image,
+                            url: "https://picsum.photos/1600/900",
+                            width: 1600,
+                            height: 900
+                        )
+                    ],
+                    authorDisplayName: "Mike Johnson",
+                    authorUsername: "mikej"
+                ),
+                isLiked: false,
+                onLike: {},
+                onReply: {},
+                onDelete: nil,
+                onAvatarTap: {}
+            )
+            
+            // 9:16 portrait (should be tall)
+            LoopCardView(
+                loop: Loop(
+                    authorId: "user4",
+                    content: "Tall portrait mode 📱 (9:16 ratio)",
+                    media: [
+                        LoopMedia(
+                            type: .image,
+                            url: "https://picsum.photos/900/1600",
+                            width: 900,
+                            height: 1600
+                        )
+                    ],
+                    authorDisplayName: "Sarah Wilson",
+                    authorUsername: "sarahw"
+                ),
+                isLiked: false,
+                onLike: {},
+                onReply: {},
+                onDelete: nil,
+                onAvatarTap: {}
+            )
+            
+            // Very wide panorama
+            LoopCardView(
+                loop: Loop(
+                    authorId: "user5",
+                    content: "Ultra-wide panorama (should be short)",
+                    media: [
+                        LoopMedia(
+                            type: .image,
+                            url: "https://picsum.photos/2000/600",
+                            width: 2000,
+                            height: 600
+                        )
+                    ],
+                    authorDisplayName: "Alex Chen",
+                    authorUsername: "alexc"
+                ),
+                isLiked: true,
+                onLike: {},
+                onReply: {},
+                onDelete: nil,
+                onAvatarTap: {}
+            )
+            
+            // Very tall portrait
+            LoopCardView(
+                loop: Loop(
+                    authorId: "user6",
+                    content: "Very tall portrait (should be tall)",
+                    media: [
+                        LoopMedia(
+                            type: .image,
+                            url: "https://picsum.photos/600/2000",
+                            width: 600,
+                            height: 2000
+                        )
+                    ],
+                    authorDisplayName: "Emma Davis",
+                    authorUsername: "emmad"
+                ),
+                isLiked: false,
+                onLike: {},
+                onReply: {},
+                onDelete: nil,
+                onAvatarTap: {}
+            )
+        }
+        .padding(.horizontal, 16)
     }
-    .background(Color(.systemBackground))
+    .background(Color(.systemGroupedBackground))
 }

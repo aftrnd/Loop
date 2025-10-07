@@ -10,7 +10,7 @@ struct ImagePicker: UIViewControllerRepresentable {
         let picker = UIImagePickerController()
         picker.sourceType = sourceType
         picker.delegate = context.coordinator
-        picker.allowsEditing = true
+        picker.allowsEditing = false // Allow full image without square cropping
         return picker
     }
     
@@ -28,10 +28,11 @@ struct ImagePicker: UIViewControllerRepresentable {
         }
         
         func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
-            if let editedImage = info[.editedImage] as? UIImage {
-                parent.onImagePicked(editedImage)
-            } else if let originalImage = info[.originalImage] as? UIImage {
+            // Since allowsEditing is false, prioritize original image
+            if let originalImage = info[.originalImage] as? UIImage {
                 parent.onImagePicked(originalImage)
+            } else if let editedImage = info[.editedImage] as? UIImage {
+                parent.onImagePicked(editedImage)
             }
             
             parent.dismiss()
