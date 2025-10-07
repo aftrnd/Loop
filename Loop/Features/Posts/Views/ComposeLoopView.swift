@@ -19,6 +19,10 @@ struct ComposeLoopView: View {
     // Current user state
     @State private var currentUser: User?
     
+    // Dynamic height tracking
+    @State private var textHeight: CGFloat = 0
+    @State private var isSheetExpanded = false
+    
     private var characterCountColor: Color {
         let remaining = draft.remainingCharacters
         if remaining < 0 {
@@ -34,12 +38,113 @@ struct ComposeLoopView: View {
         draft.isValid && draft.isWithinCharacterLimit && !isUploadingMedia
     }
     
+    // Calculate dynamic minimum height based on content
+    private var dynamicMinHeight: CGFloat {
+        let baseHeight: CGFloat = 280 // Base minimum height
+        let additionalHeight = max(0, textHeight - 72) // 72 is roughly 3 lines
+        return min(baseHeight + additionalHeight, 500) // Cap at reasonable max
+    }
+    
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    // User info section - exact same styling as LoopCardView
-                    HStack(spacing: 16) {
+            GeometryReader { outerGeometry in
+                mainContent(geometry: outerGeometry)
+                    .onAppear {
+                        // Detect if sheet is expanded based on available height
+                        isSheetExpanded = outerGeometry.size.height > 400
+                    }
+                    .onChange(of: outerGeometry.size.height) { _, newHeight in
+                        isSheetExpanded = newHeight > 400
+                    }
+            }
+            .containerShape(.rect(cornerRadius: 16, style: .continuous))
+            .navigationTitle(draft.isReply ? "Reply" : "New Loop")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                    .foregroundColor(.secondary)
+                }
+                
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Post") {
+                        Task {
+                            await onPost()
+                        }
+                    }
+                    .fontWeight(.semibold)
+                    .disabled(!canPost)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .tint(.blue)
+                }
+            }
+            .safeAreaInset(edge: .bottom) {
+                // Bottom left camera button - centered vertically
+                HStack {
+                    Button(action: {
+                        showingImageSourceActionSheet = true
+                    }) {
+                        Image(systemName: "camera")
+                            .font(.system(size: 20, weight: .medium))
+                            .foregroundStyle(.blue)
+                    }
+                    .disabled(isUploadingMedia)
+                    .buttonStyle(.plain)
+                    
+                    Spacer()
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 8) // Minimal bottom padding like iOS Messages
+                .padding(.top, 16)
+            }
+        }
+        .onAppear {
+            // Load current user
+            loadCurrentUser()
+            
+            // Don't auto-focus - let user tap to focus
+        }
+        .interactiveDismissDisabled(draft.content.count > 0 || !draft.media.isEmpty)
+        .onChange(of: selectedPhotos) { _, newPhotos in
+            Task {
+                await processSelectedPhotos(newPhotos)
+            }
+        }
+        .confirmationDialog("Add Photo", isPresented: $showingImageSourceActionSheet) {
+            Button("Camera") {
+                showingCamera = true
+            }
+            
+            PhotosPicker(
+                selection: $selectedPhotos,
+                maxSelectionCount: 4,
+                matching: .images
+            ) {
+                Text("Photo Library")
+            }
+            
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Choose how you'd like to add a photo")
+        }
+        .fullScreenCover(isPresented: $showingCamera) {
+            ImagePicker(sourceType: .camera) { image in
+                Task {
+                    await processCameraImage(image)
+                }
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private func mainContent(geometry: GeometryProxy) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                // User info section - exact same styling as LoopCardView
+                HStack(spacing: 16) {
                         // Avatar - exact same as LoopCardView
                         ZStack {
                             if let avatarURLString = currentUser?.avatarURL, let avatarURL = URL(string: avatarURLString) {
@@ -113,38 +218,54 @@ struct ComposeLoopView: View {
                     .padding(.horizontal, 20)
                     .padding(.top, 4)
                     
-                    // Text input section - clean and expandable
+                    // Text input section - expanded to fill safe area
                     VStack(alignment: .leading, spacing: 8) {
-                        TextField(
-                            draft.isReply ? "Post your reply..." : "What's happening in the loop?",
-                            text: $draft.content,
-                            axis: .vertical
-                        )
-                        .font(.body)
-                        .focused($isTextFieldFocused)
-                        .lineLimit(3...)
-                        .textInputAutocapitalization(.sentences)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 12)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .fill(Color(.systemGray6))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                        .stroke(Color(.separator), lineWidth: 0.5)
-                                )
-                        )
-                        .padding(.horizontal, 20)
-                        
-                        // Character count
-                        HStack {
-                            Spacer()
+                        ZStack(alignment: .bottomTrailing) {
+                            TextField(
+                                draft.isReply ? "Post your reply..." : "What's happening in the loop?",
+                                text: $draft.content,
+                                axis: .vertical
+                            )
+                            .font(.body)
+                            .focused($isTextFieldFocused)
+                            .lineLimit(isSheetExpanded ? (4...Int.max) : (3...4))
+                            .textInputAutocapitalization(.sentences)
+                            .frame(
+                                minHeight: isSheetExpanded ? 96 : 72, // 4 lines when expanded, 3 when compact
+                                maxHeight: isSheetExpanded ? .infinity : 96 // Limit height in compact mode to not cover camera
+                            )
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 16)
+                            .padding(.trailing, 60) // Make room for character counter
+                            
+                            // Character counter inside textbox
                             Text("\(draft.remainingCharacters)")
                                 .font(.caption)
                                 .foregroundColor(characterCountColor)
                                 .monospacedDigit()
+                                .padding(.trailing, 16)
+                                .padding(.bottom, 12)
                         }
-                        .padding(.horizontal, 20)
+                        .background(
+                            .ultraThinMaterial.opacity(0.6),
+                            in: ConcentricRectangle(
+                                topLeadingCorner: .concentric(minimum: 12),
+                                topTrailingCorner: .concentric(minimum: 12),
+                                bottomLeadingCorner: .concentric(minimum: 12),
+                                bottomTrailingCorner: .concentric(minimum: 12)
+                            )
+                        )
+                        .overlay(
+                            ConcentricRectangle(
+                                topLeadingCorner: .concentric(minimum: 12),
+                                topTrailingCorner: .concentric(minimum: 12),
+                                bottomLeadingCorner: .concentric(minimum: 12),
+                                bottomTrailingCorner: .concentric(minimum: 12)
+                            )
+                            .stroke(Color(.separator).opacity(0.3), lineWidth: 0.5)
+                        )
+                        .padding(.horizontal, 16) // Match toolbar button alignment
+                        .padding(.bottom, 16) // Add padding under textbox
                     }
                     
                     // Media preview
@@ -167,89 +288,9 @@ struct ComposeLoopView: View {
                     }
                     
                     Spacer(minLength: 20)
-                }
-            }
-            .navigationTitle(draft.isReply ? "Reply" : "New Loop")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
-                    .foregroundColor(.secondary)
-                }
-                
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Post") {
-                        Task {
-                            await onPost()
-                        }
-                    }
-                    .fontWeight(.semibold)
-                    .disabled(!canPost)
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                    .tint(.blue)
-                }
-            }
-            .safeAreaInset(edge: .bottom) {
-                // Bottom left camera button
-                HStack {
-                    Button(action: {
-                        showingImageSourceActionSheet = true
-                    }) {
-                        Image(systemName: "camera")
-                            .font(.system(size: 20, weight: .medium))
-                            .foregroundStyle(.blue)
-                    }
-                    .disabled(isUploadingMedia)
-                    .buttonStyle(.plain)
-                    
-                    Spacer()
-                }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 12)
             }
         }
-        .onAppear {
-            // Load current user
-            loadCurrentUser()
-            
-            // Focus text field after a brief delay to allow sheet to settle
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                isTextFieldFocused = true
-            }
-        }
-        .interactiveDismissDisabled(draft.content.count > 0 || !draft.media.isEmpty)
-        .onChange(of: selectedPhotos) { _, newPhotos in
-            Task {
-                await processSelectedPhotos(newPhotos)
-            }
-        }
-        .confirmationDialog("Add Photo", isPresented: $showingImageSourceActionSheet) {
-            Button("Camera") {
-                showingCamera = true
-            }
-            
-            PhotosPicker(
-                selection: $selectedPhotos,
-                maxSelectionCount: 4,
-                matching: .images
-            ) {
-                Text("Photo Library")
-            }
-            
-            Button("Cancel", role: .cancel) { }
-        } message: {
-            Text("Choose how you'd like to add a photo")
-        }
-        .fullScreenCover(isPresented: $showingCamera) {
-            ImagePicker(sourceType: .camera) { image in
-                Task {
-                    await processCameraImage(image)
-                }
-            }
-        }
+        .scrollDisabled(!isSheetExpanded)
     }
     
     private func loadCurrentUser() {

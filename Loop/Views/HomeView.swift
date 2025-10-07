@@ -70,9 +70,9 @@ struct HomeView: View {
                     await viewModel.postLoop()
                 }
             )
-            .presentationDetents([.height(280), .large])
+            .presentationDetents([.fraction(0.40), .large])
             .presentationDragIndicator(.visible)
-            .presentationBackgroundInteraction(.enabled(upThrough: .height(280)))
+            .presentationBackgroundInteraction(.enabled(upThrough: .fraction(0.35)))
             .presentationContentInteraction(.scrolls)
         }
         .sheet(isPresented: $showProfile) {
