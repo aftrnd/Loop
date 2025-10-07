@@ -183,6 +183,8 @@ struct HomeView: View {
                                 profileUserToShow = ProfileUser(userId: loop.authorId)
                             }
                         )
+                        .padding(.top, index == 0 ? 0 : 5) // Add top padding except for first post
+                        .padding(.bottom, index == viewModel.loops.count - 1 ? 0 : 5) // Add bottom padding except for last post
                         .overlay(alignment: .bottom) {
                             if index < viewModel.loops.count - 1 {
                                 Rectangle()
