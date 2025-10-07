@@ -335,17 +335,107 @@ struct MultipleMediaView: View {
     let media: [LoopMedia]
     let cornerRadius: CGFloat
     
+    // Calculate the optimal height for carousel (similar to single photos but slightly reduced)
+    private var carouselHeight: CGFloat {
+        guard let firstMedia = media.first else { return 300 }
+        return determineCarouselHeight(for: firstMedia)
+    }
+    
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(media, id: \.id) { mediaItem in
-                    SingleMediaView(media: mediaItem, cornerRadius: cornerRadius)
-                        .frame(width: 280) // Consistent width for carousel
+        GeometryReader { geometry in
+            let screenWidth = geometry.size.width
+            let photoWidth = screenWidth - 32 // Account for padding
+            let nextPhotoPreview = photoWidth * 0.25 // Show 1/4 of next photo
+            
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    ForEach(Array(media.enumerated()), id: \.element.id) { index, mediaItem in
+                        CarouselPhotoView(
+                            media: mediaItem,
+                            cornerRadius: cornerRadius,
+                            height: carouselHeight
+                        )
+                        .frame(width: photoWidth)
+                        .id(index) // Important for scrollTargetBehavior
+                    }
                 }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                // Add trailing padding to show preview of next photo
+                .padding(.trailing, nextPhotoPreview)
             }
-            .padding(.horizontal, 8)
+            .scrollTargetBehavior(.viewAligned)
+            .scrollClipDisabled() // Allow content to extend beyond bounds for preview
         }
-        .scrollTargetBehavior(.viewAligned)
+        .frame(height: carouselHeight + 16) // Add padding for vertical spacing
+    }
+    
+    private func determineCarouselHeight(for media: LoopMedia) -> CGFloat {
+        guard let width = media.width, let height = media.height, height > 0 else {
+            return 300 // Default height for carousel
+        }
+        
+        let aspectRatio = width / height
+        let baseWidth: CGFloat = 350 // Base width for calculations
+        
+        // Calculate proportional height but keep it reasonable for carousel
+        let proportionalHeight = baseWidth / aspectRatio
+        
+        // Clamp height for carousel - slightly smaller range than single photos
+        let minHeight: CGFloat = 200
+        let maxHeight: CGFloat = 400
+        let clampedHeight = max(minHeight, min(maxHeight, proportionalHeight))
+        
+        return clampedHeight
+    }
+}
+
+struct CarouselPhotoView: View {
+    let media: LoopMedia
+    let cornerRadius: CGFloat
+    let height: CGFloat
+    
+    var body: some View {
+        switch media.type {
+        case .image:
+            CachedAsyncImage(url: URL(string: media.url)) { image in
+                image
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: height)
+                    .clipped()
+            } placeholder: {
+                RoundedRectangle(cornerRadius: cornerRadius)
+                    .fill(Color.secondary.opacity(0.2))
+                    .frame(height: height)
+                    .overlay(
+                        ProgressView()
+                            .scaleEffect(1.0)
+                    )
+            }
+            .frame(height: height)
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+            
+        case .video:
+            // Placeholder for video - would implement video player here
+            RoundedRectangle(cornerRadius: cornerRadius)
+                .fill(Color.secondary.opacity(0.2))
+                .frame(height: height)
+                .overlay(
+                    VStack(spacing: 8) {
+                        Image(systemName: "play.circle.fill")
+                            .font(.system(size: 40))
+                            .foregroundColor(.white)
+                        Text("Video")
+                            .font(.caption)
+                            .foregroundColor(.white)
+                    }
+                )
+            
+        case .text:
+            EmptyView()
+        }
     }
 }
 
@@ -475,6 +565,47 @@ struct MultipleMediaView: View {
                     ],
                     authorDisplayName: "Emma Davis",
                     authorUsername: "emmad"
+                ),
+                isLiked: false,
+                onLike: {},
+                onReply: {},
+                onDelete: nil,
+                onAvatarTap: {}
+            )
+            
+            // Multiple photos carousel
+            LoopCardView(
+                loop: Loop(
+                    authorId: "user7",
+                    content: "Check out this amazing carousel! Swipe to see more photos 📸✨",
+                    media: [
+                        LoopMedia(
+                            type: .image,
+                            url: "https://picsum.photos/400/600?random=1",
+                            width: 400,
+                            height: 600
+                        ),
+                        LoopMedia(
+                            type: .image,
+                            url: "https://picsum.photos/600/400?random=2",
+                            width: 600,
+                            height: 400
+                        ),
+                        LoopMedia(
+                            type: .image,
+                            url: "https://picsum.photos/500/500?random=3",
+                            width: 500,
+                            height: 500
+                        ),
+                        LoopMedia(
+                            type: .image,
+                            url: "https://picsum.photos/800/400?random=4",
+                            width: 800,
+                            height: 400
+                        )
+                    ],
+                    authorDisplayName: "Sarah Wilson",
+                    authorUsername: "sarahw"
                 ),
                 isLiked: false,
                 onLike: {},
