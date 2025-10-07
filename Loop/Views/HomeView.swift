@@ -70,6 +70,8 @@ struct HomeView: View {
                     await viewModel.postLoop()
                 }
             )
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showProfile) {
             ProfileView()

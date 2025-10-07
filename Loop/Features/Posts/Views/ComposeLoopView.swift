@@ -13,6 +13,8 @@ struct ComposeLoopView: View {
     @State private var showingCamera = false
     @FocusState private var isTextFieldFocused: Bool
     
+    @Environment(\.dismiss) private var dismiss
+    
     private var characterCountColor: Color {
         let remaining = draft.remainingCharacters
         if remaining < 0 {
@@ -30,28 +32,91 @@ struct ComposeLoopView: View {
     
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                // Header
-                HStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    // User info section
+                    HStack(spacing: 12) {
+                        Circle()
+                            .fill(Color(.systemGray5))
+                            .frame(width: 40, height: 40)
+                            .overlay(
+                                Image(systemName: "person.fill")
+                                    .foregroundColor(.secondary)
+                                    .font(.system(size: 16))
+                            )
+                        
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("You")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                            
+                            Text("@username")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        Spacer()
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.top, 8)
+                    
+                    // Text input section
+                    VStack(alignment: .leading, spacing: 12) {
+                        TextField(
+                            draft.isReply ? "Post your reply..." : "What's happening in the loop?",
+                            text: $draft.content,
+                            axis: .vertical
+                        )
+                        .font(.body)
+                        .focused($isTextFieldFocused)
+                        .lineLimit(3...10)
+                        .textInputAutocapitalization(.sentences)
+                        .padding(.horizontal, 20)
+                        
+                        // Character count
+                        HStack {
+                            Spacer()
+                            Text("\(draft.remainingCharacters)")
+                                .font(.caption)
+                                .foregroundColor(characterCountColor)
+                                .monospacedDigit()
+                        }
+                        .padding(.horizontal, 20)
+                    }
+                    
+                    // Media preview
+                    if !draft.media.isEmpty {
+                        MediaPreviewView(media: $draft.media)
+                            .padding(.horizontal, 20)
+                    }
+                    
+                    // Upload progress
+                    if isUploadingMedia {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                            Text("Uploading media...")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                        }
+                        .padding(.horizontal, 20)
+                    }
+                    
+                    Spacer(minLength: 100)
+                }
+            }
+            .navigationTitle(draft.isReply ? "Reply" : "New Loop")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
                     Button("Cancel") {
-                        isPresented = false
+                        dismiss()
                     }
                     .foregroundColor(.secondary)
-                    
-                    Spacer()
-                    
-                    if draft.isReply {
-                        Text("Reply")
-                            .font(.headline)
-                            .fontWeight(.semibold)
-                    } else {
-                        Text("New Loop")
-                            .font(.headline)
-                            .fontWeight(.semibold)
-                    }
-                    
-                    Spacer()
-                    
+                }
+                
+                ToolbarItem(placement: .topBarTrailing) {
                     Button("Post") {
                         Task {
                             await onPost()
@@ -61,98 +126,19 @@ struct ComposeLoopView: View {
                     .disabled(!canPost)
                     .foregroundColor(canPost ? .accentColor : .secondary)
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-                .background(Color(.systemBackground))
-                
-                Divider()
-                
-                // Content area
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
-                        // User info (current user)
-                        HStack(spacing: 12) {
-                            // Current user avatar placeholder
-                            Circle()
-                                .fill(Color.secondary.opacity(0.3))
-                                .frame(width: 40, height: 40)
-                                .overlay(
-                                    Image(systemName: "person.fill")
-                                        .foregroundColor(.secondary)
-                                        .font(.system(size: 16))
-                                )
-                            
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("You")
-                                    .font(.system(.subheadline, design: .rounded, weight: .semibold))
-                                    .foregroundColor(.primary)
-                                
-                                Text("@username")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                            
-                            Spacer()
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.top, 16)
-                        
-                        // Text input
-                        VStack(alignment: .leading, spacing: 8) {
-                            TextField(
-                                draft.isReply ? "Post your reply..." : "What's happening in the loop?",
-                                text: $draft.content,
-                                axis: .vertical
-                            )
-                            .font(.system(.body, design: .default))
-                            .focused($isTextFieldFocused)
-                            .lineLimit(10...20)
-                            .padding(.horizontal, 16)
-                            
-                            // Character count
-                            HStack {
-                                Spacer()
-                                Text("\(draft.remainingCharacters)")
-                                    .font(.caption)
-                                    .foregroundColor(characterCountColor)
-                                    .padding(.horizontal, 16)
-                            }
-                        }
-                        
-                        // Media preview
-                        if !draft.media.isEmpty {
-                            MediaPreviewView(media: $draft.media)
-                                .padding(.horizontal, 16)
-                        }
-                        
-                        // Media upload progress
-                        if isUploadingMedia {
-                            HStack {
-                                ProgressView()
-                                    .scaleEffect(0.8)
-                                Text("Uploading media...")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                Spacer()
-                            }
-                            .padding(.horizontal, 16)
-                        }
-                        
-                        Spacer(minLength: 100)
-                    }
-                }
-                
+            }
+            .safeAreaInset(edge: .bottom) {
                 // Bottom toolbar
                 VStack(spacing: 0) {
                     Divider()
                     
                     HStack(spacing: 20) {
-                        // Combined photo/camera button
+                        // Photo button
                         Button(action: {
                             showingImageSourceActionSheet = true
                         }) {
                             Image(systemName: "photo")
-                                .font(.system(size: 20))
+                                .font(.system(size: 20, weight: .medium))
                                 .foregroundColor(.accentColor)
                         }
                         .disabled(isUploadingMedia)
@@ -169,42 +155,44 @@ struct ComposeLoopView: View {
                                 .foregroundColor(.secondary)
                         }
                     }
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, 20)
                     .padding(.vertical, 12)
-                    .background(Color(.systemBackground))
+                    .background(.regularMaterial)
                 }
             }
-            .background(Color(.systemBackground))
-            .onAppear {
+        }
+        .onAppear {
+            // Focus text field after a brief delay
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 isTextFieldFocused = true
             }
-            .onChange(of: selectedPhotos) { _, newPhotos in
+        }
+        .onChange(of: selectedPhotos) { _, newPhotos in
+            Task {
+                await processSelectedPhotos(newPhotos)
+            }
+        }
+        .confirmationDialog("Add Photo", isPresented: $showingImageSourceActionSheet) {
+            Button("Camera") {
+                showingCamera = true
+            }
+            
+            PhotosPicker(
+                selection: $selectedPhotos,
+                maxSelectionCount: 4,
+                matching: .images
+            ) {
+                Text("Photo Library")
+            }
+            
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Choose how you'd like to add a photo")
+        }
+        .fullScreenCover(isPresented: $showingCamera) {
+            ImagePicker(sourceType: .camera) { image in
                 Task {
-                    await processSelectedPhotos(newPhotos)
-                }
-            }
-            .confirmationDialog("Add Photo", isPresented: $showingImageSourceActionSheet) {
-                Button("Camera") {
-                    showingCamera = true
-                }
-                
-                PhotosPicker(
-                    selection: $selectedPhotos,
-                    maxSelectionCount: 4,
-                    matching: .images
-                ) {
-                    Text("Photo Library")
-                }
-                
-                Button("Cancel", role: .cancel) { }
-            } message: {
-                Text("Choose how you'd like to add a photo")
-            }
-            .fullScreenCover(isPresented: $showingCamera) {
-                ImagePicker(sourceType: .camera) { image in
-                    Task {
-                        await processCameraImage(image)
-                    }
+                    await processCameraImage(image)
                 }
             }
         }
@@ -285,22 +273,25 @@ struct SingleMediaPreview: View {
                     .resizable()
                     .aspectRatio(contentMode: .fit)
             } placeholder: {
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color.secondary.opacity(0.2))
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color(.systemGray5))
                     .frame(height: 200)
                     .overlay(
                         ProgressView()
                     )
             }
             .frame(maxHeight: 300)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             
             // Remove button
             Button(action: onRemove) {
                 Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 24))
+                    .font(.system(size: 22))
                     .foregroundColor(.white)
-                    .background(Circle().fill(Color.black.opacity(0.6)))
+                    .background(
+                        Circle()
+                            .fill(.black.opacity(0.6))
+                    )
             }
             .padding(8)
         }
@@ -312,16 +303,17 @@ struct MultipleMediaPreview: View {
     
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
+            HStack(spacing: 12) {
                 ForEach(media, id: \.id) { mediaItem in
                     SingleMediaPreview(media: mediaItem) {
                         removeMedia(mediaItem)
                     }
-                    .frame(width: 150)
+                    .frame(width: 200)
                 }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, 20)
         }
+        .scrollTargetBehavior(.viewAligned)
     }
     
     private func removeMedia(_ mediaToRemove: LoopMedia) {
