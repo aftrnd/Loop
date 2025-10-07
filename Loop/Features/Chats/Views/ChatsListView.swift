@@ -348,6 +348,13 @@ struct PinnedMessagesView: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .frame(width: 105)
+            
+            // Badge if user has one (only for 1:1 chats)
+            if !chat.isGroupChat, let badgeType = chat.otherParticipantBadgeType {
+                Image(systemName: badgeType.iconName)
+                    .font(.system(size: 10))
+                    .foregroundColor(badgeType.color)
+            }
         }
         .contentShape(Rectangle())
         .onTapGesture {

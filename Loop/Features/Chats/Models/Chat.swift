@@ -11,8 +11,9 @@ struct Chat: Identifiable, Hashable {
     var otherParticipantId: String? // For 1-on-1 chats, the other user's ID
     var otherParticipantDisplayName: String? // For 1-on-1 chats, the other user's current display name
     var otherParticipantAvatarURL: String? // For 1-on-1 chats, the other user's avatar URL
+    var otherParticipantBadgeType: BadgeType? // For 1-on-1 chats, the other user's badge
 
-    init(id: UUID = UUID(), title: String, lastMessagePreview: String, unreadCount: Int = 0, messages: [Message] = [], lastMessageTime: Date = Date(), participants: [String] = [], otherParticipantId: String? = nil, otherParticipantDisplayName: String? = nil, otherParticipantAvatarURL: String? = nil) {
+    init(id: UUID = UUID(), title: String, lastMessagePreview: String, unreadCount: Int = 0, messages: [Message] = [], lastMessageTime: Date = Date(), participants: [String] = [], otherParticipantId: String? = nil, otherParticipantDisplayName: String? = nil, otherParticipantAvatarURL: String? = nil, otherParticipantBadgeType: BadgeType? = nil) {
         self.id = id
         self.title = title
         self.lastMessagePreview = lastMessagePreview
@@ -23,6 +24,7 @@ struct Chat: Identifiable, Hashable {
         self.otherParticipantId = otherParticipantId
         self.otherParticipantDisplayName = otherParticipantDisplayName
         self.otherParticipantAvatarURL = otherParticipantAvatarURL
+        self.otherParticipantBadgeType = otherParticipantBadgeType
     }
     
     // MARK: - Computed Properties

@@ -69,10 +69,19 @@ struct ChatRowView: View {
             
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .center) {
-                    Text(chat.displayTitle)
-                        .font(.headline)
-                        .fontWeight(.semibold)
-                        .lineLimit(1)
+                    HStack(spacing: 4) {
+                        Text(chat.displayTitle)
+                            .font(.headline)
+                            .fontWeight(.semibold)
+                            .lineLimit(1)
+                        
+                        // Badge if user has one (only for 1:1 chats)
+                        if !chat.isGroupChat, let badgeType = chat.otherParticipantBadgeType {
+                            Image(systemName: badgeType.iconName)
+                                .font(.system(size: 14))
+                                .foregroundColor(badgeType.color)
+                        }
+                    }
                     
                     Spacer()
                     

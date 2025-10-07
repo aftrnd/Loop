@@ -403,10 +403,12 @@ class FirebaseService {
             // For 1:1 chats, fetch the other user's current display name and avatar
             var otherParticipantDisplayName: String?
             var otherParticipantAvatarURL: String?
+            var otherParticipantBadgeType: BadgeType?
             if participants.count == 2, let otherUserId = otherParticipantId {
                 if let otherUser = try? await getUser(withId: otherUserId) {
                     otherParticipantDisplayName = otherUser.displayName
                     otherParticipantAvatarURL = otherUser.avatarURL
+                    otherParticipantBadgeType = otherUser.badgeType
                 }
             }
 
@@ -420,7 +422,8 @@ class FirebaseService {
                 participants: participants,
                 otherParticipantId: otherParticipantId,
                 otherParticipantDisplayName: otherParticipantDisplayName,
-                otherParticipantAvatarURL: otherParticipantAvatarURL
+                otherParticipantAvatarURL: otherParticipantAvatarURL,
+                otherParticipantBadgeType: otherParticipantBadgeType
             ))
         }
         
@@ -527,10 +530,12 @@ class FirebaseService {
                         // For 1:1 chats, fetch the other user's current display name and avatar
                         var otherParticipantDisplayName: String?
                         var otherParticipantAvatarURL: String?
+                        var otherParticipantBadgeType: BadgeType?
                         if participants.count == 2, let otherUserId = otherParticipantId {
                             if let otherUser = try? await self.getUser(withId: otherUserId) {
                                 otherParticipantDisplayName = otherUser.displayName
                                 otherParticipantAvatarURL = otherUser.avatarURL
+                                otherParticipantBadgeType = otherUser.badgeType
                             }
                         }
                         
@@ -544,7 +549,8 @@ class FirebaseService {
                             participants: participants,
                             otherParticipantId: otherParticipantId,
                             otherParticipantDisplayName: otherParticipantDisplayName,
-                            otherParticipantAvatarURL: otherParticipantAvatarURL
+                            otherParticipantAvatarURL: otherParticipantAvatarURL,
+                            otherParticipantBadgeType: otherParticipantBadgeType
                         ))
                     }
                     
