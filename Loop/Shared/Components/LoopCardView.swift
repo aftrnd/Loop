@@ -236,7 +236,8 @@ struct LoopCardView: View {
         }
         .padding(.leading, 10)
         .padding(.trailing, 10)
-        .padding(.vertical, 12)
+        .padding(.top, 8)
+        .padding(.bottom, 8)
         .concentricCard(cornerRadius: cardCornerRadius)
     }
 }
