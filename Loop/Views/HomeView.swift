@@ -37,12 +37,6 @@ struct HomeView: View {
                     Text("Loop")
                         .font(.headline)
                         .fontWeight(.semibold)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(
-                            Color.clear
-                                .glassEffect(.regular, in: Capsule())
-                        )
                 }
                 
                 ToolbarItem(placement: .topBarTrailing) {

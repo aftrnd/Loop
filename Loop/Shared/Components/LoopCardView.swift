@@ -369,17 +369,24 @@ struct MultipleMediaView: View {
     }
     
     var body: some View {
-        TabView(selection: $currentIndex) {
-            ForEach(Array(media.enumerated()), id: \.element.id) { index, mediaItem in
-                CarouselPhotoView(
-                    media: mediaItem,
-                    cornerRadius: cornerRadius,
-                    height: carouselHeight
-                )
-                .tag(index)
+        GeometryReader { geometry in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 16) {
+                    ForEach(Array(media.enumerated()), id: \.element.id) { index, mediaItem in
+                        CarouselPhotoView(
+                            media: mediaItem,
+                            cornerRadius: cornerRadius,
+                            height: carouselHeight
+                        )
+                        .frame(width: geometry.size.width)
+                        .id(index)
+                    }
+                }
+                .scrollTargetLayout()
             }
+            .scrollTargetBehavior(.viewAligned)
+            .scrollPosition(id: .constant(currentIndex))
         }
-        .tabViewStyle(PageTabViewStyle(indexDisplayMode: .never))
         .frame(height: carouselHeight)
     }
 }
@@ -398,7 +405,7 @@ struct CarouselPhotoView: View {
                 image
                     .resizable()
                     .aspectRatio(contentMode: .fill)
-                    .frame(maxWidth: .infinity)
+                    .frame(maxWidth: .infinity, maxHeight: displayMode.height)
                     .frame(height: displayMode.height)
                     .clipped()
             } placeholder: {

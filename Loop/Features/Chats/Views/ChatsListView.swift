@@ -202,12 +202,6 @@ struct ChatsListView: View {
         Text("Messages")
             .font(.headline)
             .fontWeight(.semibold)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(
-                Color.clear
-                    .glassEffect(.regular, in: Capsule())
-            )
     }
 }
 
