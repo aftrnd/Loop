@@ -450,7 +450,7 @@ struct ProfileView: View {
                 HStack(spacing: 4) {
                     Image(systemName: "at")
                         .font(.callout)
-                        .fontWeight(.heavy)
+                        .fontWeight(.semibold)
                         .foregroundStyle(.secondary)
                     Text(currentUser?.username ?? "username")
                         .font(.callout)
@@ -463,7 +463,7 @@ struct ProfileView: View {
                     HStack(spacing: 4) {
                         Image(systemName: "location")
                             .font(.callout)
-                            .fontWeight(.heavy)
+                            .fontWeight(.semibold)
                             .foregroundStyle(.secondary)
                         
                         Text(location)
@@ -478,7 +478,7 @@ struct ProfileView: View {
                     HStack(spacing: 4) {
                         Image(systemName: "calendar")
                             .font(.callout)
-                            .fontWeight(.heavy)
+                            .fontWeight(.semibold)
                             .foregroundStyle(.secondary)
                         
                         Text(joinedDateFormatter.string(from: user.createdAt))
@@ -495,7 +495,7 @@ struct ProfileView: View {
         HStack(spacing: 4) {
             Image(systemName: "location")
                 .font(.callout)
-                .fontWeight(.heavy)
+                .fontWeight(.semibold)
                 .foregroundStyle(.secondary)
             
             TextField("Add location...", text: $editLocation)
