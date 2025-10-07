@@ -47,7 +47,9 @@ struct LoopCardView: View {
     private let mediaCornerRadius: CGFloat = 12
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(spacing: 0) {
+            // Card content with padding
+            VStack(alignment: .leading, spacing: 12) {
             // Header with author info
             HStack(spacing: 16) {
                 // Avatar
@@ -168,7 +170,7 @@ struct LoopCardView: View {
                     .padding(.bottom, loop.hasMedia ? 12 : 0)
                 }
                 
-                // Media content
+                // Media content - unified approach for both single and multiple photos
                 if loop.hasMedia {
                     LoopMediaView(media: loop.media)
                 }
@@ -233,12 +235,14 @@ struct LoopCardView: View {
                     .buttonStyle(.plain)
                 }
             }
+            }
+            .padding(.leading, 10)
+            .padding(.trailing, 10)
+            .padding(.top, 8)
+            .padding(.bottom, 8)
+            .concentricCard(cornerRadius: cardCornerRadius)
+            
         }
-        .padding(.leading, 10)
-        .padding(.trailing, 10)
-        .padding(.top, 8)
-        .padding(.bottom, 8)
-        .concentricCard(cornerRadius: cardCornerRadius)
     }
 }
 
@@ -250,6 +254,7 @@ struct LoopMediaView: View {
         if media.count == 1, let firstMedia = media.first {
             SingleMediaView(media: firstMedia, cornerRadius: mediaCornerRadius)
         } else if media.count > 1 {
+            // Multiple photos with same padding as single photos
             MultipleMediaView(media: media, cornerRadius: mediaCornerRadius)
         }
     }
@@ -334,59 +339,48 @@ struct ImageDisplayMode {
 struct MultipleMediaView: View {
     let media: [LoopMedia]
     let cornerRadius: CGFloat
+    @State private var currentIndex = 0
     
-    // Calculate the optimal height for carousel (similar to single photos but slightly reduced)
-    private var carouselHeight: CGFloat {
+    // Use the same height calculation as single photos
+    var carouselHeight: CGFloat {
         guard let firstMedia = media.first else { return 300 }
-        return determineCarouselHeight(for: firstMedia)
+        return determineDisplayMode(media: firstMedia).height
     }
     
-    var body: some View {
-        GeometryReader { geometry in
-            let screenWidth = geometry.size.width
-            let photoWidth = screenWidth - 32 // Account for padding
-            let nextPhotoPreview = photoWidth * 0.25 // Show 1/4 of next photo
-            
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
-                    ForEach(Array(media.enumerated()), id: \.element.id) { index, mediaItem in
-                        CarouselPhotoView(
-                            media: mediaItem,
-                            cornerRadius: cornerRadius,
-                            height: carouselHeight
-                        )
-                        .frame(width: photoWidth)
-                        .id(index) // Important for scrollTargetBehavior
-                    }
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-                // Add trailing padding to show preview of next photo
-                .padding(.trailing, nextPhotoPreview)
-            }
-            .scrollTargetBehavior(.viewAligned)
-            .scrollClipDisabled() // Allow content to extend beyond bounds for preview
-        }
-        .frame(height: carouselHeight + 16) // Add padding for vertical spacing
-    }
-    
-    private func determineCarouselHeight(for media: LoopMedia) -> CGFloat {
+    private func determineDisplayMode(media: LoopMedia) -> ImageDisplayMode {
         guard let width = media.width, let height = media.height, height > 0 else {
-            return 300 // Default height for carousel
+            // Default to square if no dimensions
+            return ImageDisplayMode(height: 300, contentMode: .fill)
         }
         
         let aspectRatio = width / height
-        let baseWidth: CGFloat = 350 // Base width for calculations
         
-        // Calculate proportional height but keep it reasonable for carousel
+        // Calculate height based on aspect ratio to show proper proportions
+        // Use a base width of ~350 (approximate card width minus padding) to calculate proportional height
+        let baseWidth: CGFloat = 350
         let proportionalHeight = baseWidth / aspectRatio
         
-        // Clamp height for carousel - slightly smaller range than single photos
-        let minHeight: CGFloat = 200
-        let maxHeight: CGFloat = 400
+        // Clamp height to reasonable bounds for UI
+        let minHeight: CGFloat = 150
+        let maxHeight: CGFloat = 500
         let clampedHeight = max(minHeight, min(maxHeight, proportionalHeight))
         
-        return clampedHeight
+        return ImageDisplayMode(height: clampedHeight, contentMode: .fill)
+    }
+    
+    var body: some View {
+        TabView(selection: $currentIndex) {
+            ForEach(Array(media.enumerated()), id: \.element.id) { index, mediaItem in
+                CarouselPhotoView(
+                    media: mediaItem,
+                    cornerRadius: cornerRadius,
+                    height: carouselHeight
+                )
+                .tag(index)
+            }
+        }
+        .tabViewStyle(PageTabViewStyle(indexDisplayMode: .never))
+        .frame(height: carouselHeight)
     }
 }
 
@@ -398,30 +392,32 @@ struct CarouselPhotoView: View {
     var body: some View {
         switch media.type {
         case .image:
+            let displayMode = determineDisplayMode(media: media)
+            
             CachedAsyncImage(url: URL(string: media.url)) { image in
                 image
                     .resizable()
                     .aspectRatio(contentMode: .fill)
                     .frame(maxWidth: .infinity)
-                    .frame(height: height)
+                    .frame(height: displayMode.height)
                     .clipped()
             } placeholder: {
                 RoundedRectangle(cornerRadius: cornerRadius)
                     .fill(Color.secondary.opacity(0.2))
-                    .frame(height: height)
+                    .frame(height: displayMode.height)
                     .overlay(
                         ProgressView()
                             .scaleEffect(1.0)
                     )
             }
-            .frame(height: height)
+            .frame(height: displayMode.height)
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
             
         case .video:
             // Placeholder for video - would implement video player here
             RoundedRectangle(cornerRadius: cornerRadius)
                 .fill(Color.secondary.opacity(0.2))
-                .frame(height: height)
+                .frame(height: 200)
                 .overlay(
                     VStack(spacing: 8) {
                         Image(systemName: "play.circle.fill")
@@ -436,6 +432,27 @@ struct CarouselPhotoView: View {
         case .text:
             EmptyView()
         }
+    }
+    
+    private func determineDisplayMode(media: LoopMedia) -> ImageDisplayMode {
+        guard let width = media.width, let height = media.height, height > 0 else {
+            // Default to square if no dimensions
+            return ImageDisplayMode(height: 300, contentMode: .fill)
+        }
+        
+        let aspectRatio = width / height
+        
+        // Calculate height based on aspect ratio to show proper proportions
+        // Use a base width of ~350 (approximate card width minus padding) to calculate proportional height
+        let baseWidth: CGFloat = 350
+        let proportionalHeight = baseWidth / aspectRatio
+        
+        // Clamp height to reasonable bounds for UI
+        let minHeight: CGFloat = 150
+        let maxHeight: CGFloat = 500
+        let clampedHeight = max(minHeight, min(maxHeight, proportionalHeight))
+        
+        return ImageDisplayMode(height: clampedHeight, contentMode: .fill)
     }
 }
 
