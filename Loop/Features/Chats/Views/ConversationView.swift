@@ -11,92 +11,93 @@ struct ConversationView: View {
     }
     
     var body: some View {
-        ZStack {
-            Color(.systemBackground)
-                .ignoresSafeArea()
-            
-            // Messages area
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(spacing: 12) {
-                        if viewModel.messages.isEmpty && !viewModel.isLoading {
-                            // Empty state
-                            VStack(spacing: 20) {
-                                Image(systemName: "message.circle.fill")
-                                    .font(.system(size: 60))
-                                    .foregroundColor(.blue.opacity(0.6))
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(spacing: 8) {
+                    if viewModel.messages.isEmpty && !viewModel.isLoading {
+                        // Empty state
+                        VStack(spacing: 20) {
+                            Image(systemName: "message.circle.fill")
+                                .font(.system(size: 60))
+                                .foregroundColor(.blue.opacity(0.6))
 
-                                Text("Start the conversation")
-                                    .font(.title2)
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(.secondary)
+                            Text("Start the conversation")
+                                .font(.title2)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.secondary)
 
-                                Text("Send a message to begin chatting with \(chat.displayTitle)")
-                                    .font(.body)
-                                    .foregroundColor(.secondary)
-                                    .multilineTextAlignment(.center)
-                                    .padding(.horizontal, 40)
-                            }
-                            .padding(.top, 100)
-                        } else if viewModel.isLoading {
-                            // Loading state
-                            VStack(spacing: 20) {
-                                ProgressView()
-                                    .scaleEffect(1.5)
-                                Text("Loading messages...")
-                                    .foregroundColor(.secondary)
-                            }
-                            .padding(.top, 100)
-                        } else {
-                            ForEach(viewModel.messages) { message in
-                                MessageBubble(message: message)
-                                    .id(message.id)
-                            }
+                            Text("Send a message to begin chatting with \(chat.displayTitle)")
+                                .font(.body)
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, 40)
                         }
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 20)
-                    // bottom inset reserved by safeAreaInset
-                }
-                .onChange(of: viewModel.messages.count) {
-                    if let lastMessage = viewModel.messages.last {
-                        withAnimation(.easeInOut(duration: 0.3)) {
-                            proxy.scrollTo(lastMessage.id, anchor: .bottom)
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 100)
+                    } else if viewModel.isLoading {
+                        // Loading state
+                        VStack(spacing: 20) {
+                            ProgressView()
+                                .scaleEffect(1.5)
+                            Text("Loading messages...")
+                                .foregroundColor(.secondary)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 100)
+                    } else {
+                        ForEach(viewModel.messages) { message in
+                            MessageBubble(message: message)
+                                .id(message.id)
                         }
                     }
                 }
-                .interactiveKeyboardDismiss()
+                .padding(.horizontal, 0)
+                .padding(.top, 20)
             }
+            .scrollDismissesKeyboard(.interactively)
+            .defaultScrollAnchor(.bottom)
+            .onChange(of: viewModel.messages.count) { _, _ in
+                scrollToBottom(proxy: proxy)
             }
-            .navigationTitle(chat.displayTitle)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Button(action: {
-                        // Only show profile for 1:1 chats
-                        if !chat.isGroupChat {
-                            showingProfile = true
-                        }
-                    }) {
-                        Text(chat.displayTitle)
-                            .font(.headline)
-                            .foregroundColor(.primary)
+            .onAppear {
+                scrollToBottom(proxy: proxy)
+            }
+            .contentMargins(.bottom, 8, for: .scrollContent)
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            MessageInputView(messageText: $viewModel.messageText) {
+                viewModel.sendMessage()
+            }
+        }
+        .navigationTitle(chat.displayTitle)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Button(action: {
+                    if !chat.isGroupChat {
+                        showingProfile = true
                     }
-                    .disabled(chat.isGroupChat) // Disable for group chats
+                }) {
+                    Text(chat.displayTitle)
+                        .font(.headline)
+                        .foregroundColor(.primary)
                 }
+                .disabled(chat.isGroupChat)
             }
-            .safeAreaInset(edge: .bottom, alignment: .center, spacing: 0) {
-                MessageInputView(messageText: $viewModel.messageText) {
-                    viewModel.sendMessage()
-                }
-                .zIndex(1)
-                .background(Color.clear)
+        }
+        .sheet(isPresented: $showingProfile) {
+            if let otherUserId = chat.otherParticipantId {
+                ProfileView(userId: otherUserId)
             }
-            .sheet(isPresented: $showingProfile) {
-                if let otherUserId = chat.otherParticipantId {
-                    ProfileView(userId: otherUserId)
-                }
+        }
+    }
+    
+    private func scrollToBottom(proxy: ScrollViewProxy) {
+        if let lastMessage = viewModel.messages.last {
+            withAnimation(.easeInOut(duration: 0.3)) {
+                proxy.scrollTo(lastMessage.id, anchor: .bottom)
             }
+        }
     }
 }
 

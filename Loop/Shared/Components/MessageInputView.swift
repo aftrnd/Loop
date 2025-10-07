@@ -7,7 +7,7 @@ struct MessageInputView: View {
     @FocusState private var isFocused: Bool
     
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 8) {
             TextField("Message", text: $messageText)
                 .textFieldStyle(.plain)
                 .font(.body)
@@ -15,32 +15,28 @@ struct MessageInputView: View {
                 .onSubmit(onSend)
                 .textInputAutocapitalization(.sentences)
                 .disableAutocorrection(false)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .lineLimit(1)
                 .focused($isFocused)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(
-                    Color.clear
-                        .glassEffect(.regular, in: Capsule())
-                        .allowsHitTesting(false)
-                )
             
             Button(action: onSend) {
-                Image(systemName: "arrow.up.circle.fill")
-                    .font(.title2)
-                    .foregroundColor(messageText.isEmpty ? Color.secondary : Color.white)
-                    .overlay(
-                        LinearGradient(colors: [.blue, .purple], startPoint: .topLeading, endPoint: .bottomTrailing)
-                            .mask(
-                                Image(systemName: "arrow.up.circle.fill").font(.title2)
-                            )
-                            .opacity(messageText.isEmpty ? 0 : 1)
-                    )
+                ZStack {
+                    Circle()
+                        .fill(messageText.isEmpty ? Color.gray.opacity(0.3) : Color.blue)
+                        .frame(width: 32, height: 32)
+                    
+                    Image(systemName: "arrow.up")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(.white)
+                }
             }
             .disabled(messageText.isEmpty)
         }
         .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(
+            Color.clear
+                .glassEffect(.regular, in: Capsule())
+        )
+        .padding(.horizontal, 20)
         .padding(.vertical, 8)
     }
 }

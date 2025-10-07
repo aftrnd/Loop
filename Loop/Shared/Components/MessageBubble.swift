@@ -6,7 +6,7 @@ struct MessageBubble: View {
     var body: some View {
         HStack {
             if message.isFromUser {
-                Spacer(minLength: 50)
+                Spacer(minLength: 60)
             }
             
             VStack(alignment: message.isFromUser ? .trailing : .leading, spacing: 4) {
@@ -25,14 +25,12 @@ struct MessageBubble: View {
                     .background(
                         Group {
                             if message.isFromUser {
-                                // Sent messages: gradient on the right
                                 LinearGradient(colors: [Color.blue, Color.purple], startPoint: .topLeading, endPoint: .bottomTrailing)
                             } else {
-                                // Received messages: system gray on the left
                                 Color(.systemGray5)
                             }
                         }
-                        .clipShape(RoundedRectangle(cornerRadius: 18))
+                        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                     )
                 
                 Text(formatTime(message.timestamp))
@@ -42,9 +40,10 @@ struct MessageBubble: View {
             }
             
             if !message.isFromUser {
-                Spacer(minLength: 50)
+                Spacer(minLength: 60)
             }
         }
+        .padding(.horizontal, 20)
     }
     
     private func formatTime(_ date: Date) -> String {
