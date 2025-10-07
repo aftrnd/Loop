@@ -15,6 +15,7 @@ struct ComposeLoopView: View {
     @FocusState private var isTextFieldFocused: Bool
     
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
     
     // Current user state
     @State private var currentUser: User?
@@ -222,7 +223,7 @@ struct ComposeLoopView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         ZStack(alignment: .bottomTrailing) {
                             TextField(
-                                draft.isReply ? "Post your reply..." : "What's happening in the loop?",
+                                draft.isReply ? "Post your reply..." : "What's happening in your loop?",
                                 text: $draft.content,
                                 axis: .vertical
                             )
@@ -232,7 +233,7 @@ struct ComposeLoopView: View {
                             .textInputAutocapitalization(.sentences)
                             .frame(
                                 minHeight: isSheetExpanded ? 96 : 72, // 4 lines when expanded, 3 when compact
-                                maxHeight: isSheetExpanded ? .infinity : 96 // Limit height in compact mode to not cover camera
+                                maxHeight: isSheetExpanded ? nil : 96 // No height limit when expanded, limited when compact
                             )
                             .padding(.horizontal, 20)
                             .padding(.vertical, 16)
@@ -262,7 +263,10 @@ struct ComposeLoopView: View {
                                 bottomLeadingCorner: .concentric(minimum: 12),
                                 bottomTrailingCorner: .concentric(minimum: 12)
                             )
-                            .stroke(Color(.separator).opacity(0.3), lineWidth: 0.5)
+                            .stroke(
+                                Color(.separator).opacity(0.6), 
+                                lineWidth: 1.0
+                            )
                         )
                         .padding(.horizontal, 16) // Match toolbar button alignment
                         .padding(.bottom, 16) // Add padding under textbox

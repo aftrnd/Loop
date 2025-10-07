@@ -141,7 +141,7 @@ struct LoopCardView: View {
             }
             
             // Action buttons
-            HStack(spacing: 24) {
+            HStack(spacing: 0) {
                 // Like button
                 Button(action: onLike) {
                     HStack(spacing: 4) {
@@ -149,14 +149,14 @@ struct LoopCardView: View {
                             .font(.system(size: 16, weight: .medium))
                             .foregroundColor(isLiked ? .red : .secondary)
                         
-                        if loop.likeCount > 0 {
-                            Text("\(loop.likeCount)")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
+                        Text(loop.likeCount > 99 ? "99+" : loop.likeCount > 0 ? "\(loop.likeCount)" : "")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .monospacedDigit()
                     }
                 }
                 .buttonStyle(.plain)
+                .frame(width: 44, alignment: .leading)
                 
                 // Reply button
                 Button(action: onReply) {
@@ -165,14 +165,25 @@ struct LoopCardView: View {
                             .font(.system(size: 16, weight: .medium))
                             .foregroundColor(.secondary)
                         
-                        if loop.replyCount > 0 {
-                            Text("\(loop.replyCount)")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
+                        Text(loop.replyCount > 99 ? "99+" : loop.replyCount > 0 ? "\(loop.replyCount)" : "")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .monospacedDigit()
                     }
                 }
                 .buttonStyle(.plain)
+                .frame(width: 44, alignment: .leading)
+                
+                // Share button
+                Button(action: {
+                    // TODO: Implement share functionality
+                }) {
+                    Image(systemName: "paperplane")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+                .frame(width: 44, alignment: .leading)
                 
                 Spacer()
                 

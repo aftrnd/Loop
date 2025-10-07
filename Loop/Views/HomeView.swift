@@ -111,20 +111,24 @@ struct HomeView: View {
                 // Feed content
                 if viewModel.isLoading && viewModel.loops.isEmpty {
                     // Loading state
-                    HStack {
-                        Spacer()
-                        VStack(spacing: 12) {
-                            ProgressView()
-                                .scaleEffect(1.2)
-                            Text("Loading your feed...")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
+                    GeometryReader { geometry in
+                        VStack {
+                            Spacer()
+                            VStack(spacing: 16) {
+                                ProgressView()
+                                    .scaleEffect(1.2)
+                                Text("Getting your Loops...")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                            }
+                            Spacer()
                         }
-                        .padding(.vertical, 40)
-                        Spacer()
+                        .frame(width: geometry.size.width, height: geometry.size.height)
                     }
+                    .frame(height: UIScreen.main.bounds.height - 200) // Account for navigation and safe areas
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets())
                 } else if viewModel.loops.isEmpty {
                     // Empty state
                     HStack {
