@@ -70,8 +70,10 @@ struct HomeView: View {
                     await viewModel.postLoop()
                 }
             )
-            .presentationDetents([.medium, .large])
+            .presentationDetents([.height(280), .large])
             .presentationDragIndicator(.visible)
+            .presentationBackgroundInteraction(.enabled(upThrough: .height(280)))
+            .presentationContentInteraction(.scrolls)
         }
         .sheet(isPresented: $showProfile) {
             ProfileView()

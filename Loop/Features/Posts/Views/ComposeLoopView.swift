@@ -1,6 +1,7 @@
 import SwiftUI
 import PhotosUI
 import UIKit
+import FirebaseAuth
 
 struct ComposeLoopView: View {
     @Binding var draft: LoopDraft
@@ -14,6 +15,9 @@ struct ComposeLoopView: View {
     @FocusState private var isTextFieldFocused: Bool
     
     @Environment(\.dismiss) private var dismiss
+    
+    // Current user state
+    @State private var currentUser: User?
     
     private var characterCountColor: Color {
         let remaining = draft.remainingCharacters
@@ -33,35 +37,84 @@ struct ComposeLoopView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    // User info section
-                    HStack(spacing: 12) {
-                        Circle()
-                            .fill(Color(.systemGray5))
-                            .frame(width: 40, height: 40)
-                            .overlay(
-                                Image(systemName: "person.fill")
-                                    .foregroundColor(.secondary)
-                                    .font(.system(size: 16))
-                            )
-                        
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("You")
-                                .font(.subheadline)
-                                .fontWeight(.semibold)
-                            
-                            Text("@username")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+                VStack(alignment: .leading, spacing: 16) {
+                    // User info section - exact same styling as LoopCardView
+                    HStack(spacing: 16) {
+                        // Avatar - exact same as LoopCardView
+                        ZStack {
+                            if let avatarURLString = currentUser?.avatarURL, let avatarURL = URL(string: avatarURLString) {
+                                // Show actual user avatar
+                                CachedAsyncImage(url: avatarURL) { image in
+                                    image
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fill)
+                                        .frame(width: 56, height: 56)
+                                        .clipShape(Circle())
+                                } placeholder: {
+                                    // Placeholder while loading
+                                    Circle()
+                                        .fill(Color(.systemGray5))
+                                        .frame(width: 56, height: 56)
+                                        .overlay {
+                                            ProgressView()
+                                                .scaleEffect(0.7)
+                                        }
+                                }
+                            } else {
+                                // Default avatar with initials - exact same as LoopCardView
+                                Circle()
+                                    .fill(Color(.systemGray5))
+                                    .frame(width: 50, height: 50)
+                                
+                                Color.clear
+                                    .frame(width: 50, height: 50)
+                                    .glassEffect(.regular, in: Circle())
+                                
+                                Text(String((currentUser?.displayName ?? "You").prefix(1)).uppercased())
+                                    .font(.headline)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(.primary)
+                            }
                         }
                         
-                        Spacer()
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack(alignment: .center) {
+                                HStack(spacing: 4) {
+                                    Text(currentUser?.displayName ?? "You")
+                                        .font(.headline)
+                                        .fontWeight(.semibold)
+                                        .lineLimit(1)
+                                    
+                                    // Badge if user has one - exact same as LoopCardView
+                                    if let badgeType = currentUser?.badgeType {
+                                        Image(systemName: badgeType.iconName)
+                                            .font(.system(size: 14))
+                                            .foregroundColor(badgeType.color)
+                                    }
+                                }
+                                
+                                Spacer()
+                            }
+                            
+                            // Username on its own line below the name - exact same as LoopCardView
+                            if let username = currentUser?.username, !username.isEmpty {
+                                HStack {
+                                    Text("@\(username)")
+                                        .font(.callout)
+                                        .fontWeight(.regular)
+                                        .foregroundColor(.secondary)
+                                    
+                                    Spacer()
+                                }
+                            }
+                        }
+                        .frame(maxHeight: .infinity, alignment: .center)
                     }
                     .padding(.horizontal, 20)
-                    .padding(.top, 8)
+                    .padding(.top, 4)
                     
-                    // Text input section
-                    VStack(alignment: .leading, spacing: 12) {
+                    // Text input section - clean and expandable
+                    VStack(alignment: .leading, spacing: 8) {
                         TextField(
                             draft.isReply ? "Post your reply..." : "What's happening in the loop?",
                             text: $draft.content,
@@ -69,8 +122,18 @@ struct ComposeLoopView: View {
                         )
                         .font(.body)
                         .focused($isTextFieldFocused)
-                        .lineLimit(3...10)
+                        .lineLimit(3...)
                         .textInputAutocapitalization(.sentences)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(Color(.systemGray6))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .stroke(Color(.separator), lineWidth: 0.5)
+                                )
+                        )
                         .padding(.horizontal, 20)
                         
                         // Character count
@@ -103,7 +166,7 @@ struct ComposeLoopView: View {
                         .padding(.horizontal, 20)
                     }
                     
-                    Spacer(minLength: 100)
+                    Spacer(minLength: 20)
                 }
             }
             .navigationTitle(draft.isReply ? "Reply" : "New Loop")
@@ -124,49 +187,40 @@ struct ComposeLoopView: View {
                     }
                     .fontWeight(.semibold)
                     .disabled(!canPost)
-                    .foregroundColor(canPost ? .accentColor : .secondary)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .tint(.blue)
                 }
             }
             .safeAreaInset(edge: .bottom) {
-                // Bottom toolbar
-                VStack(spacing: 0) {
-                    Divider()
-                    
-                    HStack(spacing: 20) {
-                        // Photo button
-                        Button(action: {
-                            showingImageSourceActionSheet = true
-                        }) {
-                            Image(systemName: "photo")
-                                .font(.system(size: 20, weight: .medium))
-                                .foregroundColor(.accentColor)
-                        }
-                        .disabled(isUploadingMedia)
-                        
-                        Spacer()
-                        
-                        // Privacy indicator
-                        HStack(spacing: 4) {
-                            Image(systemName: "globe")
-                                .font(.system(size: 12))
-                                .foregroundColor(.secondary)
-                            Text("Everyone can reply")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
+                // Bottom left camera button
+                HStack {
+                    Button(action: {
+                        showingImageSourceActionSheet = true
+                    }) {
+                        Image(systemName: "camera")
+                            .font(.system(size: 20, weight: .medium))
+                            .foregroundStyle(.blue)
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 12)
-                    .background(.regularMaterial)
+                    .disabled(isUploadingMedia)
+                    .buttonStyle(.plain)
+                    
+                    Spacer()
                 }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 12)
             }
         }
         .onAppear {
-            // Focus text field after a brief delay
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            // Load current user
+            loadCurrentUser()
+            
+            // Focus text field after a brief delay to allow sheet to settle
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
                 isTextFieldFocused = true
             }
         }
+        .interactiveDismissDisabled(draft.content.count > 0 || !draft.media.isEmpty)
         .onChange(of: selectedPhotos) { _, newPhotos in
             Task {
                 await processSelectedPhotos(newPhotos)
@@ -194,6 +248,20 @@ struct ComposeLoopView: View {
                 Task {
                     await processCameraImage(image)
                 }
+            }
+        }
+    }
+    
+    private func loadCurrentUser() {
+        Task {
+            do {
+                guard let userId = Auth.auth().currentUser?.uid else { return }
+                let user = try await FirebaseService.shared.getUser(withId: userId)
+                await MainActor.run {
+                    currentUser = user
+                }
+            } catch {
+                print("Error loading current user: \(error)")
             }
         }
     }
