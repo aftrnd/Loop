@@ -137,7 +137,7 @@ struct OTPVerificationView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 16)
                 .background(
-                    LinearGradient(colors: [.blue, .purple], startPoint: .topLeading, endPoint: .bottomTrailing)
+                    Color.blue
                         .clipShape(RoundedRectangle(cornerRadius: 16))
                 )
             }
