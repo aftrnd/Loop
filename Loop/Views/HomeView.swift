@@ -36,8 +36,8 @@ struct HomeView: View {
                                 )
                         }
                         .buttonStyle(.plain)
-                        .padding(.leading, 16)
-                        .padding(.bottom, 16)
+                        .padding(.leading, 20)
+                        .padding(.bottom, 20)
                         
                         Spacer()
                     }
@@ -188,12 +188,12 @@ struct HomeView: View {
                                 Rectangle()
                                     .fill(Color(.separator))
                                     .frame(height: 0.5)
-                                    .padding(.horizontal, 12)
+                                    .padding(.horizontal, 10)
                             }
                         }
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
-                        .listRowInsets(EdgeInsets(top: 0, leading: 12, bottom: 0, trailing: 12))
+                        .listRowInsets(EdgeInsets(top: 0, leading: 10, bottom: 0, trailing: 10))
                         .onAppear {
                             // Load more content when near the end
                             if loop.id == viewModel.loops.last?.id {

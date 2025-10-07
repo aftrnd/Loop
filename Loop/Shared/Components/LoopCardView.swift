@@ -84,7 +84,7 @@ struct LoopCardView: View {
                         }
                     }
                     
-                    // Username on its own line below the name
+                    // Username on its own line below the name (exact ProfileView styling)
                     if let username = loop.authorUsername, !username.isEmpty {
                         HStack {
                             Text("@\(username)")
@@ -189,10 +189,10 @@ struct LoopCardView: View {
                 }
             }
         }
-        .padding(.leading, 12)
-        .padding(.trailing, 12)
-        .padding(.top, 12)
-        .padding(.bottom, 12)
+        .padding(.leading, 10)
+        .padding(.trailing, 10)
+        .padding(.top, 8)
+        .padding(.bottom, 8)
         .background(Color.clear)
     }
 }

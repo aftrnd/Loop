@@ -88,7 +88,7 @@ struct ChatRowView: View {
                             .font(.subheadline) // Match the time font size
                             .foregroundColor(.secondary)
                     }
-                    .padding(.trailing, 12)
+                    .padding(.trailing, 10)
                 }
                 
                 HStack {
@@ -104,7 +104,7 @@ struct ChatRowView: View {
             .frame(maxHeight: .infinity, alignment: .center)
         }
         .offset(y: 0)
-        .padding(.leading, 12)
+        .padding(.leading, 10)
         .padding(.trailing, 0) // No trailing padding to allow time to extend to edge
         .padding(.top, 8)
         .padding(.bottom, 12)
