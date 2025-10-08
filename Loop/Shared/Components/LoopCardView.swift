@@ -49,6 +49,13 @@ struct LoopCardView: View {
     @State private var optimisticIsLiked: Bool = false
     @State private var optimisticLikeCount: Int = 0
     
+    // Photo viewer state
+    @State private var showPhotoViewer = false
+    @State private var selectedPhotoIndex: Int = 0
+    
+    // Carousel state for page indicators
+    @State private var currentCarouselIndex: Int = 0
+    
     private let maxPreviewLength = 280
     private let cardCornerRadius: CGFloat = 16
     private let mediaCornerRadius: CGFloat = 12
@@ -86,93 +93,40 @@ struct LoopCardView: View {
                 // Sync with backend like count
                 optimisticLikeCount = newValue
             }
+            .fullScreenCover(isPresented: $showPhotoViewer) {
+                FullScreenPhotoViewer(
+                    allMedia: loop.media,
+                    startingIndex: selectedPhotoIndex,
+                    isPresented: $showPhotoViewer
+                )
+                .presentationBackground(.clear)
+            }
     }
     
     private var cardContent: some View {
         VStack(spacing: 0) {
             // Card content with padding
             VStack(alignment: .leading, spacing: 12) {
-            // Header with author info
-            HStack(spacing: 16) {
-                // Avatar
-                ZStack {
-                    if let avatarURLString = loop.authorAvatarURL, let avatarURL = URL(string: avatarURLString) {
-                        // Show actual user avatar
-                        CachedAsyncImage(url: avatarURL) { image in
-                            image
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                                .frame(width: 56, height: 56)
-                                .clipShape(Circle())
-                        } placeholder: {
-                            // Placeholder while loading
-                            Circle()
-                                .fill(Color(.systemGray5))
-                                .frame(width: 56, height: 56)
-                                .overlay {
-                                    ProgressView()
-                                        .scaleEffect(0.7)
-                                }
-                        }
-                    } else {
-                        // Default avatar with initials
-                        Circle()
-                            .fill(Color(.systemGray5))
-                            .frame(width: 50, height: 50)
-                        
-                        Color.clear
-                            .frame(width: 50, height: 50)
-                            .glassEffect(.regular, in: Circle())
-                        
-                        Text(String(loop.displayAuthorName.prefix(1)).uppercased())
-                            .font(.headline)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.primary)
-                    }
-                }
-                .onTapGesture {
-                    onAvatarTap?()
-                }
+            // Header with author info using reusable component
+            HStack(spacing: 0) {
+                UserInfoHeader(
+                    avatarURL: loop.authorAvatarURL,
+                    displayName: loop.displayAuthorName,
+                    username: loop.authorUsername,
+                    badgeType: loop.authorBadgeType,
+                    onAvatarTap: onAvatarTap
+                )
                 
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(alignment: .center) {
-                        Text(loop.displayAuthorName)
-                            .font(.headline)
-                            .fontWeight(.semibold)
-                            .lineLimit(1)
-                        
-                        Spacer()
-                        
-                        HStack(spacing: 4) {
-                            Text(loop.timeAgoString)
-                                .font(.subheadline)
-                                .monospacedDigit()
-                                .foregroundColor(.secondary)
-                                .lineLimit(1)
-                                .truncationMode(.tail)
-                        }
-                    }
-                    
-                    // Username on its own line below the name with badge
-                    if let username = loop.authorUsername, !username.isEmpty {
-                        HStack(spacing: 4) {
-                            // Badge if user has one (now next to username)
-                            if let badgeType = loop.authorBadgeType {
-                                Image(systemName: badgeType.iconName)
-                                    .font(.system(size: 14))
-                                    .foregroundColor(badgeType.color)
-                            }
-                            
-                            Text("@\(username)")
-                                .font(.callout)
-                                .fontWeight(.regular)
-                                .foregroundStyle(.secondary)
-                            
-                            Spacer()
-                        }
-                    }
+                Spacer()
+                
+                HStack(spacing: 4) {
+                    Text(loop.timeAgoString)
+                        .font(.subheadline)
+                        .monospacedDigit()
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                 }
-                .frame(maxHeight: .infinity, alignment: .center)
             }
             
             // Content
@@ -212,7 +166,14 @@ struct LoopCardView: View {
                 
                 // Media content - unified approach for both single and multiple photos
                 if loop.hasMedia {
-                    LoopMediaView(media: loop.media)
+                    LoopMediaView(
+                        media: loop.media,
+                        currentIndex: $currentCarouselIndex,
+                        onPhotoTap: { index in
+                            selectedPhotoIndex = index
+                            showPhotoViewer = true
+                        }
+                    )
                 }
             }
             
@@ -292,6 +253,12 @@ struct LoopCardView: View {
                 .frame(width: 50, alignment: .leading)
                 .contentShape(Rectangle())
                 
+                // Page indicators for multi-image posts
+                if loop.media.count > 1 {
+                    PageIndicator(currentPage: currentCarouselIndex, pageCount: loop.media.count)
+                        .frame(width: 50, alignment: .leading)
+                }
+                
                 Spacer()
                 
                 // Three dots menu (only show if user can delete)
@@ -307,7 +274,6 @@ struct LoopCardView: View {
                     .contentShape(Rectangle())
                 }
             }
-            .padding(.vertical, 8) // Add extra vertical padding for particle overflow
             }
             .padding(.leading, 10)
             .padding(.trailing, 10)
@@ -321,14 +287,25 @@ struct LoopCardView: View {
 
 struct LoopMediaView: View {
     let media: [LoopMedia]
+    @Binding var currentIndex: Int
+    let onPhotoTap: (Int) -> Void
     private let mediaCornerRadius: CGFloat = 12
     
     var body: some View {
         if media.count == 1, let firstMedia = media.first {
-            SingleMediaView(media: firstMedia, cornerRadius: mediaCornerRadius)
+            SingleMediaView(
+                media: firstMedia,
+                cornerRadius: mediaCornerRadius,
+                onPhotoTap: { onPhotoTap(0) }
+            )
         } else if media.count > 1 {
             // Multiple photos with same padding as single photos
-            MultipleMediaView(media: media, cornerRadius: mediaCornerRadius)
+            MultipleMediaView(
+                media: media,
+                cornerRadius: mediaCornerRadius,
+                currentIndex: $currentIndex,
+                onPhotoTap: onPhotoTap
+            )
         }
     }
 }
@@ -336,6 +313,7 @@ struct LoopMediaView: View {
 struct SingleMediaView: View {
     let media: LoopMedia
     let cornerRadius: CGFloat
+    let onPhotoTap: () -> Void
     
     var body: some View {
         switch media.type {
@@ -360,6 +338,9 @@ struct SingleMediaView: View {
             }
             .frame(height: displayMode.height)
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+            .onTapGesture {
+                onPhotoTap()
+            }
             
         case .video:
             // Placeholder for video - would implement video player here
@@ -412,7 +393,9 @@ struct ImageDisplayMode {
 struct MultipleMediaView: View {
     let media: [LoopMedia]
     let cornerRadius: CGFloat
-    @State private var currentIndex = 0
+    @Binding var currentIndex: Int
+    let onPhotoTap: (Int) -> Void
+    @State private var scrollIndex: Int? = 0
     
     // Use the same height calculation as single photos
     var carouselHeight: CGFloat {
@@ -442,25 +425,34 @@ struct MultipleMediaView: View {
     }
     
     var body: some View {
-        GeometryReader { geometry in
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 16) {
-                    ForEach(Array(media.enumerated()), id: \.element.id) { index, mediaItem in
-                        CarouselPhotoView(
-                            media: mediaItem,
-                            cornerRadius: cornerRadius,
-                            height: carouselHeight
-                        )
-                        .frame(width: geometry.size.width)
-                        .id(index)
+        VStack(spacing: 0) {
+            // Image carousel
+            GeometryReader { geometry in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHStack(spacing: 0) {
+                        ForEach(Array(media.enumerated()), id: \.offset) { index, mediaItem in
+                            CarouselPhotoView(
+                                media: mediaItem,
+                                cornerRadius: cornerRadius,
+                                height: carouselHeight,
+                                onPhotoTap: { onPhotoTap(index) }
+                            )
+                            .frame(width: geometry.size.width)
+                            .containerRelativeFrame(.horizontal)
+                        }
                     }
+                    .scrollTargetLayout()
                 }
-                .scrollTargetLayout()
+                .scrollTargetBehavior(.paging)
+                .scrollPosition(id: $scrollIndex)
             }
-            .scrollTargetBehavior(.viewAligned)
-            .scrollPosition(id: .constant(currentIndex))
+            .frame(height: carouselHeight)
+            .onChange(of: scrollIndex) { _, newValue in
+                if let newValue = newValue {
+                    currentIndex = newValue
+                }
+            }
         }
-        .frame(height: carouselHeight)
     }
 }
 
@@ -468,6 +460,7 @@ struct CarouselPhotoView: View {
     let media: LoopMedia
     let cornerRadius: CGFloat
     let height: CGFloat
+    let onPhotoTap: () -> Void
     
     var body: some View {
         switch media.type {
@@ -492,6 +485,9 @@ struct CarouselPhotoView: View {
             }
             .frame(height: displayMode.height)
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+            .onTapGesture {
+                onPhotoTap()
+            }
             
         case .video:
             // Placeholder for video - would implement video player here
@@ -533,6 +529,22 @@ struct CarouselPhotoView: View {
         let clampedHeight = max(minHeight, min(maxHeight, proportionalHeight))
         
         return ImageDisplayMode(height: clampedHeight, contentMode: .fill)
+    }
+}
+
+// Compact page indicator component
+struct PageIndicator: View {
+    let currentPage: Int
+    let pageCount: Int
+    
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(0..<pageCount, id: \.self) { index in
+                Circle()
+                    .fill(currentPage == index ? Color.primary : Color.secondary.opacity(0.5))
+                    .frame(width: 5, height: 5)
+            }
+        }
     }
 }
 

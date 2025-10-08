@@ -160,80 +160,15 @@ struct ComposeLoopView: View {
     private func mainContent(geometry: GeometryProxy) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                // User info section - exact same styling as LoopCardView
-                HStack(spacing: 16) {
-                        // Avatar - exact same as LoopCardView
-                        ZStack {
-                            if let avatarURLString = currentUser?.avatarURL, let avatarURL = URL(string: avatarURLString) {
-                                // Show actual user avatar
-                                CachedAsyncImage(url: avatarURL) { image in
-                                    image
-                                        .resizable()
-                                        .aspectRatio(contentMode: .fill)
-                                        .frame(width: 56, height: 56)
-                                        .clipShape(Circle())
-                                } placeholder: {
-                                    // Placeholder while loading
-                                    Circle()
-                                        .fill(Color(.systemGray5))
-                                        .frame(width: 56, height: 56)
-                                        .overlay {
-                                            ProgressView()
-                                                .scaleEffect(0.7)
-                                        }
-                                }
-                            } else {
-                                // Default avatar with initials - exact same as LoopCardView
-                                Circle()
-                                    .fill(Color(.systemGray5))
-                                    .frame(width: 50, height: 50)
-                                
-                                Color.clear
-                                    .frame(width: 50, height: 50)
-                                    .glassEffect(.regular, in: Circle())
-                                
-                                Text(String((currentUser?.displayName ?? "You").prefix(1)).uppercased())
-                                    .font(.headline)
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(.primary)
-                            }
-                        }
-                        
-                        VStack(alignment: .leading, spacing: 4) {
-                            HStack(alignment: .center) {
-                                HStack(spacing: 4) {
-                                    Text(currentUser?.displayName ?? "You")
-                                        .font(.headline)
-                                        .fontWeight(.semibold)
-                                        .lineLimit(1)
-                                    
-                                    // Badge if user has one - exact same as LoopCardView
-                                    if let badgeType = currentUser?.badgeType {
-                                        Image(systemName: badgeType.iconName)
-                                            .font(.system(size: 14))
-                                            .foregroundColor(badgeType.color)
-                                    }
-                                }
-                                
-                                Spacer()
-                            }
-                            
-                            // Username on its own line below the name - exact same as LoopCardView
-                            if let username = currentUser?.username, !username.isEmpty {
-                                HStack {
-                                    Text("@\(username)")
-                                        .font(.callout)
-                                        .fontWeight(.regular)
-                                        .foregroundStyle(.secondary)
-                                    
-                                    Spacer()
-                                }
-                            }
-                        }
-                        .frame(maxHeight: .infinity, alignment: .center)
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 4)
+                // User info section using reusable component
+                UserInfoHeader(
+                    avatarURL: currentUser?.avatarURL,
+                    displayName: currentUser?.displayName ?? "You",
+                    username: currentUser?.username,
+                    badgeType: currentUser?.badgeType
+                )
+                .padding(.horizontal, 20)
+                .padding(.top, 4)
                     
                     // Text input section - expanded to fill safe area
                     VStack(alignment: .leading, spacing: 8) {
