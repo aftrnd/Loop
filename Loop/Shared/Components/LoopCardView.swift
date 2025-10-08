@@ -41,6 +41,7 @@ struct LoopCardView: View {
     let onAvatarTap: (() -> Void)?
     
     @State private var showingFullText = false
+    @State private var likeAnimationScale: CGFloat = 1.0
     
     private let maxPreviewLength = 280
     private let cardCornerRadius: CGFloat = 16
@@ -179,11 +180,21 @@ struct LoopCardView: View {
             // Action buttons
             HStack(spacing: 0) {
                 // Like button
-                Button(action: onLike) {
+                Button(action: {
+                    // Trigger bounce animation
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.5)) {
+                        likeAnimationScale = 1.3
+                    }
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.5).delay(0.1)) {
+                        likeAnimationScale = 1.0
+                    }
+                    onLike()
+                }) {
                     HStack(spacing: 4) {
                         Image(systemName: isLiked ? "heart.fill" : "heart")
                             .font(.system(size: 16, weight: .medium))
                             .foregroundColor(isLiked ? .red : .secondary)
+                            .scaleEffect(likeAnimationScale)
                         
                         Text(loop.likeCount > 99 ? "99+" : loop.likeCount > 0 ? "\(loop.likeCount)" : "")
                             .font(.caption)
@@ -193,6 +204,7 @@ struct LoopCardView: View {
                 }
                 .buttonStyle(.plain)
                 .frame(width: 44, alignment: .leading)
+                .contentShape(Rectangle())
                 
                 // Reply button
                 Button(action: onReply) {
@@ -209,6 +221,7 @@ struct LoopCardView: View {
                 }
                 .buttonStyle(.plain)
                 .frame(width: 44, alignment: .leading)
+                .contentShape(Rectangle())
                 
                 // Share button
                 Button(action: {
@@ -220,6 +233,7 @@ struct LoopCardView: View {
                 }
                 .buttonStyle(.plain)
                 .frame(width: 44, alignment: .leading)
+                .contentShape(Rectangle())
                 
                 Spacer()
                 
@@ -233,6 +247,7 @@ struct LoopCardView: View {
                             .foregroundColor(.secondary)
                     }
                     .buttonStyle(.plain)
+                    .contentShape(Rectangle())
                 }
             }
             }

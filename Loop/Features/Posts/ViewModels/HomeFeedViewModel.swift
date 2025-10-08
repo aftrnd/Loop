@@ -17,6 +17,11 @@ class HomeFeedViewModel: ObservableObject {
     @Published var composeDraft = LoopDraft()
     @Published var isPosting = false
     
+    // Optimistic updates tracking
+    @Published private(set) var pendingLikeOperations: Set<String> = [] // Loop IDs with pending like/unlike operations
+    private var likeOperationCooldowns: [String: Date] = [:] // Loop IDs with cooldown timestamp
+    private let cooldownDuration: TimeInterval = 0.3 // 300ms cooldown between operations
+    
     private var lastDocument: DocumentSnapshot?
     private var listener: ListenerRegistration?
     private let pageSize = 20
@@ -227,19 +232,161 @@ class HomeFeedViewModel: ObservableObject {
     
     // MARK: - Loop Actions
     
-    func toggleLike(for loop: Loop) async {
-        guard let currentUserId = Auth.auth().currentUser?.uid else { return }
+    // Synchronously start a like operation (returns false if already pending or in cooldown)
+    func startLikeOperation(for loopId: String) -> Bool {
+        let isPending = pendingLikeOperations.contains(loopId)
         
-        do {
-            let isCurrentlyLiked = loop.likes.contains(currentUserId)
+        // Check cooldown period
+        if let lastOperationTime = likeOperationCooldowns[loopId] {
+            let timeSinceLastOp = Date().timeIntervalSince(lastOperationTime)
+            if timeSinceLastOp < cooldownDuration {
+                let remainingCooldown = cooldownDuration - timeSinceLastOp
+                print("⏱️ COOLDOWN - \(loopId.prefix(8)) needs \(Int(remainingCooldown * 1000))ms more")
+                return false
+            }
+        }
+        
+        print("🔍 startLikeOperation - Loop: \(loopId.prefix(8)), isPending: \(isPending), pendingCount: \(pendingLikeOperations.count)")
+        
+        guard !isPending else { 
+            print("⛔️ BLOCKED - Operation already pending for \(loopId.prefix(8))")
+            return false 
+        }
+        
+        pendingLikeOperations.insert(loopId)
+        print("🔒 LOCKED - Added \(loopId.prefix(8)) to pending set, new count: \(pendingLikeOperations.count)")
+        return true
+    }
+    
+    func toggleLike(for loop: Loop) async {
+        guard let currentUserId = Auth.auth().currentUser?.uid else { 
+            // Release lock if we can't proceed
+            pendingLikeOperations.remove(loop.id)
+            return 
+        }
+        
+        let isCurrentlyLiked = loop.likes.contains(currentUserId)
+        
+        // OPTIMISTIC UPDATE: Update UI immediately
+        if let index = loops.firstIndex(where: { $0.id == loop.id }) {
+            var updatedLoop = loops[index]
             
+            if isCurrentlyLiked {
+                // Remove like optimistically
+                var newLikes = updatedLoop.likes
+                newLikes.removeAll { $0 == currentUserId }
+                updatedLoop = Loop(
+                    id: updatedLoop.id,
+                    authorId: updatedLoop.authorId,
+                    content: updatedLoop.content,
+                    media: updatedLoop.media,
+                    createdAt: updatedLoop.createdAt,
+                    updatedAt: updatedLoop.updatedAt,
+                    likes: newLikes,
+                    replies: updatedLoop.replies,
+                    isReply: updatedLoop.isReply,
+                    parentLoopId: updatedLoop.parentLoopId,
+                    authorDisplayName: updatedLoop.authorDisplayName,
+                    authorUsername: updatedLoop.authorUsername,
+                    authorAvatarURL: updatedLoop.authorAvatarURL,
+                    authorBadgeType: updatedLoop.authorBadgeType
+                )
+            } else {
+                // Add like optimistically
+                var newLikes = updatedLoop.likes
+                newLikes.append(currentUserId)
+                updatedLoop = Loop(
+                    id: updatedLoop.id,
+                    authorId: updatedLoop.authorId,
+                    content: updatedLoop.content,
+                    media: updatedLoop.media,
+                    createdAt: updatedLoop.createdAt,
+                    updatedAt: updatedLoop.updatedAt,
+                    likes: newLikes,
+                    replies: updatedLoop.replies,
+                    isReply: updatedLoop.isReply,
+                    parentLoopId: updatedLoop.parentLoopId,
+                    authorDisplayName: updatedLoop.authorDisplayName,
+                    authorUsername: updatedLoop.authorUsername,
+                    authorAvatarURL: updatedLoop.authorAvatarURL,
+                    authorBadgeType: updatedLoop.authorBadgeType
+                )
+            }
+            
+            loops[index] = updatedLoop
+        }
+        
+        // Perform backend operation
+        do {
             if isCurrentlyLiked {
                 try await FirebaseService.shared.unlikeLoop(loop.id)
             } else {
                 try await FirebaseService.shared.likeLoop(loop.id)
             }
+            
+            // Success - remove from pending and start cooldown
+            pendingLikeOperations.remove(loop.id)
+            likeOperationCooldowns[loop.id] = Date()
+            print("🔓 UNLOCKED - Removed \(loop.id.prefix(8)) from pending, count: \(pendingLikeOperations.count), cooldown active")
         } catch {
-            errorMessage = error.localizedDescription
+            // REVERT: Operation failed, revert the optimistic update
+            if let index = loops.firstIndex(where: { $0.id == loop.id }) {
+                var revertedLoop = loops[index]
+                
+                if isCurrentlyLiked {
+                    // Restore the like
+                    var restoredLikes = revertedLoop.likes
+                    if !restoredLikes.contains(currentUserId) {
+                        restoredLikes.append(currentUserId)
+                    }
+                    revertedLoop = Loop(
+                        id: revertedLoop.id,
+                        authorId: revertedLoop.authorId,
+                        content: revertedLoop.content,
+                        media: revertedLoop.media,
+                        createdAt: revertedLoop.createdAt,
+                        updatedAt: revertedLoop.updatedAt,
+                        likes: restoredLikes,
+                        replies: revertedLoop.replies,
+                        isReply: revertedLoop.isReply,
+                        parentLoopId: revertedLoop.parentLoopId,
+                        authorDisplayName: revertedLoop.authorDisplayName,
+                        authorUsername: revertedLoop.authorUsername,
+                        authorAvatarURL: revertedLoop.authorAvatarURL,
+                        authorBadgeType: revertedLoop.authorBadgeType
+                    )
+                } else {
+                    // Remove the like
+                    var restoredLikes = revertedLoop.likes
+                    restoredLikes.removeAll { $0 == currentUserId }
+                    revertedLoop = Loop(
+                        id: revertedLoop.id,
+                        authorId: revertedLoop.authorId,
+                        content: revertedLoop.content,
+                        media: revertedLoop.media,
+                        createdAt: revertedLoop.createdAt,
+                        updatedAt: revertedLoop.updatedAt,
+                        likes: restoredLikes,
+                        replies: revertedLoop.replies,
+                        isReply: revertedLoop.isReply,
+                        parentLoopId: revertedLoop.parentLoopId,
+                        authorDisplayName: revertedLoop.authorDisplayName,
+                        authorUsername: revertedLoop.authorUsername,
+                        authorAvatarURL: revertedLoop.authorAvatarURL,
+                        authorBadgeType: revertedLoop.authorBadgeType
+                    )
+                }
+                
+                loops[index] = revertedLoop
+            }
+            
+            // Remove from pending and start cooldown even on error
+            pendingLikeOperations.remove(loop.id)
+            likeOperationCooldowns[loop.id] = Date()
+            print("🔓 UNLOCKED (error) - Removed \(loop.id.prefix(8)) from pending, count: \(pendingLikeOperations.count), cooldown active")
+            
+            // Show error message
+            errorMessage = "Couldn't update like. Please try again."
         }
     }
     
@@ -258,11 +405,20 @@ class HomeFeedViewModel: ObservableObject {
     func deleteLoop(_ loop: Loop) async {
         guard canDeleteLoop(loop) else { return }
         
+        // OPTIMISTIC UPDATE: Remove from UI immediately
+        guard let index = loops.firstIndex(where: { $0.id == loop.id }) else { return }
+        let deletedLoop = loops[index]
+        loops.remove(at: index)
+        
+        // Perform backend operation
         do {
             try await FirebaseService.shared.deleteLoop(loop.id)
-            // The real-time listener will automatically update the UI
         } catch {
-            errorMessage = error.localizedDescription
+            // REVERT: Operation failed, restore the loop
+            loops.insert(deletedLoop, at: min(index, loops.count))
+            
+            // Show error message
+            errorMessage = "Couldn't delete post. Please try again."
         }
     }
     

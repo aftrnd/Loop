@@ -141,14 +141,29 @@ struct HomeView: View {
                             loop: loop,
                             isLiked: viewModel.isLikedByCurrentUser(loop),
                             onLike: {
+                                // Acquire lock synchronously before creating Task to prevent race conditions
+                                guard viewModel.startLikeOperation(for: loop.id) else { return }
+                                
+                                // Haptic feedback for instant responsiveness
+                                let impactFeedback = UIImpactFeedbackGenerator(style: .light)
+                                impactFeedback.impactOccurred()
+                                
                                 Task {
                                     await viewModel.toggleLike(for: loop)
                                 }
                             },
                             onReply: {
+                                // Haptic feedback
+                                let impactFeedback = UIImpactFeedbackGenerator(style: .light)
+                                impactFeedback.impactOccurred()
+                                
                                 viewModel.replyToLoop(loop)
                             },
                             onDelete: viewModel.canDeleteLoop(loop) ? {
+                                // Haptic feedback
+                                let impactFeedback = UINotificationFeedbackGenerator()
+                                impactFeedback.notificationOccurred(.warning)
+                                
                                 Task {
                                     await viewModel.deleteLoop(loop)
                                 }
