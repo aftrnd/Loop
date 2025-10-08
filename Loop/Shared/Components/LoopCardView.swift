@@ -41,13 +41,54 @@ struct LoopCardView: View {
     let onAvatarTap: (() -> Void)?
     
     @State private var showingFullText = false
-    @State private var likeAnimationScale: CGFloat = 1.0
+    @State private var triggerHeartAnimation = false
+    @State private var heartScale: CGFloat = 1.0
+    @State private var heartRotation: Double = 0
+    
+    // Optimistic UI state - updates immediately on tap, syncs with backend later
+    @State private var optimisticIsLiked: Bool = false
+    @State private var optimisticLikeCount: Int = 0
     
     private let maxPreviewLength = 280
     private let cardCornerRadius: CGFloat = 16
     private let mediaCornerRadius: CGFloat = 12
+    private let actionIconSize: CGFloat = 18
     
     var body: some View {
+        cardContent
+            .overlay(alignment: .bottomLeading) {
+                // Particle layer rendered outside clipped card bounds
+                GeometryReader { geo in
+                    HeartParticleAnimationView(
+                        isLiked: optimisticIsLiked,
+                        iconSize: actionIconSize,
+                        trigger: triggerHeartAnimation
+                    )
+                    .position(x: 25, y: geo.size.height - 30) // Position at heart button
+                }
+                .allowsHitTesting(false)
+            }
+            .onAppear {
+                // Initialize optimistic state from props
+                optimisticIsLiked = isLiked
+                optimisticLikeCount = loop.likeCount
+            }
+            .onChange(of: loop.id) { _, _ in
+                // Reinitialize when showing a different loop (cell reuse)
+                optimisticIsLiked = isLiked
+                optimisticLikeCount = loop.likeCount
+            }
+            .onChange(of: isLiked) { _, newValue in
+                // Sync with backend state
+                optimisticIsLiked = newValue
+            }
+            .onChange(of: loop.likeCount) { _, newValue in
+                // Sync with backend like count
+                optimisticLikeCount = newValue
+            }
+    }
+    
+    private var cardContent: some View {
         VStack(spacing: 0) {
             // Card content with padding
             VStack(alignment: .leading, spacing: 12) {
@@ -95,19 +136,10 @@ struct LoopCardView: View {
                 
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(alignment: .center) {
-                        HStack(spacing: 4) {
-                            Text(loop.displayAuthorName)
-                                .font(.headline)
-                                .fontWeight(.semibold)
-                                .lineLimit(1)
-                            
-                            // Badge if user has one
-                            if let badgeType = loop.authorBadgeType {
-                                Image(systemName: badgeType.iconName)
-                                    .font(.system(size: 14))
-                                    .foregroundColor(badgeType.color)
-                            }
-                        }
+                        Text(loop.displayAuthorName)
+                            .font(.headline)
+                            .fontWeight(.semibold)
+                            .lineLimit(1)
                         
                         Spacer()
                         
@@ -121,9 +153,16 @@ struct LoopCardView: View {
                         }
                     }
                     
-                    // Username on its own line below the name (exact ProfileView styling)
+                    // Username on its own line below the name with badge
                     if let username = loop.authorUsername, !username.isEmpty {
-                        HStack {
+                        HStack(spacing: 4) {
+                            // Badge if user has one (now next to username)
+                            if let badgeType = loop.authorBadgeType {
+                                Image(systemName: badgeType.iconName)
+                                    .font(.system(size: 14))
+                                    .foregroundColor(badgeType.color)
+                            }
+                            
                             Text("@\(username)")
                                 .font(.callout)
                                 .fontWeight(.regular)
@@ -179,38 +218,56 @@ struct LoopCardView: View {
             
             // Action buttons
             HStack(spacing: 0) {
-                // Like button
+                // Like button with scale animation
                 Button(action: {
-                    // Trigger bounce animation
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.5)) {
-                        likeAnimationScale = 1.3
+                    // OPTIMISTIC UI UPDATE - happens IMMEDIATELY
+                    optimisticIsLiked.toggle()
+                    optimisticLikeCount += optimisticIsLiked ? 1 : -1
+                    
+                    // Trigger particle animation
+                    triggerHeartAnimation.toggle()
+                    
+                    // Main heart pop animation
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.5)) {
+                        heartScale = 1.5
                     }
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.5).delay(0.1)) {
-                        likeAnimationScale = 1.0
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                        heartRotation = 12
                     }
+                    
+                    // Return to normal
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.55)) {
+                            heartScale = 1.0
+                            heartRotation = 0
+                        }
+                    }
+                    
+                    // Backend call happens in the background
                     onLike()
                 }) {
                     HStack(spacing: 4) {
-                        Image(systemName: isLiked ? "heart.fill" : "heart")
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundColor(isLiked ? .red : .secondary)
-                            .scaleEffect(likeAnimationScale)
+                        Image(systemName: optimisticIsLiked ? "heart.fill" : "heart")
+                            .font(.system(size: actionIconSize, weight: .medium))
+                            .foregroundColor(optimisticIsLiked ? .red : .secondary)
+                            .scaleEffect(heartScale)
+                            .rotationEffect(.degrees(heartRotation))
                         
-                        Text(loop.likeCount > 99 ? "99+" : loop.likeCount > 0 ? "\(loop.likeCount)" : "")
+                        Text(optimisticLikeCount > 99 ? "99+" : optimisticLikeCount > 0 ? "\(optimisticLikeCount)" : "")
                             .font(.caption)
                             .foregroundColor(.secondary)
                             .monospacedDigit()
                     }
                 }
                 .buttonStyle(.plain)
-                .frame(width: 44, alignment: .leading)
+                .frame(width: 50, alignment: .leading)
                 .contentShape(Rectangle())
                 
                 // Reply button
                 Button(action: onReply) {
                     HStack(spacing: 4) {
                         Image(systemName: "bubble.left")
-                            .font(.system(size: 16, weight: .medium))
+                            .font(.system(size: actionIconSize, weight: .medium))
                             .foregroundColor(.secondary)
                         
                         Text(loop.replyCount > 99 ? "99+" : loop.replyCount > 0 ? "\(loop.replyCount)" : "")
@@ -220,7 +277,7 @@ struct LoopCardView: View {
                     }
                 }
                 .buttonStyle(.plain)
-                .frame(width: 44, alignment: .leading)
+                .frame(width: 50, alignment: .leading)
                 .contentShape(Rectangle())
                 
                 // Share button
@@ -228,11 +285,11 @@ struct LoopCardView: View {
                     // TODO: Implement share functionality
                 }) {
                     Image(systemName: "paperplane")
-                        .font(.system(size: 16, weight: .medium))
+                        .font(.system(size: actionIconSize, weight: .medium))
                         .foregroundColor(.secondary)
                 }
                 .buttonStyle(.plain)
-                .frame(width: 44, alignment: .leading)
+                .frame(width: 50, alignment: .leading)
                 .contentShape(Rectangle())
                 
                 Spacer()
@@ -250,6 +307,7 @@ struct LoopCardView: View {
                     .contentShape(Rectangle())
                 }
             }
+            .padding(.vertical, 8) // Add extra vertical padding for particle overflow
             }
             .padding(.leading, 10)
             .padding(.trailing, 10)
