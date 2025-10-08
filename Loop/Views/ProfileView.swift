@@ -34,6 +34,8 @@ struct ProfileView: View {
     @State private var selectedImage: UIImage?
     @State private var bannerPickerItem: PhotosPickerItem?
     @State private var selectedBanner: UIImage?
+    @State private var showAvatarPicker = false
+    @State private var showBannerPicker = false
     
     // Follow system
     @State private var isFollowing = false
@@ -234,6 +236,16 @@ struct ProfileView: View {
                     }
                 }
             }
+            .photosPicker(
+                isPresented: $showAvatarPicker,
+                selection: $avatarPickerItem,
+                matching: .images
+            )
+            .photosPicker(
+                isPresented: $showBannerPicker,
+                selection: $bannerPickerItem,
+                matching: .images
+            )
             .alert("Log Out", isPresented: $showLogoutConfirmation) {
                 Button("Cancel", role: .cancel) { }
                 Button("Log Out", role: .destructive) {
@@ -303,7 +315,19 @@ struct ProfileView: View {
                 }
                 
                 if isEditing && isOwnProfile {
-                    PhotosPicker(selection: $bannerPickerItem, matching: .images) {
+                    Button {
+                        Task {
+                            // iOS 18+ best practice: request access first
+                            let hasAccess = await PhotoLibraryManager.shared.requestPhotoLibraryAccess()
+                            if hasAccess {
+                                showBannerPicker = true
+                                // Prompt for full access if limited
+                                if PhotoLibraryManager.shared.hasLimitedAccess {
+                                    PhotoLibraryManager.shared.promptForFullAccessIfLimited()
+                                }
+                            }
+                        }
+                    } label: {
                         Image(systemName: "camera.fill")
                             .font(.caption)
                             .foregroundColor(.white)
@@ -363,7 +387,19 @@ struct ProfileView: View {
             }
             
             if isEditing && isOwnProfile {
-                PhotosPicker(selection: $avatarPickerItem, matching: .images) {
+                Button {
+                    Task {
+                        // iOS 18+ best practice: request access first
+                        let hasAccess = await PhotoLibraryManager.shared.requestPhotoLibraryAccess()
+                        if hasAccess {
+                            showAvatarPicker = true
+                            // Prompt for full access if limited
+                            if PhotoLibraryManager.shared.hasLimitedAccess {
+                                PhotoLibraryManager.shared.promptForFullAccessIfLimited()
+                            }
+                        }
+                    }
+                } label: {
                     Image(systemName: "camera.fill")
                         .font(.caption)
                         .foregroundColor(.white)

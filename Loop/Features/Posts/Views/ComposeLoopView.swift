@@ -12,6 +12,7 @@ struct ComposeLoopView: View {
     @State private var isUploadingMedia = false
     @State private var showingImageSourceActionSheet = false
     @State private var showingCamera = false
+    @State private var showingPhotoLibraryPicker = false
     @FocusState private var isTextFieldFocused: Bool
     
     @Environment(\.dismiss) private var dismiss
@@ -86,7 +87,16 @@ struct ComposeLoopView: View {
                 // Bottom left camera button - centered vertically
                 HStack {
                     Button(action: {
-                        showingImageSourceActionSheet = true
+                        Task {
+                            // Request photo library access first (iOS 18+ best practice)
+                            let hasAccess = await PhotoLibraryManager.shared.requestPhotoLibraryAccess()
+                            if hasAccess {
+                                showingImageSourceActionSheet = true
+                            } else {
+                                // Handle permission denied - could show settings alert
+                                print("Photo library access denied")
+                            }
+                        }
                     }) {
                         Image(systemName: "camera")
                             .font(.system(size: 20, weight: .medium))
@@ -119,18 +129,24 @@ struct ComposeLoopView: View {
                 showingCamera = true
             }
             
-            PhotosPicker(
-                selection: $selectedPhotos,
-                maxSelectionCount: 4,
-                matching: .images
-            ) {
-                Text("Photo Library")
+            Button("Photo Library") {
+                showingPhotoLibraryPicker = true
+                // iOS 18+ best practice: prompt for full access if limited
+                if PhotoLibraryManager.shared.hasLimitedAccess {
+                    PhotoLibraryManager.shared.promptForFullAccessIfLimited()
+                }
             }
             
             Button("Cancel", role: .cancel) { }
         } message: {
             Text("Choose how you'd like to add a photo")
         }
+        .photosPicker(
+            isPresented: $showingPhotoLibraryPicker,
+            selection: $selectedPhotos,
+            maxSelectionCount: 4,
+            matching: .images
+        )
         .fullScreenCover(isPresented: $showingCamera) {
             ImagePicker(sourceType: .camera) { image in
                 Task {

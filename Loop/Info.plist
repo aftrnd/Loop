@@ -17,5 +17,7 @@
 	<string>Loop needs access to your camera to take photos for your posts.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Loop needs access to your photo library to select photos for your posts.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Loop needs access to save photos to your library.</string>
 </dict>
 </plist>
