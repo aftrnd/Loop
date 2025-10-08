@@ -164,7 +164,7 @@ struct HomeView: View {
                             if index < viewModel.loops.count - 1 {
                                 Rectangle()
                                     .fill(Color(.separator))
-                                    .frame(height: 0.5)
+                                    .frame(height: 1.15)
                                     .padding(.horizontal, 10)
                             }
                         }

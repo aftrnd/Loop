@@ -34,7 +34,10 @@ class HomeFeedViewModel: ObservableObject {
     func startListening() {
         guard let currentUserId = Auth.auth().currentUser?.uid else { return }
         
-        isLoading = true
+        // Only show loading spinner if not currently refreshing and list is empty
+        if !isRefreshing && loops.isEmpty {
+            isLoading = true
+        }
         
         // Listen to loops from users that the current user follows
         // For now, we'll show all public loops, but in production you'd filter by following
@@ -60,7 +63,6 @@ class HomeFeedViewModel: ObservableObject {
                 Task {
                     await self.processLoopDocuments(documents)
                     self.isLoading = false
-                    self.isRefreshing = false
                 }
             }
     }
@@ -72,7 +74,27 @@ class HomeFeedViewModel: ObservableObject {
         
         // Restart the listener to get fresh data
         listener?.remove()
-        startListening()
+        
+        // Wait for fresh data to load before completing refresh
+        do {
+            let snapshot = try await Firestore.firestore()
+                .collection("loops")
+                .whereField("isReply", isEqualTo: false)
+                .order(by: "createdAt", descending: true)
+                .limit(to: pageSize)
+                .getDocuments()
+            
+            await processLoopDocuments(snapshot.documents)
+            
+            // Now restart the listener for real-time updates
+            startListening()
+        } catch {
+            errorMessage = error.localizedDescription
+            // Still restart listener even on error
+            startListening()
+        }
+        
+        isRefreshing = false
     }
     
     func loadMoreContent() async {
