@@ -8,12 +8,8 @@ struct HomeView: View {
     
     var body: some View {
         NavigationStack {
-            ZStack {
-                Color(.systemBackground)
-                    .ignoresSafeArea()
-                
-                feedListView
-            }
+            feedListView
+                .background(Color(.systemBackground))
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -40,7 +36,7 @@ struct HomeView: View {
                 }
                 
             }
-            .toolbarBackground(.hidden, for: .navigationBar)
+            .toolbarBackground(.automatic, for: .navigationBar)
         }
         .sheet(isPresented: $viewModel.showingCompose) {
             ComposeLoopView(
@@ -140,6 +136,7 @@ struct HomeView: View {
                         LoopCardView(
                             loop: loop,
                             isLiked: viewModel.isLikedByCurrentUser(loop),
+                            cardIndex: index,
                             onLike: {
                                 // Stronger haptic feedback for satisfying like action
                                 let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
@@ -180,7 +177,6 @@ struct HomeView: View {
                                     .padding(.horizontal, 10)
                             }
                         }
-                        .zIndex(Double(1000 - index)) // Higher z-index for earlier posts so particles render above later posts
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
                         .listRowInsets(EdgeInsets(top: 0, leading: 10, bottom: 0, trailing: 10))
@@ -209,10 +205,10 @@ struct HomeView: View {
             
             }
             .listStyle(.plain)
-            .scrollContentBackground(.hidden)
             .listSectionSeparator(.hidden)
             .coordinateSpace(name: "loopScroll")
             .scrollIndicators(.hidden)
+            .scrollContentBackground(.automatic)
             .contentMargins(.top, AppConstants.Layout.listContentTopMargin)
             .refreshable {
                 await viewModel.refreshFeed()

@@ -79,6 +79,7 @@ extension View {
 struct LoopCardView: View {
     let loop: Loop
     let isLiked: Bool
+    let cardIndex: Int
     let onLike: () -> Void
     let onReply: () -> Void
     let onDelete: (() -> Void)?
@@ -102,32 +103,30 @@ struct LoopCardView: View {
     private let actionIconSize: CGFloat = 18
     
     var body: some View {
-        ZStack(alignment: .bottomLeading) {
-            // Card content
-            cardContent
-                .zIndex(0)
-            
-            // Particle layer above card - uses GeometryReader to position at heart button
-            GeometryReader { geo in
-                HeartParticleAnimationView(
-                    iconSize: actionIconSize,
-                    triggerID: animationState.particleTriggerID
-                )
-                .frame(width: 200, height: 200) // Large enough for particles to fly
-                .position(x: 25, y: geo.size.height - 30) // Position at heart button
-                .allowsHitTesting(false)
+        cardContent
+            .zIndex(0)
+            .overlay(alignment: .bottomLeading) {
+                // Particle layer - renders above card content AND subsequent cards
+                GeometryReader { geo in
+                    HeartParticleAnimationView(
+                        iconSize: actionIconSize,
+                        triggerID: animationState.particleTriggerID
+                    )
+                    .frame(width: 200, height: 200) // Large enough for particles to fly
+                    .position(x: 25, y: geo.size.height - 30) // Position at heart button
+                    .allowsHitTesting(false)
+                }
+                .zIndex(Double(1000 - cardIndex)) // Higher z-index for earlier posts
             }
-            .zIndex(1000) // Render above everything, including subsequent list items
-        }
-        .fullScreenCover(isPresented: $showPhotoViewer) {
-            FullScreenPhotoViewer(
-                allMedia: loop.media,
-                startingIndex: selectedPhotoIndex,
-                isPresented: $showPhotoViewer
-            )
-            .presentationBackground(.clear)
-        }
-        .id(loop.id) // Stable identity prevents view recreation during updates
+            .fullScreenCover(isPresented: $showPhotoViewer) {
+                FullScreenPhotoViewer(
+                    allMedia: loop.media,
+                    startingIndex: selectedPhotoIndex,
+                    isPresented: $showPhotoViewer
+                )
+                .presentationBackground(.clear)
+            }
+            .id(loop.id) // Stable identity prevents view recreation during updates
     }
     
     private var cardContent: some View {
@@ -568,6 +567,7 @@ struct PageIndicator: View {
                     authorBadgeType: .verified
                 ),
                 isLiked: false,
+                cardIndex: 0,
                 onLike: {},
                 onReply: {},
                 onDelete: {},
@@ -591,6 +591,7 @@ struct PageIndicator: View {
                     authorUsername: "janesmith"
                 ),
                 isLiked: true,
+                cardIndex: 1,
                 onLike: {},
                 onReply: {},
                 onDelete: nil,
@@ -614,6 +615,7 @@ struct PageIndicator: View {
                     authorUsername: "mikej"
                 ),
                 isLiked: false,
+                cardIndex: 2,
                 onLike: {},
                 onReply: {},
                 onDelete: nil,
@@ -637,6 +639,7 @@ struct PageIndicator: View {
                     authorUsername: "sarahw"
                 ),
                 isLiked: false,
+                cardIndex: 3,
                 onLike: {},
                 onReply: {},
                 onDelete: nil,
@@ -660,6 +663,7 @@ struct PageIndicator: View {
                     authorUsername: "alexc"
                 ),
                 isLiked: true,
+                cardIndex: 4,
                 onLike: {},
                 onReply: {},
                 onDelete: nil,
@@ -683,6 +687,7 @@ struct PageIndicator: View {
                     authorUsername: "emmad"
                 ),
                 isLiked: false,
+                cardIndex: 5,
                 onLike: {},
                 onReply: {},
                 onDelete: nil,
@@ -724,6 +729,7 @@ struct PageIndicator: View {
                     authorUsername: "sarahw"
                 ),
                 isLiked: false,
+                cardIndex: 6,
                 onLike: {},
                 onReply: {},
                 onDelete: nil,
