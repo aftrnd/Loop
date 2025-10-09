@@ -19,6 +19,7 @@ class HomeFeedViewModel: ObservableObject {
     
     // Optimistic updates tracking
     @Published private(set) var pendingLikeOperations: Set<String> = [] // Loop IDs with pending like/unlike operations
+    private var completedLikeOperations: Set<String> = [] // Loop IDs that completed successfully (in grace period)
     private var likeTimeoutTasks: [String: Task<Void, Never>] = [:] // Timeout tasks for each operation
     private let operationTimeout: TimeInterval = 2.0 // Show error after 2 seconds
     
@@ -138,15 +139,23 @@ class HomeFeedViewModel: ObservableObject {
         }
         
         if append {
-            // When appending, just add the new loops
-            loops.append(contentsOf: newLoops)
+            // When appending, just add the new loops (no animation needed for loading more)
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                loops.append(contentsOf: newLoops)
+            }
         } else {
             // When replacing, preserve optimistic updates for loops with pending operations
             var mergedLoops: [Loop] = []
             
             for newLoop in newLoops {
-                if pendingLikeOperations.contains(newLoop.id) {
-                    // This loop has a pending operation - keep the existing optimistic state
+                // Preserve optimistic state if operation is pending OR completed (during grace period)
+                let shouldPreserveOptimisticState = pendingLikeOperations.contains(newLoop.id) 
+                    || completedLikeOperations.contains(newLoop.id)
+                
+                if shouldPreserveOptimisticState {
+                    // This loop has an active operation - keep the existing optimistic state
                     if let existingLoop = loops.first(where: { $0.id == newLoop.id }) {
                         mergedLoops.append(existingLoop)
                         print("🔒 PRESERVED optimistic state for loop \(newLoop.id.prefix(8)) during listener update")
@@ -160,7 +169,12 @@ class HomeFeedViewModel: ObservableObject {
                 }
             }
             
-            loops = mergedLoops
+            // Disable animations to prevent flickering during state updates
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                loops = mergedLoops
+            }
         }
         
         lastDocument = documents.last
@@ -276,8 +290,8 @@ class HomeFeedViewModel: ObservableObject {
         let timeoutTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: UInt64(operationTimeout * 1_000_000_000))
             
-            // If operation is still pending after timeout, show error and revert
-            if pendingLikeOperations.contains(loop.id) {
+            // Check if still pending AND not completed (completed operations are in grace period)
+            if pendingLikeOperations.contains(loop.id) && !completedLikeOperations.contains(loop.id) {
                 print("⏱️ TIMEOUT - Like operation for \(loop.id.prefix(8)) took too long")
                 
                 // Revert the optimistic update
@@ -301,14 +315,23 @@ class HomeFeedViewModel: ObservableObject {
                 try await FirebaseService.shared.likeLoop(loop.id)
             }
             
-            // Success - cancel timeout and clean up
+            // Success - mark as completed immediately
+            completedLikeOperations.insert(loop.id)
             timeoutTask.cancel()
             likeTimeoutTasks.removeValue(forKey: loop.id)
-            pendingLikeOperations.remove(loop.id)
             print("✅ SUCCESS - Like operation completed for \(loop.id.prefix(8)), pending count: \(pendingLikeOperations.count)")
             
+            // Keep operation "pending" for a grace period to let Firestore listener catch up
+            // This prevents stale listener events from overwriting our optimistic state
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 500_000_000) // 500ms grace period
+                pendingLikeOperations.remove(loop.id)
+                completedLikeOperations.remove(loop.id)
+                print("🔓 RELEASED - Removed \(loop.id.prefix(8)) from pending after grace period, count: \(pendingLikeOperations.count)")
+            }
+            
             // Note: The Firestore listener will update with the authoritative server state
-            // But we keep our optimistic state until then (handled in processLoopDocuments)
+            // During the grace period, our optimistic state is protected from stale updates
             
         } catch {
             // REVERT: Operation failed
@@ -323,6 +346,7 @@ class HomeFeedViewModel: ObservableObject {
             
             // Clean up
             pendingLikeOperations.remove(loop.id)
+            completedLikeOperations.remove(loop.id)
             
             // Show error message
             errorMessage = "Couldn't update like. Please try again."
@@ -336,11 +360,21 @@ class HomeFeedViewModel: ObservableObject {
         var updatedLoop = loops[index]
         var newLikes = updatedLoop.likes
         
+        // Check if update is actually needed
+        let alreadyLiked = newLikes.contains(currentUserId)
+        if shouldAdd && alreadyLiked {
+            // Already liked, no change needed
+            print("⚠️ SKIP - Loop \(loopId.prefix(8)) already liked")
+            return
+        } else if !shouldAdd && !alreadyLiked {
+            // Already not liked, no change needed
+            print("⚠️ SKIP - Loop \(loopId.prefix(8)) already not liked")
+            return
+        }
+        
         if shouldAdd {
             // Add like
-            if !newLikes.contains(currentUserId) {
-                newLikes.append(currentUserId)
-            }
+            newLikes.append(currentUserId)
         } else {
             // Remove like
             newLikes.removeAll { $0 == currentUserId }
@@ -363,7 +397,12 @@ class HomeFeedViewModel: ObservableObject {
             authorBadgeType: updatedLoop.authorBadgeType
         )
         
-        loops[index] = updatedLoop
+        // Update without animation to prevent flicker
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            loops[index] = updatedLoop
+        }
     }
     
     func replyToLoop(_ loop: Loop) {
