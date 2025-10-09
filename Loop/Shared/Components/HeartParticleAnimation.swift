@@ -3,6 +3,7 @@ import SwiftUI
 struct HeartParticle: Identifiable {
     let id = UUID()
     var offset: CGSize
+    let initialOffset: CGSize // Random starting position (preserved)
     var velocity: CGSize
     var scale: CGFloat
     var opacity: Double
@@ -40,6 +41,7 @@ struct HeartParticleAnimationView: View {
                 }
             }
         }
+        .allowsHitTesting(false)
         .onChange(of: triggerID) { _, newID in
             // Only trigger if the ID actually changed
             guard newID != lastTriggerID else { return }
@@ -62,8 +64,18 @@ struct HeartParticleAnimationView: View {
             let velocityX = cos(radians) * speed
             let velocityY = sin(radians) * speed
             
+            // Random starting position within a few points of center
+            // Adds organic variation to the explosion (each particle starts from a slightly different spot)
+            let randomOffsetX = CGFloat.random(in: -4...4)
+            let randomOffsetY = CGFloat.random(in: -4...4)
+            
+            // Shift origin down by 2 points to better center on heart icon
+            let centeredOffsetY = randomOffsetY + 2
+            let initialRandomOffset = CGSize(width: randomOffsetX, height: centeredOffsetY)
+            
             let particle = HeartParticle(
-                offset: .zero,
+                offset: initialRandomOffset, // Start at random position
+                initialOffset: initialRandomOffset, // Store for physics calculations
                 velocity: CGSize(width: velocityX, height: velocityY),
                 scale: CGFloat.random(in: 0.6...1.0),
                 opacity: 1.0,
@@ -104,11 +116,15 @@ struct HeartParticleAnimationView: View {
                     // Physics: position = initial_velocity * time + 0.5 * gravity * time^2
                     let t = CGFloat(time)
                     
-                    // Apply velocity and gravity
-                    let newX = particles[i].velocity.width * t
-                    let newY = particles[i].velocity.height * t + 0.5 * gravity * t * t
+                    // Calculate physics-based displacement from origin
+                    let physicsX = particles[i].velocity.width * t
+                    let physicsY = particles[i].velocity.height * t + 0.5 * gravity * t * t
                     
-                    // Update particle
+                    // Add initial random offset to physics position
+                    let newX = particles[i].initialOffset.width + physicsX
+                    let newY = particles[i].initialOffset.height + physicsY
+                    
+                    // Update particle position
                     particles[i].offset = CGSize(width: newX, height: newY)
                     
                     // Rotate particles as they move

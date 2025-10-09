@@ -180,6 +180,7 @@ struct HomeView: View {
                                     .padding(.horizontal, 10)
                             }
                         }
+                        .zIndex(Double(1000 - index)) // Higher z-index for earlier posts so particles render above later posts
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
                         .listRowInsets(EdgeInsets(top: 0, leading: 10, bottom: 0, trailing: 10))

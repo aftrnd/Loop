@@ -102,27 +102,32 @@ struct LoopCardView: View {
     private let actionIconSize: CGFloat = 18
     
     var body: some View {
-        cardContent
-            .overlay(alignment: .bottomLeading) {
-                // Particle layer rendered outside clipped card bounds
-                GeometryReader { geo in
-                    HeartParticleAnimationView(
-                        iconSize: actionIconSize,
-                        triggerID: animationState.particleTriggerID
-                    )
-                    .position(x: 25, y: geo.size.height - 30) // Position at heart button
-                }
+        ZStack(alignment: .bottomLeading) {
+            // Card content
+            cardContent
+                .zIndex(0)
+            
+            // Particle layer above card - uses GeometryReader to position at heart button
+            GeometryReader { geo in
+                HeartParticleAnimationView(
+                    iconSize: actionIconSize,
+                    triggerID: animationState.particleTriggerID
+                )
+                .frame(width: 200, height: 200) // Large enough for particles to fly
+                .position(x: 25, y: geo.size.height - 30) // Position at heart button
                 .allowsHitTesting(false)
             }
-            .fullScreenCover(isPresented: $showPhotoViewer) {
-                FullScreenPhotoViewer(
-                    allMedia: loop.media,
-                    startingIndex: selectedPhotoIndex,
-                    isPresented: $showPhotoViewer
-                )
-                .presentationBackground(.clear)
-            }
-            .id(loop.id) // Stable identity prevents view recreation during updates
+            .zIndex(1000) // Render above everything, including subsequent list items
+        }
+        .fullScreenCover(isPresented: $showPhotoViewer) {
+            FullScreenPhotoViewer(
+                allMedia: loop.media,
+                startingIndex: selectedPhotoIndex,
+                isPresented: $showPhotoViewer
+            )
+            .presentationBackground(.clear)
+        }
+        .id(loop.id) // Stable identity prevents view recreation during updates
     }
     
     private var cardContent: some View {
