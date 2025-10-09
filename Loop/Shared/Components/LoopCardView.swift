@@ -1,4 +1,48 @@
 import SwiftUI
+import Combine
+
+// MARK: - Animation State Manager
+// This persists across view re-renders to ensure smooth animations
+class LoopCardAnimationState: ObservableObject {
+    @Published var heartScale: CGFloat = 1.0
+    @Published var heartRotation: Double = 0
+    @Published var particleTriggerID = UUID()
+    
+    private var animationTask: Task<Void, Never>?
+    
+    func triggerHeartAnimation() {
+        // Cancel any existing animation
+        animationTask?.cancel()
+        
+        // Start new animation
+        animationTask = Task { @MainActor in
+            // Scale up
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.5)) {
+                heartScale = 1.5
+            }
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                heartRotation = 12
+            }
+            
+            // Trigger particle animation with a new unique ID
+            particleTriggerID = UUID()
+            
+            // Wait and scale down
+            try? await Task.sleep(nanoseconds: 150_000_000) // 0.15 seconds
+            
+            guard !Task.isCancelled else { return }
+            
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.55)) {
+                heartScale = 1.0
+                heartRotation = 0
+            }
+        }
+    }
+    
+    deinit {
+        animationTask?.cancel()
+    }
+}
 
 // MARK: - Concentric Design Helper
 extension View {
@@ -40,14 +84,10 @@ struct LoopCardView: View {
     let onDelete: (() -> Void)?
     let onAvatarTap: (() -> Void)?
     
-    @State private var showingFullText = false
-    @State private var triggerHeartAnimation = false
-    @State private var heartScale: CGFloat = 1.0
-    @State private var heartRotation: Double = 0
+    // Animation state persists across view re-renders
+    @StateObject private var animationState = LoopCardAnimationState()
     
-    // Optimistic UI state - updates immediately on tap, syncs with backend later
-    @State private var optimisticIsLiked: Bool = false
-    @State private var optimisticLikeCount: Int = 0
+    @State private var showingFullText = false
     
     // Photo viewer state
     @State private var showPhotoViewer = false
@@ -67,31 +107,12 @@ struct LoopCardView: View {
                 // Particle layer rendered outside clipped card bounds
                 GeometryReader { geo in
                     HeartParticleAnimationView(
-                        isLiked: optimisticIsLiked,
                         iconSize: actionIconSize,
-                        trigger: triggerHeartAnimation
+                        triggerID: animationState.particleTriggerID
                     )
                     .position(x: 25, y: geo.size.height - 30) // Position at heart button
                 }
                 .allowsHitTesting(false)
-            }
-            .onAppear {
-                // Initialize optimistic state from props
-                optimisticIsLiked = isLiked
-                optimisticLikeCount = loop.likeCount
-            }
-            .onChange(of: loop.id) { _, _ in
-                // Reinitialize when showing a different loop (cell reuse)
-                optimisticIsLiked = isLiked
-                optimisticLikeCount = loop.likeCount
-            }
-            .onChange(of: isLiked) { _, newValue in
-                // Sync with backend state
-                optimisticIsLiked = newValue
-            }
-            .onChange(of: loop.likeCount) { _, newValue in
-                // Sync with backend like count
-                optimisticLikeCount = newValue
             }
             .fullScreenCover(isPresented: $showPhotoViewer) {
                 FullScreenPhotoViewer(
@@ -101,6 +122,7 @@ struct LoopCardView: View {
                 )
                 .presentationBackground(.clear)
             }
+            .id(loop.id) // Stable identity prevents view recreation during updates
     }
     
     private var cardContent: some View {
@@ -181,40 +203,20 @@ struct LoopCardView: View {
             HStack(spacing: 0) {
                 // Like button with scale animation
                 Button(action: {
-                    // OPTIMISTIC UI UPDATE - happens IMMEDIATELY
-                    optimisticIsLiked.toggle()
-                    optimisticLikeCount += optimisticIsLiked ? 1 : -1
+                    // Trigger animation - persists even if view re-renders
+                    animationState.triggerHeartAnimation()
                     
-                    // Trigger particle animation
-                    triggerHeartAnimation.toggle()
-                    
-                    // Main heart pop animation
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.5)) {
-                        heartScale = 1.5
-                    }
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
-                        heartRotation = 12
-                    }
-                    
-                    // Return to normal
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                        withAnimation(.spring(response: 0.4, dampingFraction: 0.55)) {
-                            heartScale = 1.0
-                            heartRotation = 0
-                        }
-                    }
-                    
-                    // Backend call happens in the background
+                    // ViewModel handles all optimistic updates and backend calls
                     onLike()
                 }) {
                     HStack(spacing: 4) {
-                        Image(systemName: optimisticIsLiked ? "heart.fill" : "heart")
+                        Image(systemName: isLiked ? "heart.fill" : "heart")
                             .font(.system(size: actionIconSize, weight: .medium))
-                            .foregroundColor(optimisticIsLiked ? .red : .secondary)
-                            .scaleEffect(heartScale)
-                            .rotationEffect(.degrees(heartRotation))
+                            .foregroundColor(isLiked ? .red : .secondary)
+                            .scaleEffect(animationState.heartScale)
+                            .rotationEffect(.degrees(animationState.heartRotation))
                         
-                        Text(optimisticLikeCount > 99 ? "99+" : optimisticLikeCount > 0 ? "\(optimisticLikeCount)" : "")
+                        Text(loop.likeCount > 99 ? "99+" : loop.likeCount > 0 ? "\(loop.likeCount)" : "")
                             .font(.caption)
                             .foregroundColor(.secondary)
                             .monospacedDigit()

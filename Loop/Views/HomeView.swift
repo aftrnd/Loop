@@ -141,9 +141,6 @@ struct HomeView: View {
                             loop: loop,
                             isLiked: viewModel.isLikedByCurrentUser(loop),
                             onLike: {
-                                // Acquire lock synchronously before creating Task to prevent race conditions
-                                guard viewModel.startLikeOperation(for: loop.id) else { return }
-                                
                                 // Stronger haptic feedback for satisfying like action
                                 let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
                                 impactFeedback.impactOccurred()

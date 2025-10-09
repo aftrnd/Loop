@@ -10,38 +10,45 @@ struct HeartParticle: Identifiable {
     var angularVelocity: Double
 }
 
+struct ParticleBatch: Identifiable {
+    let id = UUID()
+    var particles: [HeartParticle]
+}
+
 struct HeartParticleAnimationView: View {
-    @State private var particles: [HeartParticle] = []
-    @State private var isAnimating = false
+    @State private var particleBatches: [UUID: [HeartParticle]] = [:] // ID -> Particles
+    @State private var lastTriggerID: UUID?
     
-    let isLiked: Bool
     var iconSize: CGFloat = 18
-    var trigger: Bool = false
+    var triggerID: UUID
     
     var body: some View {
         ZStack {
-            // Only render particles (main heart is rendered in LoopCardView)
-            ForEach(particles) { particle in
-                Image(systemName: "heart.fill")
-                    .font(.system(size: iconSize * 0.5))
-                    .foregroundColor(.red)
-                    .scaleEffect(particle.scale)
-                    .opacity(particle.opacity)
-                    .rotationEffect(.degrees(particle.rotation))
-                    .offset(particle.offset)
-                    .allowsHitTesting(false)
+            // Render all particle batches (allows overlapping animations)
+            ForEach(Array(particleBatches.keys), id: \.self) { batchID in
+                if let particles = particleBatches[batchID] {
+                    ForEach(particles) { particle in
+                        Image(systemName: "heart.fill")
+                            .font(.system(size: iconSize * 0.5))
+                            .foregroundColor(.red)
+                            .scaleEffect(particle.scale)
+                            .opacity(particle.opacity)
+                            .rotationEffect(.degrees(particle.rotation))
+                            .offset(particle.offset)
+                            .allowsHitTesting(false)
+                    }
+                }
             }
         }
-        .onChange(of: trigger) { _, _ in
+        .onChange(of: triggerID) { _, newID in
+            // Only trigger if the ID actually changed
+            guard newID != lastTriggerID else { return }
+            lastTriggerID = newID
             triggerAnimation()
         }
     }
     
     private func triggerAnimation() {
-        // Prevent overlapping animations
-        guard !isAnimating else { return }
-        isAnimating = true
-        
         // Generate particles with initial velocities
         let particleCount = 10
         var newParticles: [HeartParticle] = []
@@ -66,19 +73,20 @@ struct HeartParticleAnimationView: View {
             newParticles.append(particle)
         }
         
-        particles = newParticles
+        // Create unique ID for this batch
+        let batchID = UUID()
+        particleBatches[batchID] = newParticles
         
         // Physics-based animation with gravity
-        animateParticlesWithGravity()
+        animateParticlesWithGravity(batchID: batchID)
         
-        // Clear particles and reset animation lock
+        // Clear this batch after animation completes
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            particles.removeAll()
-            isAnimating = false
+            self.particleBatches.removeValue(forKey: batchID)
         }
     }
     
-    private func animateParticlesWithGravity() {
+    private func animateParticlesWithGravity(batchID: UUID) {
         let gravity: CGFloat = 250 // Pixels per second squared
         let duration: Double = 0.9
         let fps: Double = 60
@@ -88,32 +96,38 @@ struct HeartParticleAnimationView: View {
         for frame in 0..<frames {
             let time = Double(frame) * frameTime
             
-            DispatchQueue.main.asyncAfter(deadline: .now() + time) {
-                for i in 0..<self.particles.count {
+            DispatchQueue.main.asyncAfter(deadline: .now() + time) { [self] in
+                // Check if batch still exists (might have been removed)
+                guard var particles = self.particleBatches[batchID] else { return }
+                
+                for i in 0..<particles.count {
                     // Physics: position = initial_velocity * time + 0.5 * gravity * time^2
                     let t = CGFloat(time)
                     
                     // Apply velocity and gravity
-                    let newX = self.particles[i].velocity.width * t
-                    let newY = self.particles[i].velocity.height * t + 0.5 * gravity * t * t
+                    let newX = particles[i].velocity.width * t
+                    let newY = particles[i].velocity.height * t + 0.5 * gravity * t * t
                     
                     // Update particle
-                    self.particles[i].offset = CGSize(width: newX, height: newY)
+                    particles[i].offset = CGSize(width: newX, height: newY)
                     
                     // Rotate particles as they move
-                    self.particles[i].rotation += self.particles[i].angularVelocity * frameTime
+                    particles[i].rotation += particles[i].angularVelocity * frameTime
                     
                     // Fade out over time
                     let fadeStart = 0.3 // Start fading after 30% of animation
                     if time > fadeStart * duration {
                         let fadeProgress = (time - fadeStart * duration) / ((1.0 - fadeStart) * duration)
-                        self.particles[i].opacity = 1.0 - fadeProgress
+                        particles[i].opacity = 1.0 - fadeProgress
                     }
                     
                     // Scale down slightly as they fade
                     let scaleProgress = time / duration
-                    self.particles[i].scale *= (1.0 - CGFloat(scaleProgress) * 0.3)
+                    particles[i].scale *= (1.0 - CGFloat(scaleProgress) * 0.3)
                 }
+                
+                // Write back the updated particles
+                self.particleBatches[batchID] = particles
             }
         }
     }
@@ -122,9 +136,9 @@ struct HeartParticleAnimationView: View {
 // Preview
 #Preview {
     VStack(spacing: 40) {
-        HeartParticleAnimationView(isLiked: true)
+        HeartParticleAnimationView(triggerID: UUID())
         
-        HeartParticleAnimationView(isLiked: false)
+        HeartParticleAnimationView(triggerID: UUID())
     }
     .padding()
 }
