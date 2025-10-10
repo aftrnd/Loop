@@ -69,15 +69,16 @@ struct PhoneNumberInputView: View {
                     .frame(width: 600, height: 600)
                     .allowsHitTesting(false)
 
-                // Liquid glass circle around the icon
-                Color.clear
+                // Glass circle around the icon
+                Circle()
                     .frame(width: 120, height: 120)
-                    .lightGlassEffect(.regular, in: Circle())
+                    .glassEffect(.clear)
 
                 // Icon (on top of everything) with synchronized breathing animation
+                // Primary color = white in dark mode, black in light mode
                 Image(systemName: "message.fill")
                     .font(.system(size: 48, weight: .medium))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.primary)
                     .scaleEffect(iconScale)
             }
             .frame(width: 120, height: 120) // Constrains the ZStack to icon size for layout (dots overflow)

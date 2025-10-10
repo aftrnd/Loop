@@ -7,10 +7,12 @@ import SwiftUI
 /// - Dot size: linear from 10 pt → 0.5 pt
 /// - Offset per ring: 10° (perfectly alternated)
 /// - Continuous wave animation: stadium wave effect with breathing rhythm
-/// - Apple Cash gradient: Distance-based color mapping
+/// - Dynamic Apple Cash gradient: Distance-based color mapping
 ///   - Focal point moves with device tilt (accelerometer)
 ///   - Dots colored based on distance from focal point
-///   - Hue range: 0.15-0.85 (orange → yellow → green → cyan → blue → magenta)
+///   - Hue range shifts with breathing cycle (center always starts green)
+///   - Colors rotate through spectrum with each breath for dynamic effect
+///   - Outer blues are more dramatic (increased saturation 65% → 85%)
 ///   - Saturation decreases for dots far from focal point (creates fade effect)
 struct OrbitingParticlesView: View {
     let baseColor: Color
@@ -40,12 +42,17 @@ struct OrbitingParticlesView: View {
                     let waveSpeed: CGFloat = 1.57        // Radial wave speed - breathing rate (π/2 for 4s cycle)
                     let waveFrequency: CGFloat = 0.018   // Wave frequency - tuned for continuous visible wave crest
                     
+                    // Dynamic color rotation with breathing cycle
+                    // Colors shift gradually with each breath, starting from green at center
+                    let breathCycle = sin(CGFloat(time) * waveSpeed)
+                    let colorRotation = (breathCycle + 1.0) / 2.0 * 0.15  // 0 to 0.15 hue rotation with breath
+                    
                     // Focal point parameters based on device tilt
                     let lightX = max(-1, min(1, CGFloat(tiltX)))  // Clamp to -1 to 1
                     let lightY = max(-1, min(1, CGFloat(tiltY)))  // Clamp to -1 to 1
                     
                     // Blur parameters - subtle radial blur from center to edges
-                    let maxBlurRadius: CGFloat = 4.0     // Maximum blur at outer edges
+                    let maxBlurRadius: CGFloat = 6.0     // Maximum blur at outer edges
 
                     // Draw rings in groups with increasing blur for depth effect
                     for blurPass in 0..<4 {
@@ -109,37 +116,47 @@ struct OrbitingParticlesView: View {
                             let yDist = abs(y - focalY)
                             let distanceFromFocal = hypot(xDist, yDist)
                             
-                            // Apple Cash uses tight hue range (0.2 to 0.8) creating distinct color bands
-                            let minHue: CGFloat = 0.2   // Yellow/green range
-                            let maxHue: CGFloat = 0.75  // Blue/purple range
-                            let radiusForMinHue: CGFloat = 0
-                            let radiusForMaxHue: CGFloat = 280  // Tighter radius = more grouped colors
+                             // Dynamic hue range - shifts with breathing cycle
+                             // Center always starts green (0.33), shifts through spectrum with breath
+                             let minHue: CGFloat = 0.33 + colorRotation  // Green range (shifts with breath)
+                             let maxHue: CGFloat = 0.65 + colorRotation  // Blue/purple range (shifts with breath)
+                             let radiusForMinHue: CGFloat = 0
+                             let radiusForMaxHue: CGFloat = 280  // Tighter radius = more grouped colors
+                             
+                             // Linear interpolation helper
+                             func mapRange(_ value: CGFloat, _ inMin: CGFloat, _ inMax: CGFloat, _ outMin: CGFloat, _ outMax: CGFloat) -> CGFloat {
+                                 return ((value - inMin) * (outMax - outMin) / (inMax - inMin) + outMin)
+                             }
+                             
+                             // Calculate base hue from distance
+                             let baseHue = max(minHue, min(maxHue, mapRange(distanceFromFocal, radiusForMinHue, radiusForMaxHue, minHue, maxHue)))
+                             
+                             // Create slight variation for each dot (like Apple's startHue/endHue)
+                             // This adds texture while keeping colors grouped
+                             let hueVariation: CGFloat = 0.02
+                             let hue = (baseHue + (CGFloat(j) / CGFloat(M)) * hueVariation).truncatingRemainder(dividingBy: 1.0)
                             
-                            // Linear interpolation helper
-                            func mapRange(_ value: CGFloat, _ inMin: CGFloat, _ inMax: CGFloat, _ outMin: CGFloat, _ outMax: CGFloat) -> CGFloat {
-                                return ((value - inMin) * (outMax - outMin) / (inMax - inMin) + outMin)
-                            }
-                            
-                            // Calculate base hue from distance
-                            let baseHue = max(minHue, min(maxHue, mapRange(distanceFromFocal, radiusForMinHue, radiusForMaxHue, minHue, maxHue)))
-                            
-                            // Create slight variation for each dot (like Apple's startHue/endHue)
-                            // This adds texture while keeping colors grouped
-                            let hueVariation: CGFloat = 0.02
-                            let hue = baseHue + (CGFloat(j) / CGFloat(M)) * hueVariation
-                            
-                            // Saturation: Apple Cash uses 0.6 base, desaturates far dots
+                            // Saturation: More dramatic blues at outer edges
                             let distanceToBeginDesaturation: CGFloat = 300
                             let distanceToEndDesaturation: CGFloat = 500
                             var saturation: CGFloat = 0.65
                             
-                            if distanceFromFocal >= distanceToBeginDesaturation {
+                            // Boost saturation for outer blues (make them more dramatic)
+                            if distanceFromFocal >= 200 && distanceFromFocal < distanceToBeginDesaturation {
+                                // Blues in the outer range get a saturation boost
+                                let boostFactor = mapRange(distanceFromFocal, 200, distanceToBeginDesaturation, 0.0, 0.15)
+                                saturation = min(0.85, saturation + boostFactor)
+                            } else if distanceFromFocal >= distanceToBeginDesaturation {
                                 saturation = mapRange(distanceFromFocal, distanceToBeginDesaturation, distanceToEndDesaturation, 0.65, 0.05)
                                 saturation = max(0.05, min(0.65, saturation))
                             }
                             
-                            // Lightness: Apple Cash uses 0.7
-                            let lightness: CGFloat = 0.7
+                            // Lightness: Slightly adjust for outer blues to be more vibrant
+                            var lightness: CGFloat = 0.7
+                            if distanceFromFocal >= 200 && distanceFromFocal < distanceToBeginDesaturation {
+                                // Outer blues get slightly more vibrant
+                                lightness = 0.65
+                            }
                             
                             // Convert HSL to RGB (simplified conversion)
                             func hslToRGB(h: CGFloat, s: CGFloat, l: CGFloat) -> (r: CGFloat, g: CGFloat, b: CGFloat) {
