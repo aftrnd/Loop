@@ -116,11 +116,6 @@ struct PhoneNumberInputView: View {
     private var inputSection: some View {
         VStack(spacing: 16) {
             VStack(alignment: .leading, spacing: 16) {
-                Text("Phone Number")
-                    .font(.headline)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.primary)
-                
                 HStack(spacing: 12) {
                     // Country code prefix
                     HStack(spacing: 4) {
@@ -197,27 +192,23 @@ struct PhoneNumberInputView: View {
                     if viewModel.isLoading {
                         ProgressView()
                             .scaleEffect(0.8)
-                            .tint(.white)
-                    } else {
-                        Image(systemName: "arrow.right")
-                            .font(.body)
-                            .fontWeight(.semibold)
+                            .tint(Color(.systemBackground))
                     }
                     
                     Text(buttonText)
                         .font(.headline)
                         .fontWeight(.semibold)
                 }
-                .foregroundColor(.white)
+                .foregroundColor(Color(.systemBackground))
+                .opacity((viewModel.isLoading || viewModel.phoneNumber.isEmpty) ? 0.4 : 1.0)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 16)
                 .background(
-                    Color.blue
+                    Color.primary
                         .clipShape(RoundedRectangle(cornerRadius: 16))
                 )
             }
             .disabled(viewModel.isLoading || viewModel.phoneNumber.isEmpty)
-            .opacity(viewModel.isLoading || viewModel.phoneNumber.isEmpty ? 0.6 : 1.0)
             
             // Terms and privacy notice
             VStack(spacing: 4) {

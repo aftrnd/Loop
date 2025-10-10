@@ -37,14 +37,14 @@ struct OTPVerificationView: View {
             ZStack {
                 Circle()
                     .fill(Color(.systemGray5))
-                    .frame(width: 100, height: 100)
+                    .frame(width: 120, height: 120)
                 
                 Color.clear
-                    .frame(width: 100, height: 100)
-                    .glassEffect(.regular, in: Circle())
+                    .frame(width: 120, height: 120)
+                    .glassEffect(.clear)
                 
                 Image(systemName: "message.fill")
-                    .font(.system(size: 40, weight: .medium))
+                    .font(.system(size: 48, weight: .medium))
                     .foregroundColor(.primary)
             }
             
@@ -69,11 +69,6 @@ struct OTPVerificationView: View {
     private var verificationSection: some View {
         VStack(spacing: 16) {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Verification Code")
-                    .font(.headline)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.primary)
-                
                 TextField("123456", text: $viewModel.verificationCode)
                     .keyboardType(.numberPad)
                     .textFieldStyle(.plain)
@@ -85,7 +80,7 @@ struct OTPVerificationView: View {
                     .padding(.vertical, 16)
                     .background(
                         Color.clear
-                            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 12))
+                            .lightGlassEffect(.regular, in: RoundedRectangle(cornerRadius: 12))
                     )
             }
             
@@ -122,27 +117,23 @@ struct OTPVerificationView: View {
                     if viewModel.isLoading {
                         ProgressView()
                             .scaleEffect(0.8)
-                            .tint(.white)
-                    } else {
-                        Image(systemName: "checkmark")
-                            .font(.body)
-                            .fontWeight(.semibold)
+                            .tint(Color(.systemBackground))
                     }
                     
                     Text(viewModel.isLoading ? "Verifying..." : "Verify")
                         .font(.headline)
                         .fontWeight(.semibold)
                 }
-                .foregroundColor(.white)
+                .foregroundColor(Color(.systemBackground))
+                .opacity((viewModel.isLoading || viewModel.verificationCode.isEmpty) ? 0.4 : 1.0)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 16)
                 .background(
-                    Color.blue
+                    Color.primary
                         .clipShape(RoundedRectangle(cornerRadius: 16))
                 )
             }
             .disabled(viewModel.isLoading || viewModel.verificationCode.isEmpty)
-            .opacity(viewModel.isLoading || viewModel.verificationCode.isEmpty ? 0.6 : 1.0)
             
             // Help text
             VStack(spacing: 4) {
@@ -174,7 +165,7 @@ struct OTPVerificationView: View {
         .padding(.vertical, 8)
         .background(
             Color.clear
-                .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 8))
+                .lightGlassEffect(.regular, in: RoundedRectangle(cornerRadius: 8))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8)
