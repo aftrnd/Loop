@@ -34,8 +34,24 @@ struct OrbitingParticlesView: View {
                     // Animation parameters
                     let waveSpeed: CGFloat = 1.57        // Radial wave speed - breathing rate (π/2 for 4s cycle)
                     let waveFrequency: CGFloat = 0.018   // Wave frequency - tuned for continuous visible wave crest
+                    
+                    // Blur parameters - subtle radial blur from center to edges
+                    let maxBlurRadius: CGFloat = 4.0     // Maximum blur at outer edges
 
-                    for i in 0..<rings {
+                    // Draw rings in groups with increasing blur for depth effect
+                    for blurPass in 0..<4 {
+                        let blurAmount = CGFloat(blurPass) * (maxBlurRadius / 3.0)
+                        
+                        // Use drawLayer to isolate blur filter to this pass only
+                        context.drawLayer { layerContext in
+                            if blurAmount > 0 {
+                                layerContext.addFilter(.blur(radius: blurAmount))
+                            }
+                            
+                            for i in 0..<rings {
+                                // Only draw rings in this blur pass
+                                let ringBlurLevel = Int((CGFloat(i) / CGFloat(rings - 1)) * 3.0)
+                                if ringBlurLevel != blurPass { continue }
                         let r = innerR + CGFloat(i) * step
                         let t = CGFloat(i) / CGFloat(rings - 1)
                         
@@ -73,7 +89,9 @@ struct OrbitingParticlesView: View {
                             
                             // Apply accent color with gradient opacity
                             let dotColor = accentColor.opacity(opacityGradient)
-                            context.fill(Path(ellipseIn: rect), with: .color(dotColor))
+                            layerContext.fill(Path(ellipseIn: rect), with: .color(dotColor))
+                        }
+                            }
                         }
                     }
                 }

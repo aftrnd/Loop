@@ -6,7 +6,7 @@ struct PhoneNumberInputView: View {
     @State private var isFormattingInProgress = false
     
     var body: some View {
-        VStack(spacing: 24) {
+        VStack(spacing: 16) {
             Spacer()
             
             iconSection
@@ -85,7 +85,7 @@ struct PhoneNumberInputView: View {
     
     private var inputSection: some View {
         VStack(spacing: 16) {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 16) {
                 Text("Phone Number")
                     .font(.headline)
                     .fontWeight(.semibold)
