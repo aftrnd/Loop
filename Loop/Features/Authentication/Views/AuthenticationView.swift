@@ -51,14 +51,15 @@ struct AuthenticationView: View {
             Spacer()
             
             ZStack {
+                // Orbiting particle animation (background)
+                OrbitingParticlesView()
+                
+                // Native iOS liquid glass circle (on top of particles)
                 Circle()
-                    .fill(Color(.systemGray5))
                     .frame(width: 120, height: 120)
+                    .glassEffect(.clear)
                 
-                Color.clear
-                    .frame(width: 120, height: 120)
-                    .glassEffect(.regular, in: Circle())
-                
+                // Progress indicator (on top of everything)
                 ProgressView()
                     .scaleEffect(1.5)
                     .tint(.primary)

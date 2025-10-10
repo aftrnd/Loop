@@ -28,16 +28,17 @@ struct PhoneNumberInputView: View {
     
     private var headerSection: some View {
         VStack(spacing: 16) {
-            // App icon/logo area
+            // App icon/logo area with orbiting particles
             ZStack {
+                // Orbiting particle animation (background)
+                OrbitingParticlesView()
+                
+                // Native iOS liquid glass circle (on top of particles)
                 Circle()
-                    .fill(Color(.systemGray5))
                     .frame(width: 120, height: 120)
+                    .glassEffect(.clear)
                 
-                Color.clear
-                    .frame(width: 120, height: 120)
-                    .lightGlassEffect(.regular, in: Circle())
-                
+                // Icon (on top of everything)
                 Image(systemName: "message.fill")
                     .font(.system(size: 48, weight: .medium))
                     .foregroundColor(.primary)
@@ -81,7 +82,7 @@ struct PhoneNumberInputView: View {
                     .padding(.vertical, 10)
                     .background(
                         Color.clear
-                            .lightGlassEffect(.regular, in: RoundedRectangle(cornerRadius: 12))
+                            .lightGlassEffect(in: RoundedRectangle(cornerRadius: 12))  // Uses .thin by default
                     )
                     
                     // Phone number input
@@ -98,7 +99,7 @@ struct PhoneNumberInputView: View {
                         .padding(.vertical, 12)
                         .background(
                             Color.clear
-                                .lightGlassEffect(.regular, in: RoundedRectangle(cornerRadius: 12))
+                                .lightGlassEffect(in: RoundedRectangle(cornerRadius: 12))  // Uses .thin by default
                         )
                 }
             }
