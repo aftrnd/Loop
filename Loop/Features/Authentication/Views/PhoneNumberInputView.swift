@@ -60,8 +60,14 @@ struct PhoneNumberInputView: View {
             // Apply same easing as dots for perfect sync
             let easedPhase = pow(normalizedPhase, 2.5)
             
-            // Scale from 1.0 to 1.12 matching the breathing
-            let iconScale = 1.0 + (easedPhase * 0.12)
+            // Natural breathing: oscillates between 0.95 (contracted) and 1.05 (expanded)
+            // Circle and icon offset for organic feel
+            let timeOffset: CGFloat = 0.4
+            let circleWavePhase = sin(innerR * waveFrequency - CGFloat(time) * waveSpeed)
+            let iconWavePhase = sin(innerR * waveFrequency - CGFloat(time + timeOffset) * waveSpeed)
+            
+            let circleScale = 1.0 + (circleWavePhase * 0.05)
+            let iconScale = 1.0 + (iconWavePhase * 0.1)
             
             ZStack {
                 // Orbiting particle animation (background layer) - purple base color for holographic effect
@@ -69,10 +75,11 @@ struct PhoneNumberInputView: View {
                     .frame(width: 600, height: 600)
                     .allowsHitTesting(false)
 
-                // Glass circle around the icon
+                // Glass circle around the icon with breathing effect (offset from icon)
                 Circle()
                     .frame(width: 120, height: 120)
                     .glassEffect(.clear)
+                    .scaleEffect(circleScale)
 
                 // Icon (on top of everything) with synchronized breathing animation
                 // Primary color = white in dark mode, black in light mode
