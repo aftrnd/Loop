@@ -52,7 +52,7 @@ struct AuthenticationView: View {
             
             ZStack {
                 // Orbiting particle animation (background)
-                OrbitingParticlesView(accentColor: .blue)
+                OrbitingParticlesView(baseColor: .blue, tiltX: 0.3, tiltY: -0.2)
                     .frame(width: 600, height: 600)
                     .allowsHitTesting(false)
                 

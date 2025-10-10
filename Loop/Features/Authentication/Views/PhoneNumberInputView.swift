@@ -1,11 +1,18 @@
 import SwiftUI
 import FirebaseFirestore
+import CoreMotion
 
 struct PhoneNumberInputView: View {
     @ObservedObject var viewModel: AuthenticationViewModel
     @FocusState private var isPhoneFieldFocused: Bool
     @State private var isFormattingInProgress = false
     @State private var accountExists: Bool? = nil // nil = unchecked, true = exists, false = new
+    @State private var lastCheckedNumber: String = "" // Track last checked number to prevent redundant checks
+    
+    // Motion tracking for accelerometer-based lighting
+    @State private var tiltX: Double = 0.0
+    @State private var tiltY: Double = 0.0
+    private let motionManager = CMMotionManager()
     
     var body: some View {
         VStack(spacing: 16) {
@@ -28,6 +35,12 @@ struct PhoneNumberInputView: View {
             isPhoneFieldFocused = false
         }
         .keyboardAdaptive() // Custom keyboard handling
+        .onAppear {
+            startMotionTracking()
+        }
+        .onDisappear {
+            stopMotionTracking()
+        }
     }
     
     private var iconSection: some View {
@@ -51,8 +64,8 @@ struct PhoneNumberInputView: View {
             let iconScale = 1.0 + (easedPhase * 0.12)
             
             ZStack {
-                // Orbiting particle animation (background layer)
-                OrbitingParticlesView() // defaults to Color.primary (auto light/dark)
+                // Orbiting particle animation (background layer) - purple base color for holographic effect
+                OrbitingParticlesView(baseColor: Color(red: 0.5, green: 0.3, blue: 0.8), tiltX: tiltX, tiltY: tiltY)
                     .frame(width: 600, height: 600)
                     .allowsHitTesting(false)
 
@@ -64,7 +77,7 @@ struct PhoneNumberInputView: View {
                 // Icon (on top of everything) with synchronized breathing animation
                 Image(systemName: "message.fill")
                     .font(.system(size: 48, weight: .medium))
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(.white)
                     .scaleEffect(iconScale)
             }
             .frame(width: 120, height: 120) // Constrains the ZStack to icon size for layout (dots overflow)
@@ -93,13 +106,10 @@ struct PhoneNumberInputView: View {
         }
         
         guard let exists = accountExists else {
-            print("🔘 Button text: Continue (accountExists is nil)")
             return "Continue"
         }
         
-        let text = exists ? "Sign In" : "Sign Up"
-        print("🔘 Button text: \(text) (accountExists = \(exists))")
-        return text
+        return exists ? "Sign In" : "Sign Up"
     }
     
     private var inputSection: some View {
@@ -141,15 +151,19 @@ struct PhoneNumberInputView: View {
                             
                             // Check if account exists when full number is entered
                             let digits = String(newValue.compactMap { $0.isNumber ? $0 : nil })
-                            print("📞 Phone number changed: \(newValue) -> \(digits.count) digits")
                             
                             if digits.count == 10 {
-                                print("✨ Full number entered, checking account...")
-                                checkIfAccountExists(phoneNumber: digits)
+                                // Only check if this is a different number than last checked
+                                if digits != lastCheckedNumber {
+                                    lastCheckedNumber = digits
+                                    checkIfAccountExists(phoneNumber: digits)
+                                }
                             } else {
-                                // Reset if number is incomplete
-                                print("🔄 Number incomplete, resetting to Continue")
-                                accountExists = nil
+                                // Reset if number is incomplete and was previously checked
+                                if !lastCheckedNumber.isEmpty {
+                                    lastCheckedNumber = ""
+                                    accountExists = nil
+                                }
                             }
                         }
                         .padding(.horizontal, 16)
@@ -309,8 +323,6 @@ struct PhoneNumberInputView: View {
                 // Format phone number with country code for Firebase
                 let formattedNumber = "+1\(phoneNumber)"
                 
-                print("🔍 Checking if account exists for: \(formattedNumber)")
-                
                 // Check Firestore for existing user with this phone number
                 let snapshot = try await Firestore.firestore()
                     .collection("users")
@@ -319,15 +331,9 @@ struct PhoneNumberInputView: View {
                     .getDocuments()
                 
                 let exists = !snapshot.documents.isEmpty
-                print("✅ Account check result: \(exists ? "EXISTS" : "NEW") - Found \(snapshot.documents.count) documents")
-                
-                if exists, let doc = snapshot.documents.first {
-                    print("📱 Found user: \(doc.documentID)")
-                }
                 
                 await MainActor.run {
                     accountExists = exists
-                    print("🔄 Button should now show: \(exists ? "Sign In" : "Sign Up")")
                 }
             } catch {
                 print("❌ Error checking account existence: \(error.localizedDescription)")
@@ -337,6 +343,57 @@ struct PhoneNumberInputView: View {
                 }
             }
         }
+    }
+    
+    // MARK: - Motion Tracking
+    
+    private func startMotionTracking() {
+        print("🚀 Starting motion tracking...")
+        
+        guard motionManager.isDeviceMotionAvailable else {
+            print("⚠️ Device motion not available")
+            return
+        }
+        
+        print("✅ Device motion is available, starting updates...")
+        
+        motionManager.deviceMotionUpdateInterval = 1.0 / 60.0 // 60 Hz
+        motionManager.startDeviceMotionUpdates(to: .main) { [self] motion, error in
+            guard let motion = motion else {
+                if let error = error {
+                    print("❌ Motion update error: \(error.localizedDescription)")
+                }
+                return
+            }
+            
+            // Use gravity vector for more responsive tilt detection
+            let gravityX = motion.gravity.x  // -1 to 1
+            let gravityY = motion.gravity.y  // -1 to 1
+            
+            // When device tilts right, gravity.x is positive
+            // When device tilts forward (top down), gravity.y is negative
+            // Amplify for dramatic effect
+            let newTiltX = max(-1, min(1, Double(gravityX * 2.0)))
+            let newTiltY = max(-1, min(1, Double(gravityY * 2.0)))
+            
+            // Update state
+            tiltX = newTiltX
+            tiltY = newTiltY
+            
+            // More frequent debug output
+            if Int(Date().timeIntervalSince1970 * 20) % 10 == 0 {
+                print("📱 Tilt - X: \(String(format: "%.2f", tiltX)), Y: \(String(format: "%.2f", tiltY)) | Gravity - X: \(String(format: "%.2f", gravityX)), Y: \(String(format: "%.2f", gravityY))")
+            }
+        }
+        
+        // Verify it started
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            print("📊 Motion manager running: \(self.motionManager.isDeviceMotionActive)")
+        }
+    }
+    
+    private func stopMotionTracking() {
+        motionManager.stopDeviceMotionUpdates()
     }
     
 }
