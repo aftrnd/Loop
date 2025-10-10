@@ -1,9 +1,11 @@
 import SwiftUI
+import FirebaseFirestore
 
 struct PhoneNumberInputView: View {
     @ObservedObject var viewModel: AuthenticationViewModel
     @FocusState private var isPhoneFieldFocused: Bool
     @State private var isFormattingInProgress = false
+    @State private var accountExists: Bool? = nil // nil = unchecked, true = exists, false = new
     
     var body: some View {
         VStack(spacing: 16) {
@@ -76,11 +78,28 @@ struct PhoneNumberInputView: View {
                 .fontWeight(.bold)
                 .foregroundColor(.primary)
             
-            Text("Enter your phone number to get started")
+            Text("Enter your phone number to continue")
                 .font(.body)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
         }
+    }
+    
+    // MARK: - Computed Properties
+    
+    private var buttonText: String {
+        if viewModel.isLoading {
+            return "Sending..."
+        }
+        
+        guard let exists = accountExists else {
+            print("🔘 Button text: Continue (accountExists is nil)")
+            return "Continue"
+        }
+        
+        let text = exists ? "Sign In" : "Sign Up"
+        print("🔘 Button text: \(text) (accountExists = \(exists))")
+        return text
     }
     
     private var inputSection: some View {
@@ -119,6 +138,19 @@ struct PhoneNumberInputView: View {
                         .onChange(of: viewModel.phoneNumber) { _, newValue in
                             // Immediate formatting without debouncing to prevent flashing
                             formatPhoneNumberOptimized(newValue)
+                            
+                            // Check if account exists when full number is entered
+                            let digits = String(newValue.compactMap { $0.isNumber ? $0 : nil })
+                            print("📞 Phone number changed: \(newValue) -> \(digits.count) digits")
+                            
+                            if digits.count == 10 {
+                                print("✨ Full number entered, checking account...")
+                                checkIfAccountExists(phoneNumber: digits)
+                            } else {
+                                // Reset if number is incomplete
+                                print("🔄 Number incomplete, resetting to Continue")
+                                accountExists = nil
+                            }
                         }
                         .padding(.horizontal, 16)
                         .padding(.vertical, 12)
@@ -157,7 +189,7 @@ struct PhoneNumberInputView: View {
                             .fontWeight(.semibold)
                     }
                     
-                    Text(viewModel.isLoading ? "Sending..." : "Continue")
+                    Text(buttonText)
                         .font(.headline)
                         .fontWeight(.semibold)
                 }
@@ -266,6 +298,44 @@ struct PhoneNumberInputView: View {
             return "(\(areaCode)) \(firstPart)-\(lastPart)"
         default:
             return digits
+        }
+    }
+    
+    // MARK: - Account Check
+    
+    private func checkIfAccountExists(phoneNumber: String) {
+        Task {
+            do {
+                // Format phone number with country code for Firebase
+                let formattedNumber = "+1\(phoneNumber)"
+                
+                print("🔍 Checking if account exists for: \(formattedNumber)")
+                
+                // Check Firestore for existing user with this phone number
+                let snapshot = try await Firestore.firestore()
+                    .collection("users")
+                    .whereField("phoneNumber", isEqualTo: formattedNumber)
+                    .limit(to: 1)
+                    .getDocuments()
+                
+                let exists = !snapshot.documents.isEmpty
+                print("✅ Account check result: \(exists ? "EXISTS" : "NEW") - Found \(snapshot.documents.count) documents")
+                
+                if exists, let doc = snapshot.documents.first {
+                    print("📱 Found user: \(doc.documentID)")
+                }
+                
+                await MainActor.run {
+                    accountExists = exists
+                    print("🔄 Button should now show: \(exists ? "Sign In" : "Sign Up")")
+                }
+            } catch {
+                print("❌ Error checking account existence: \(error.localizedDescription)")
+                await MainActor.run {
+                    // Default to continue if check fails
+                    accountExists = nil
+                }
+            }
         }
     }
     
