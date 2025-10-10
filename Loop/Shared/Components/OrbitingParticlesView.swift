@@ -1,153 +1,90 @@
 import SwiftUI
 
-/// Vogel spiral (phyllotaxis) pattern - like sunflower seeds
-/// Creates a beautiful radial symmetry with golden angle spacing
+/// Halftone donut drawn with concentric rings.
+/// - Dots per ring: M = 18
+/// - Rings: 24
+/// - Inner radius: 75 pt, ring spacing: 16 pt
+/// - Dot size: linear from 10 pt → 0.5 pt
+/// - Offset per ring: 10° (perfectly alternated)
+/// - Continuous wave animation: stadium wave effect with breathing rhythm
+/// - Dynamic gradient: dots change color to match accent color
 struct OrbitingParticlesView: View {
-    // MARK: - Configuration
-    
-    /// Easily adjustable pattern configuration
-    struct Config {
-        // Pattern Structure
-        var spacingConstant: Double = 15        // c: Controls overall scale/spread
-        var dotCount: Int = 1100                // N: Total number of dots to render
-        var ringCenterRadius: Double = 180      // R₀: Where the ring is centered (px)
-        var ringThickness: Double = 60          // σ: Width of the Gaussian ring
-        var maxDotSize: Double = 6.5            // ρ_max: Largest dot radius (px)
-        var centerBoostAmount: Double = 1.5     // Extra size boost for center dots
-        
-        // Animation Speeds
-        var rotationSpeed: Double = 0.02        // Rotation speed (rad/s) - lower = slower
-        var breathingSpeed: Double = 0.4        // Breathing cycle speed (rad/s)
-        var breathingAmount: Double = 0.05      // Breathing intensity (0.05 = ±5%)
-        var waveSpeed: Double = 1.2             // Traveling wave speed (rad/s)
-        var waveAmount: Double = 0.12           // Wave intensity (0.12 = ±12%)
-        
-        // Visual
-        var alignToTop: Bool = true             // Align a dot to 12 o'clock
-    }
-    
-    // Active configuration - modify these values to change the pattern!
-    private let config = Config()
-    
-    // Golden angle constant: φ = π(3-√5) ≈ 2.39996323
-    private let goldenAngle = Double.pi * (3.0 - sqrt(5.0))
-    
-    // Rotation offset to align pattern
-    private var rotationOffset: Double {
-        config.alignToTop ? -Double.pi / 2.0 : 0
-    }
+    // Use Color.primary to auto-adapt: white in dark mode, black in light mode
+    var accentColor: Color = .primary
     
     var body: some View {
         TimelineView(.animation) { timeline in
             let time = timeline.date.timeIntervalSinceReferenceDate
             
-            ZStack {
-                ForEach(0..<config.dotCount, id: \.self) { n in
-                    let dot = calculateDot(index: n + 1, time: time)
+            GeometryReader { geo in
+                let size = geo.size
+                let cx = size.width / 2
+                let top: CGFloat = 0
+                let bottom = size.height - 0
+                let cy = (top + bottom) / 2
+                Canvas { context, _ in
+                    let M = 18
+                    let rings = 24
+                    let innerR: CGFloat = 75
+                    let step: CGFloat = 16
+                    let maxDot: CGFloat = 10
+                    let minDot: CGFloat = 0.5
+                    let offset = 10.0 * CGFloat.pi / 180
                     
-                    if dot.size > 0.5 { // Only show dots with visible size
-                        Circle()
-                            .fill(Color.primary)
-                            .frame(width: dot.size * 2, height: dot.size * 2)
-                            .offset(x: dot.x, y: dot.y)
+                    // Animation parameters
+                    let waveSpeed: CGFloat = 1.57        // Radial wave speed - breathing rate (π/2 for 4s cycle)
+                    let waveFrequency: CGFloat = 0.018   // Wave frequency - tuned for continuous visible wave crest
+
+                    for i in 0..<rings {
+                        let r = innerR + CGFloat(i) * step
+                        let t = CGFloat(i) / CGFloat(rings - 1)
+                        
+                        // Base size decreases linearly for outer rings
+                        let baseSize = maxDot + t * (minDot - maxDot)
+                        let base = CGFloat(i) * offset
+                        
+                        // Calculate gradient opacity based on ring position
+                        // Inner rings are more vibrant, outer rings fade
+                        let opacityGradient = 1.0 - (t * 0.6) // Fades from 1.0 to 0.4
+                        
+                        for j in 0..<M {
+                            let theta = 2 * CGFloat.pi * CGFloat(j) / CGFloat(M) + base
+                            
+                            // No rotation – dots remain fixed in angle
+                            let animatedTheta = theta
+                            
+                            // Wave effect: synchronized with breathing - icon creates the wave
+                            // Phase calculation synced so wave emanates from center when icon expands
+                            let wavePhase = sin(r * waveFrequency - CGFloat(time) * waveSpeed + CGFloat.pi / 2.0)
+                            
+                            // Map to 0-1 range with smooth transitions
+                            // This keeps a visible wave crest always present in the pattern
+                            let normalizedWave = (wavePhase + 1.0) / 2.0 // 0 to 1
+                            
+                            // Apply easing to make wave crest sharper and more visible
+                            let easedWave = pow(normalizedWave, 2.5) // Higher power = sharper, more visible crest
+                            
+                            // Dots transition smoothly from minDot to baseSize as wave passes
+                            let dot = minDot + (baseSize - minDot) * easedWave
+                            
+                            let x = cx + r * cos(animatedTheta)
+                            let y = cy + r * sin(animatedTheta)
+                            let rect = CGRect(x: x - dot/2, y: y - dot/2, width: dot, height: dot)
+                            
+                            // Apply accent color with gradient opacity
+                            let dotColor = accentColor.opacity(opacityGradient)
+                            context.fill(Path(ellipseIn: rect), with: .color(dotColor))
+                        }
                     }
                 }
             }
         }
     }
-    
-    // MARK: - Vogel Spiral Calculation with Animation
-    
-    /// Calculate position and size for dot n using Vogel spiral with subtle pulsating animation
-    private func calculateDot(index n: Int, time: TimeInterval) -> (x: CGFloat, y: CGFloat, size: CGFloat) {
-        let nDouble = Double(n)
-        
-        // 1. Calculate radial distance with subtle breathing: r_n = c√n · (1 + breathing)
-        // Keep circles perfectly round by only scaling radially
-        let breathe = sin(time * config.breathingSpeed) * config.breathingAmount
-        let r = config.spacingConstant * sqrt(nDouble) * (1.0 + breathe)
-        
-        // 2. Calculate angle with slow rotation: θ_n = n·φ + offset + slow rotation
-        let slowRotation = time * config.rotationSpeed
-        let theta = nDouble * goldenAngle + rotationOffset + slowRotation
-        
-        // 3. Convert to Cartesian coordinates
-        let x = r * cos(theta)
-        let y = r * sin(theta)
-        
-        // 4. Calculate dot size with Gaussian + center boost + traveling wave
-        // Base Gaussian: ρ_n = ρ_max · exp(-(r_n - R₀)²/(2σ²))
-        let diff = r - config.ringCenterRadius
-        let exponent = -(diff * diff) / (2.0 * config.ringThickness * config.ringThickness)
-        let gaussianSize = config.maxDotSize * exp(exponent)
-        
-        // Add size boost for dots near center (makes innermost dots larger)
-        let centerBoost = exp(-(r * r) / 8000.0) * config.centerBoostAmount
-        
-        // Add traveling wave that ripples around the circle
-        let angularWave = sin(theta * 3.0 + time * config.waveSpeed) * config.waveAmount
-        let waveModulation = 1.0 + angularWave
-        
-        let baseSize = gaussianSize + centerBoost
-        let size = baseSize * waveModulation
-        
-        return (CGFloat(x), CGFloat(y), CGFloat(size))
-    }
 }
 
-// MARK: - Preview
-
-#Preview("Orbiting Particles") {
-    ZStack {
-        Color(.systemBackground)
-            .ignoresSafeArea()
-        
-        ZStack {
-            // Background circle (like in the welcome screen)
-            Circle()
-                .fill(Color(.systemGray5))
-                .frame(width: 120, height: 120)
-            
-            // Orbiting particles
-            OrbitingParticlesView()
-            
-            // Icon in center
-            Image(systemName: "message.fill")
-                .font(.system(size: 48, weight: .medium))
-                .foregroundColor(.primary)
-        }
-    }
-}
-
-#Preview("Full Welcome Layout") {
-    VStack(spacing: 24) {
-        Spacer()
-        
-        ZStack {
-            Circle()
-                .fill(Color(.systemGray5))
-                .frame(width: 120, height: 120)
-            
-            OrbitingParticlesView()
-            
-            Image(systemName: "message.fill")
-                .font(.system(size: 48, weight: .medium))
-                .foregroundColor(.primary)
-        }
-        
-        VStack(spacing: 8) {
-            Text("Welcome to Loop")
-                .font(.largeTitle)
-                .fontWeight(.bold)
-            
-            Text("Enter your phone number to get started")
-                .font(.body)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-        }
-        
-        Spacer()
-    }
-    .padding()
+#Preview {
+    OrbitingParticlesView()
+        .frame(width: 430, height: 932) // iPhone portrait preview (approx 19.5:9)
+        .background(Color(red: 0.90, green: 0.94, blue: 0.96))
 }
 

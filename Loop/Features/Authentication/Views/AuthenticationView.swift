@@ -52,7 +52,9 @@ struct AuthenticationView: View {
             
             ZStack {
                 // Orbiting particle animation (background)
-                OrbitingParticlesView()
+                OrbitingParticlesView(accentColor: .blue)
+                    .frame(width: 600, height: 600)
+                    .allowsHitTesting(false)
                 
                 // Native iOS liquid glass circle (on top of particles)
                 Circle()
@@ -64,6 +66,7 @@ struct AuthenticationView: View {
                     .scaleEffect(1.5)
                     .tint(.primary)
             }
+            .frame(width: 120, height: 120)
             
             VStack(spacing: 8) {
                 Text("Loading...")

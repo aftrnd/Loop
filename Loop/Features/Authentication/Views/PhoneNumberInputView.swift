@@ -9,13 +9,15 @@ struct PhoneNumberInputView: View {
         VStack(spacing: 24) {
             Spacer()
             
-            headerSection
+            iconSection
+            
+            Spacer()
+            
+            welcomeTextSection
             
             inputSection
             
             actionSection
-            
-            Spacer()
         }
         .padding(.horizontal, AppConstants.UI.padding)
         .background(Color(.systemBackground))
@@ -26,35 +28,58 @@ struct PhoneNumberInputView: View {
         .keyboardAdaptive() // Custom keyboard handling
     }
     
-    private var headerSection: some View {
-        VStack(spacing: 16) {
-            // App icon/logo area with orbiting particles
+    private var iconSection: some View {
+        // App icon/logo area with orbiting particles
+        TimelineView(.animation) { timeline in
+            let time = timeline.date.timeIntervalSinceReferenceDate
+            
+            // Calculate breathing scale synchronized with wave at center (r=75)
+            let waveSpeed: CGFloat = 1.57
+            let waveFrequency: CGFloat = 0.018
+            let innerR: CGFloat = 75
+            
+            // Calculate wave phase at the inner radius (center of pattern)
+            let wavePhase = sin(innerR * waveFrequency - CGFloat(time) * waveSpeed)
+            let normalizedPhase = (wavePhase + 1.0) / 2.0  // 0 to 1
+            
+            // Apply same easing as dots for perfect sync
+            let easedPhase = pow(normalizedPhase, 2.5)
+            
+            // Scale from 1.0 to 1.12 matching the breathing
+            let iconScale = 1.0 + (easedPhase * 0.12)
+            
             ZStack {
-                // Orbiting particle animation (background)
-                OrbitingParticlesView()
-                
-                // Native iOS liquid glass circle (on top of particles)
-                Circle()
+                // Orbiting particle animation (background layer)
+                OrbitingParticlesView() // defaults to Color.primary (auto light/dark)
+                    .frame(width: 600, height: 600)
+                    .allowsHitTesting(false)
+
+                // Liquid glass circle around the icon
+                Color.clear
                     .frame(width: 120, height: 120)
-                    .glassEffect(.clear)
-                
-                // Icon (on top of everything)
+                    .lightGlassEffect(.regular, in: Circle())
+
+                // Icon (on top of everything) with synchronized breathing animation
                 Image(systemName: "message.fill")
                     .font(.system(size: 48, weight: .medium))
-                    .foregroundColor(.primary)
+                    .foregroundStyle(.primary)
+                    .scaleEffect(iconScale)
             }
+            .frame(width: 120, height: 120) // Constrains the ZStack to icon size for layout (dots overflow)
+        }
+    }
+    
+    private var welcomeTextSection: some View {
+        VStack(spacing: 8) {
+            Text("Welcome to Loop")
+                .font(.largeTitle)
+                .fontWeight(.bold)
+                .foregroundColor(.primary)
             
-            VStack(spacing: 8) {
-                Text("Welcome to Loop")
-                    .font(.largeTitle)
-                    .fontWeight(.bold)
-                    .foregroundColor(.primary)
-                
-                Text("Enter your phone number to get started")
-                    .font(.body)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-            }
+            Text("Enter your phone number to get started")
+                .font(.body)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
         }
     }
     
@@ -82,7 +107,7 @@ struct PhoneNumberInputView: View {
                     .padding(.vertical, 10)
                     .background(
                         Color.clear
-                            .lightGlassEffect(in: RoundedRectangle(cornerRadius: 12))  // Uses .thin by default
+                            .lightGlassEffect(.regular, in: RoundedRectangle(cornerRadius: 12))
                     )
                     
                     // Phone number input
@@ -99,7 +124,7 @@ struct PhoneNumberInputView: View {
                         .padding(.vertical, 12)
                         .background(
                             Color.clear
-                                .lightGlassEffect(in: RoundedRectangle(cornerRadius: 12))  // Uses .thin by default
+                                .lightGlassEffect(.regular, in: RoundedRectangle(cornerRadius: 12))
                         )
                 }
             }
