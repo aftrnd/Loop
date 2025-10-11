@@ -108,6 +108,12 @@ struct PhoneNumberInputView: View {
     
     // MARK: - Computed Properties
     
+    private var isButtonDisabled: Bool {
+        // Extract digits and check count
+        let digits = String(viewModel.phoneNumber.compactMap { $0.isNumber ? $0 : nil })
+        return viewModel.isLoading || digits.count != 10
+    }
+    
     private var buttonText: String {
         if viewModel.isLoading {
             return "Sending..."
@@ -136,11 +142,8 @@ struct PhoneNumberInputView: View {
                             .fontWeight(.medium)
                     }
                     .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-                    .background(
-                        Color.clear
-                            .lightGlassEffect(.regular, in: RoundedRectangle(cornerRadius: 12))
-                    )
+                    .padding(.vertical, 12)
+                    .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 12))
                     
                     // Phone number input
                     TextField("(555) 123-4567", text: $viewModel.phoneNumber)
@@ -149,12 +152,21 @@ struct PhoneNumberInputView: View {
                         .font(.body)
                         .focused($isPhoneFieldFocused)
                         .onChange(of: viewModel.phoneNumber) { _, newValue in
+                            // Extract digits only
+                            let digits = String(newValue.compactMap { $0.isNumber ? $0 : nil })
+                            
+                            // Hard limit: prevent entering more than 10 digits
+                            if digits.count > 10 {
+                                // Revert to previous value by truncating to 10 digits
+                                let truncatedDigits = String(digits.prefix(10))
+                                viewModel.phoneNumber = formatPhoneNumber(truncatedDigits)
+                                return
+                            }
+                            
                             // Immediate formatting without debouncing to prevent flashing
                             formatPhoneNumberOptimized(newValue)
                             
                             // Check if account exists when full number is entered
-                            let digits = String(newValue.compactMap { $0.isNumber ? $0 : nil })
-                            
                             if digits.count == 10 {
                                 // Only check if this is a different number than last checked
                                 if digits != lastCheckedNumber {
@@ -171,10 +183,7 @@ struct PhoneNumberInputView: View {
                         }
                         .padding(.horizontal, 16)
                         .padding(.vertical, 12)
-                        .background(
-                            Color.clear
-                                .lightGlassEffect(.regular, in: RoundedRectangle(cornerRadius: 12))
-                        )
+                        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 12))
                 }
             }
             
@@ -187,12 +196,10 @@ struct PhoneNumberInputView: View {
     private var actionSection: some View {
         VStack(spacing: 16) {
             Button(action: {
-                // Optimized validation - extract digits without regex
+                // Only send verification if we have exactly 10 digits
                 let digits = String(viewModel.phoneNumber.compactMap { $0.isNumber ? $0 : nil })
                 if digits.count == 10 {
                     viewModel.sendVerificationCode()
-                } else {
-                    viewModel.errorMessage = "Please enter a valid 10-digit phone number"
                 }
             }) {
                 HStack(spacing: 8) {
@@ -207,7 +214,7 @@ struct PhoneNumberInputView: View {
                         .fontWeight(.semibold)
                 }
                 .foregroundColor(Color(.systemBackground))
-                .opacity((viewModel.isLoading || viewModel.phoneNumber.isEmpty) ? 0.4 : 1.0)
+                .opacity(isButtonDisabled ? 0.4 : 1.0)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 16)
                 .background(
@@ -215,7 +222,7 @@ struct PhoneNumberInputView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 16))
                 )
             }
-            .disabled(viewModel.isLoading || viewModel.phoneNumber.isEmpty)
+            .disabled(isButtonDisabled)
             
             // Terms and privacy notice
             VStack(spacing: 4) {
@@ -276,13 +283,7 @@ struct PhoneNumberInputView: View {
         // Extract digits only (optimized character filtering)
         let digits = String(newValue.compactMap { $0.isNumber ? $0 : nil })
         
-        // Limit to 10 digits max
-        guard digits.count <= 10 else {
-            isFormattingInProgress = false
-            return
-        }
-        
-        // Format the digits
+        // Format the digits (limit already enforced in onChange)
         let formatted = formatPhoneNumber(digits)
         
         // Only update if different to prevent infinite loops
