@@ -13,6 +13,7 @@ struct ChatsListView: View {
     @State private var profileUserToShow: ProfileUser?
     @Environment(\.colorScheme) private var colorScheme
     @ObservedObject private var debugManager = DebugManager.shared
+    @StateObject private var notificationManager = NotificationNavigationManager.shared
     
     var body: some View {
         mainView
@@ -88,6 +89,24 @@ struct ChatsListView: View {
         .sheet(isPresented: $debugManager.isDebugMenuVisible) {
             DebugMenuView()
         }
+        .onChange(of: notificationManager.chatToOpen) { _, chatId in
+            guard let chatId = chatId else { return }
+            handleNotificationNavigation(chatId: chatId)
+        }
+    }
+    
+    private func handleNotificationNavigation(chatId: String) {
+        // Find the chat in our list
+        let allChats = viewModel.pinned + viewModel.recent
+        guard let chat = allChats.first(where: { $0.id.uuidString == chatId }) else {
+            print("⚠️ Chat not found for notification: \(chatId)")
+            notificationManager.clearNavigation()
+            return
+        }
+        
+        print("📱 Navigating to chat: \(chat.displayTitle)")
+        navigationPath.append(ChatsRoute.conversation(chat))
+        notificationManager.clearNavigation()
     }
     
     

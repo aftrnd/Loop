@@ -163,7 +163,7 @@ final class ConversationViewModel {
                 // Clear typing status before sending
                 try? await self.firebaseService.setTypingStatus(chatId: self.chatId, isTyping: false)
                 
-                try await self.firebaseService.sendMessage(chatId: self.chatId, content: content, isFromUser: true)
+                try await self.firebaseService.sendMessage(chatId: self.chatId, content: content)
             } catch {
                 print("Error sending message: \(error)")
                 // Restore message text on error

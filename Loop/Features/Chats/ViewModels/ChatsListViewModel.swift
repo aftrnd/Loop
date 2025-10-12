@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import FirebaseFirestore
+import UIKit
 
 @MainActor
 @Observable
@@ -21,7 +22,19 @@ final class ChatsListViewModel {
                 print("   - Chat '\(chat.displayTitle)': \(chat.unreadCount) unread")
             }
         }
+        
+        // Update app icon badge
+        updateAppBadge(count: total)
+        
         return total
+    }
+    
+    // Update app icon badge count
+    private func updateAppBadge(count: Int) {
+        Task { @MainActor in
+            UNUserNotificationCenter.current().setBadgeCount(count)
+            print("📱 App badge count updated to: \(count)")
+        }
     }
 
     init() {

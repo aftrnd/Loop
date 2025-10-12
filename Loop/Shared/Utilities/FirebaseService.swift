@@ -1,6 +1,7 @@
 import FirebaseFirestore
 import FirebaseAuth
 import FirebaseStorage
+import FirebaseFunctions
 import Foundation
 import UIKit
 
@@ -459,7 +460,7 @@ class FirebaseService {
 
     // MARK: - Message Operations
 
-    func sendMessage(chatId: String, content: String, isFromUser: Bool = true) async throws {
+    func sendMessage(chatId: String, content: String) async throws {
         guard let currentUserId = Auth.auth().currentUser?.uid else {
             throw NSError(domain: "FirebaseService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
         }
@@ -524,11 +525,11 @@ class FirebaseService {
                 "id": messageId,
                 "content": content,
                 "timestamp": Timestamp(date: now),
-                "senderId": currentUserId,
-                "isFromUser": isFromUser
+                "senderId": currentUserId
+                // Note: isFromUser is NOT stored - it's computed client-side by comparing senderId with current user
             ])
             
-            print("✅ Message created: id=\(messageId), isFromUser=\(isFromUser)")
+            print("✅ Message created: id=\(messageId), senderId=\(currentUserId)")
         }
 
         // Update chat's last message
@@ -560,20 +561,32 @@ class FirebaseService {
             // Get participant's FCM token
             guard let participant = try? await getUser(withId: participantId),
                   let fcmToken = participant.fcmToken else {
+                print("⚠️ No FCM token for participant \(participantId)")
                 continue
             }
             
             // Increment unread count for this participant
             try? await incrementUnreadCount(chatId: chatId, userId: participantId)
             
-            // Send push notification via Cloud Functions or FCM API
-            // Note: In a production app, you'd typically use Firebase Cloud Functions to send notifications
-            // For now, we'll just log that we would send a notification
-            print("📬 Would send push notification to \(participantId) with token: \(fcmToken)")
-            print("📬 Message: \(senderName): \(content)")
-            
-            // In production, you would call your Cloud Function here to send the actual notification
-            // Example: POST to https://your-project.cloudfunctions.net/sendNotification
+            // Send push notification via Firebase Cloud Function
+            do {
+                let functions = Functions.functions()
+                let sendNotification = functions.httpsCallable("sendNotification")
+                
+                let result = try await sendNotification.call([
+                    "fcmToken": fcmToken,
+                    "title": senderName,
+                    "body": content,
+                    "chatId": chatId,
+                    "senderId": senderId
+                ])
+                
+                print("✅ Push notification sent to \(participantId)")
+                print("📬 Message: \(senderName): \(content)")
+            } catch {
+                print("❌ Failed to send push notification to \(participantId): \(error.localizedDescription)")
+                // Continue to next participant even if one fails
+            }
         }
     }
     
