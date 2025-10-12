@@ -35,6 +35,7 @@ struct User: Identifiable, Codable, Equatable {
     let following: [String] // Array of user IDs this user follows
     let createdAt: Date
     let lastSeen: Date
+    let fcmToken: String? // Firebase Cloud Messaging token for push notifications
     
     // Computed properties for counts
     var followerCount: Int { followers.count }
@@ -54,9 +55,10 @@ struct User: Identifiable, Codable, Equatable {
         self.following = [] // Will be loaded from Firestore
         self.createdAt = Date()
         self.lastSeen = Date()
+        self.fcmToken = nil // Will be loaded from Firestore
     }
     
-    init(id: String, phoneNumber: String, displayName: String? = nil, username: String? = nil, bio: String? = nil, location: String? = nil, avatarURL: String? = nil, bannerURL: String? = nil, badgeType: BadgeType? = nil, followers: [String] = [], following: [String] = []) {
+    init(id: String, phoneNumber: String, displayName: String? = nil, username: String? = nil, bio: String? = nil, location: String? = nil, avatarURL: String? = nil, bannerURL: String? = nil, badgeType: BadgeType? = nil, followers: [String] = [], following: [String] = [], fcmToken: String? = nil) {
         self.id = id
         self.phoneNumber = phoneNumber
         self.displayName = displayName
@@ -70,6 +72,7 @@ struct User: Identifiable, Codable, Equatable {
         self.following = following
         self.createdAt = Date()
         self.lastSeen = Date()
+        self.fcmToken = fcmToken
     }
 }
 

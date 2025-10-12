@@ -50,7 +50,8 @@ class FirebaseService {
             bannerURL: data["bannerURL"] as? String,
             badgeType: badgeType,
             followers: data["followers"] as? [String] ?? [],
-            following: data["following"] as? [String] ?? []
+            following: data["following"] as? [String] ?? [],
+            fcmToken: data["fcmToken"] as? String
         )
     }
     
@@ -82,7 +83,8 @@ class FirebaseService {
             bannerURL: data["bannerURL"] as? String,
             badgeType: badgeType,
             followers: data["followers"] as? [String] ?? [],
-            following: data["following"] as? [String] ?? []
+            following: data["following"] as? [String] ?? [],
+            fcmToken: data["fcmToken"] as? String
         )
     }
 
@@ -117,7 +119,8 @@ class FirebaseService {
                 bannerURL: data["bannerURL"] as? String,
                 badgeType: badgeType,
                 followers: data["followers"] as? [String] ?? [],
-                following: data["following"] as? [String] ?? []
+                following: data["following"] as? [String] ?? [],
+                fcmToken: data["fcmToken"] as? String
             )
         } else {
             // Create new user
@@ -165,6 +168,20 @@ class FirebaseService {
         if !updateData.isEmpty {
             try await userRef.updateData(updateData)
         }
+    }
+    
+    func updateFCMToken(_ token: String) async throws {
+        guard let userId = Auth.auth().currentUser?.uid else {
+            throw NSError(domain: "FirebaseService", code: 2, userInfo: [NSLocalizedDescriptionKey: "No authenticated user"])
+        }
+        
+        let userRef = db.collection("users").document(userId)
+        try await userRef.updateData([
+            "fcmToken": token,
+            "lastTokenUpdate": Timestamp(date: Date())
+        ])
+        
+        print("✅ FCM token updated in Firestore")
     }
     
     // MARK: - Image Upload Operations
@@ -255,7 +272,9 @@ class FirebaseService {
                     continue
                 }
                 
-                let unreadCount = data["unreadCount"] as? Int ?? 0
+                // Read per-user unread count
+                let unreadFieldName = "unreadCount_\(currentUserId)"
+                let unreadCount = data[unreadFieldName] as? Int ?? 0
                 let chatId = data["id"] as? String ?? doc.documentID
                 let otherParticipantId = participants.first { $0 != currentUserId }
                 
@@ -337,7 +356,9 @@ class FirebaseService {
             return nil
         }
 
-        let unreadCount = data["unreadCount"] as? Int ?? 0
+        // Read per-user unread count
+        let unreadFieldName = "unreadCount_\(currentUserId)"
+        let unreadCount = data[unreadFieldName] as? Int ?? 0
         let participants = data["participants"] as? [String] ?? []
         let otherParticipantId = participants.first { $0 != currentUserId }
         
@@ -395,7 +416,9 @@ class FirebaseService {
                 continue
             }
 
-            let unreadCount = data["unreadCount"] as? Int ?? 0
+            // Read per-user unread count
+            let unreadFieldName = "unreadCount_\(currentUserId)"
+            let unreadCount = data[unreadFieldName] as? Int ?? 0
             let chatId = data["id"] as? String ?? doc.documentID
             let participants = data["participants"] as? [String] ?? []
             let otherParticipantId = participants.first { $0 != currentUserId }
@@ -433,17 +456,76 @@ class FirebaseService {
     // MARK: - Message Operations
 
     func sendMessage(chatId: String, content: String, isFromUser: Bool = true) async throws {
-        let messageId = UUID().uuidString
+        guard let currentUserId = Auth.auth().currentUser?.uid else {
+            throw NSError(domain: "FirebaseService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
+        }
+        
         let now = Date()
-
-        let messageRef = db.collection("chats").document(chatId).collection("messages").document(messageId)
-        try await messageRef.setData([
-            "id": messageId,
-            "content": content,
-            "timestamp": Timestamp(date: now),
-            "senderId": Auth.auth().currentUser?.uid ?? "",
-            "isFromUser": isFromUser
-        ])
+        
+        // Check if this is a self-chat (messaging yourself)
+        let chatDoc = try await db.collection("chats").document(chatId).getDocument()
+        guard let chatData = chatDoc.data(),
+              let participants = chatData["participants"] as? [String] else {
+            throw NSError(domain: "FirebaseService", code: 2, userInfo: [NSLocalizedDescriptionKey: "Invalid chat data"])
+        }
+        
+        let isSelfChat = participants.count == 2 && Set(participants).count == 1 && participants[0] == currentUserId
+        
+        print("🔍 DEBUG: isSelfChat = \(isSelfChat), participants = \(participants), currentUserId = \(currentUserId)")
+        
+        // Network delay for testing (simulates real-world latency)
+        print("⏱️ Simulating 2-second network delay for testing...")
+        try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds
+        
+        if isSelfChat {
+            // For self-chats, create two messages - one as sent, one as received
+            print("📨 Creating self-chat messages...")
+            
+            // First message - sent by you (appears on right)
+            let sentMessageId = UUID().uuidString
+            let sentMessageRef = db.collection("chats").document(chatId).collection("messages").document(sentMessageId)
+            let sentTimestamp = Date()
+            try await sentMessageRef.setData([
+                "id": sentMessageId,
+                "content": content,
+                "timestamp": Timestamp(date: sentTimestamp),
+                "senderId": currentUserId,
+                "isFromUser": true,
+                "isSelfChatSent": true // Marker for sent message in self-chat
+            ])
+            
+            print("✅ SENT message created: id=\(sentMessageId), isFromUser=true")
+            
+            // Second message - received by you (appears on left)
+            // Add a tiny offset so it appears after the sent message
+            let receivedTimestamp = sentTimestamp.addingTimeInterval(0.001)
+            let receivedMessageId = UUID().uuidString
+            let receivedMessageRef = db.collection("chats").document(chatId).collection("messages").document(receivedMessageId)
+            try await receivedMessageRef.setData([
+                "id": receivedMessageId,
+                "content": content,
+                "timestamp": Timestamp(date: receivedTimestamp),
+                "senderId": "self_received", // Different sender ID to mark as received
+                "isFromUser": false,
+                "isSelfChatReceived": true // Marker for received message in self-chat
+            ])
+            
+            print("✅ RECEIVED message created: id=\(receivedMessageId), isFromUser=false, senderId=self_received")
+        } else {
+            // Normal chat - create single message
+            print("📨 Creating normal chat message...")
+            let messageId = UUID().uuidString
+            let messageRef = db.collection("chats").document(chatId).collection("messages").document(messageId)
+            try await messageRef.setData([
+                "id": messageId,
+                "content": content,
+                "timestamp": Timestamp(date: now),
+                "senderId": currentUserId,
+                "isFromUser": isFromUser
+            ])
+            
+            print("✅ Message created: id=\(messageId), isFromUser=\(isFromUser)")
+        }
 
         // Update chat's last message
         let chatRef = db.collection("chats").document(chatId)
@@ -451,6 +533,133 @@ class FirebaseService {
             "lastMessage": content,
             "lastMessageTime": Timestamp(date: now)
         ])
+        
+        // Send push notifications to other participants (unless it's a self-chat)
+        if !isSelfChat {
+            await sendMessageNotifications(chatId: chatId, participants: participants, content: content, senderId: currentUserId)
+        }
+    }
+    
+    // MARK: - Push Notifications
+    
+    private func sendMessageNotifications(chatId: String, participants: [String], content: String, senderId: String) async {
+        // Get sender's display name
+        guard let sender = try? await getUser(withId: senderId) else { return }
+        let senderName = sender.displayName ?? "Someone"
+        
+        // Send notification to all participants except the sender
+        for participantId in participants where participantId != senderId {
+            // Get participant's FCM token
+            guard let participant = try? await getUser(withId: participantId),
+                  let fcmToken = participant.fcmToken else {
+                continue
+            }
+            
+            // Increment unread count for this participant
+            try? await incrementUnreadCount(chatId: chatId, userId: participantId)
+            
+            // Send push notification via Cloud Functions or FCM API
+            // Note: In a production app, you'd typically use Firebase Cloud Functions to send notifications
+            // For now, we'll just log that we would send a notification
+            print("📬 Would send push notification to \(participantId) with token: \(fcmToken)")
+            print("📬 Message: \(senderName): \(content)")
+            
+            // In production, you would call your Cloud Function here to send the actual notification
+            // Example: POST to https://your-project.cloudfunctions.net/sendNotification
+        }
+    }
+    
+    private func incrementUnreadCount(chatId: String, userId: String) async throws {
+        // Store unread count per user in the chat document
+        let chatRef = db.collection("chats").document(chatId)
+        let unreadFieldName = "unreadCount_\(userId)"
+        
+        try await chatRef.updateData([
+            unreadFieldName: FieldValue.increment(Int64(1))
+        ])
+    }
+    
+    func markChatAsRead(chatId: String) async throws {
+        guard let userId = Auth.auth().currentUser?.uid else { return }
+        
+        let chatRef = db.collection("chats").document(chatId)
+        let unreadFieldName = "unreadCount_\(userId)"
+        
+        try await chatRef.updateData([
+            unreadFieldName: 0
+        ])
+    }
+    
+    // MARK: - Typing Indicators
+    
+    func setTypingStatus(chatId: String, isTyping: Bool) async throws {
+        guard let userId = Auth.auth().currentUser?.uid else {
+            print("⚠️ Cannot set typing status - no user ID")
+            return
+        }
+        
+        let chatRef = db.collection("chats").document(chatId)
+        let typingFieldName = "typing_\(userId)"
+        
+        if isTyping {
+            // Set typing status with timestamp
+            print("📝 Setting typing_\(userId) = \(Date()) in chat \(chatId)")
+            try await chatRef.updateData([
+                typingFieldName: Timestamp(date: Date())
+            ])
+            print("✅ Typing status set successfully")
+        } else {
+            // Remove typing status
+            print("📝 Deleting typing_\(userId) from chat \(chatId)")
+            try await chatRef.updateData([
+                typingFieldName: FieldValue.delete()
+            ])
+            print("✅ Typing status deleted successfully")
+        }
+    }
+    
+    func listenForTypingStatus(chatId: String, completion: @escaping ([String: Date]) -> Void) -> ListenerRegistration {
+        guard let currentUserId = Auth.auth().currentUser?.uid else {
+            return db.collection("chats").document(chatId).addSnapshotListener { _, _ in }
+        }
+        
+        return db.collection("chats").document(chatId)
+            .addSnapshotListener { snapshot, error in
+                guard let data = snapshot?.data() else {
+                    print("🔍 Typing listener: No data in snapshot")
+                    completion([:])
+                    return
+                }
+                
+                // Check if this is a self-chat
+                let participants = data["participants"] as? [String] ?? []
+                let isSelfChat = participants.count == 2 && Set(participants).count == 1 && participants.first == currentUserId
+                
+                print("🔍 Typing listener: isSelfChat=\(isSelfChat), participants=\(participants)")
+                
+                var typingUsers: [String: Date] = [:]
+                
+                // Look for typing_<userId> fields
+                for (key, value) in data {
+                    if key.hasPrefix("typing_") {
+                        let userId = String(key.dropFirst("typing_".count))
+                        
+                        // For self-chats: show typing indicator even if it's your own
+                        // For normal chats: skip current user's typing status
+                        if isSelfChat || userId != currentUserId {
+                            if let timestamp = value as? Timestamp {
+                                typingUsers[userId] = timestamp.dateValue()
+                                print("🔍 Found typing user: \(userId) at \(timestamp.dateValue())")
+                            }
+                        } else {
+                            print("🔍 Skipping own typing status (not self-chat)")
+                        }
+                    }
+                }
+                
+                print("🔍 Typing listener returning \(typingUsers.count) typing users")
+                completion(typingUsers)
+            }
     }
 
     func getMessages(forChatId chatId: String) async throws -> [Message] {
@@ -470,8 +679,16 @@ class FirebaseService {
             let messageId = data["id"] as? String ?? doc.documentID
             let senderId = data["senderId"] as? String ?? ""
             
-            // Determine if message is from current user by comparing sender ID
-            let isFromUser = senderId == currentUserId
+            // For self-chat messages, use the stored isFromUser value
+            // Otherwise, determine by comparing sender ID
+            let isFromUser: Bool
+            if let storedIsFromUser = data["isFromUser"] as? Bool {
+                // Use stored value (important for self-chat messages)
+                isFromUser = storedIsFromUser
+            } else {
+                // Fallback: compare sender ID
+                isFromUser = senderId == currentUserId
+            }
 
             return Message(
                 id: UUID(uuidString: messageId) ?? UUID(),
@@ -522,7 +739,9 @@ class FirebaseService {
                             continue
                         }
                         
-                        let unreadCount = data["unreadCount"] as? Int ?? 0
+                        // Read per-user unread count
+                        let unreadFieldName = "unreadCount_\(currentUserId)"
+                        let unreadCount = data[unreadFieldName] as? Int ?? 0
                         let chatId = data["id"] as? String ?? doc.documentID
                         let participants = data["participants"] as? [String] ?? []
                         let otherParticipantId = participants.first { $0 != currentUserId }
@@ -582,17 +801,32 @@ class FirebaseService {
                     let messageId = data["id"] as? String ?? doc.documentID
                     let senderId = data["senderId"] as? String ?? ""
                     
-                    // Determine if message is from current user by comparing sender ID
-                    let isFromUser = senderId == currentUserId
+                    // For self-chat messages, use the stored isFromUser value
+                    // Otherwise, determine by comparing sender ID
+                    let isFromUser: Bool
+                    if let storedIsFromUser = data["isFromUser"] as? Bool {
+                        // Use stored value (important for self-chat messages)
+                        isFromUser = storedIsFromUser
+                        print("🔍 Message listener: Using stored isFromUser=\(isFromUser) for message \(messageId)")
+                    } else {
+                        // Fallback: compare sender ID
+                        isFromUser = senderId == currentUserId
+                        print("🔍 Message listener: Calculated isFromUser=\(isFromUser) for message \(messageId) (senderId=\(senderId), currentUserId=\(currentUserId))")
+                    }
 
-                    return Message(
+                    let message = Message(
                         id: UUID(uuidString: messageId) ?? UUID(),
                         content: content,
                         timestamp: timestamp.dateValue(),
                         isFromUser: isFromUser,
                         senderName: nil
                     )
+                    
+                    print("✅ Message retrieved: id=\(messageId), content='\(content)', isFromUser=\(isFromUser)")
+                    return message
                 }
+                
+                print("📥 Total messages retrieved: \(messages.count)")
 
                 completion(messages)
             }

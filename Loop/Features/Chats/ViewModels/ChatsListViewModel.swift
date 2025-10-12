@@ -10,6 +10,12 @@ final class ChatsListViewModel {
     private(set) var isLoadingInitialData = true
     private var chatListener: ListenerRegistration?
     private let pinnedChatsKey = "pinnedChatIDs"
+    
+    // Computed property for total unread message count
+    var totalUnreadCount: Int {
+        let allChats = pinned + recent
+        return allChats.reduce(0) { $0 + $1.unreadCount }
+    }
 
     init() {
         Task {

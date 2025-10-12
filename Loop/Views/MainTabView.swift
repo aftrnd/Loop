@@ -21,11 +21,13 @@ struct MainTabView: View {
             Tab("Home", systemImage: "house", value: "Home") {
                 HomeView()
             }
+            .badge(chatsViewModel.totalUnreadCount > 0 ? chatsViewModel.totalUnreadCount : 0)
             
             // Messages Tab
             Tab("Messages", systemImage: "message", value: "Messages") {
                 ChatsListView()
             }
+            .badge(chatsViewModel.totalUnreadCount > 0 ? chatsViewModel.totalUnreadCount : 0)
             
             // Search Tab - Uses .search role for native iOS 26 behavior
             Tab("Search", systemImage: "magnifyingglass", value: "Search", role: .search) {

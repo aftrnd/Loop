@@ -10,10 +10,13 @@
 		A641FCF32E820F7100AC9197 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = A641FCF22E820F7100AC9197 /* FirebaseFirestore */; };
 		A659A4822E7DD1B700089673 /* FirebaseAnalytics in Frameworks */ = {isa = PBXBuildFile; productRef = A659A4812E7DD1B700089673 /* FirebaseAnalytics */; };
 		A659A4972E7DD58100089673 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = A659A4962E7DD58100089673 /* FirebaseAuth */; };
+		A65C74BE2E9AD0F6004336EF /* loop-icon.icon in Resources */ = {isa = PBXBuildFile; fileRef = A65C74BD2E9AD0F6004336EF /* loop-icon.icon */; };
 		A67936D92E93283D00267521 /* FirebaseStorage in Frameworks */ = {isa = PBXBuildFile; productRef = A67936D82E93283D00267521 /* FirebaseStorage */; };
+		A6DF35B32E9C05DA00722414 /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = A6DF35B22E9C05DA00722414 /* FirebaseMessaging */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		A65C74BD2E9AD0F6004336EF /* loop-icon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = "loop-icon.icon"; sourceTree = "<group>"; };
 		A68674AA2E7B488D00D7A119 /* Loop.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Loop.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -45,6 +48,7 @@
 			files = (
 				A659A4822E7DD1B700089673 /* FirebaseAnalytics in Frameworks */,
 				A67936D92E93283D00267521 /* FirebaseStorage in Frameworks */,
+				A6DF35B32E9C05DA00722414 /* FirebaseMessaging in Frameworks */,
 				A659A4972E7DD58100089673 /* FirebaseAuth in Frameworks */,
 				A641FCF32E820F7100AC9197 /* FirebaseFirestore in Frameworks */,
 			);
@@ -63,6 +67,7 @@
 		A68674A12E7B488D00D7A119 = {
 			isa = PBXGroup;
 			children = (
+				A65C74BD2E9AD0F6004336EF /* loop-icon.icon */,
 				A68674AC2E7B488D00D7A119 /* Loop */,
 				A659A4952E7DD58100089673 /* Frameworks */,
 				A68674AB2E7B488D00D7A119 /* Products */,
@@ -101,6 +106,7 @@
 				A659A4962E7DD58100089673 /* FirebaseAuth */,
 				A641FCF22E820F7100AC9197 /* FirebaseFirestore */,
 				A67936D82E93283D00267521 /* FirebaseStorage */,
+				A6DF35B22E9C05DA00722414 /* FirebaseMessaging */,
 			);
 			productName = Loop;
 			productReference = A68674AA2E7B488D00D7A119 /* Loop.app */;
@@ -148,6 +154,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A65C74BE2E9AD0F6004336EF /* loop-icon.icon in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -288,7 +295,7 @@
 		A68674B62E7B488D00D7A119 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = "loop-icon";
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES;
 				CODE_SIGN_ENTITLEMENTS = Loop/Loop.entitlements;
@@ -299,6 +306,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Loop/Info.plist;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.social-networking";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -325,7 +333,7 @@
 		A68674B72E7B488D00D7A119 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = "loop-icon";
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES;
 				CODE_SIGN_ENTITLEMENTS = Loop/Loop.entitlements;
@@ -336,6 +344,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Loop/Info.plist;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.social-networking";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -413,6 +422,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = A659A4802E7DD1B700089673 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
 			productName = FirebaseStorage;
+		};
+		A6DF35B22E9C05DA00722414 /* FirebaseMessaging */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A659A4802E7DD1B700089673 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseMessaging;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

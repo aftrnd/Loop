@@ -4,6 +4,7 @@ import UIKit
 struct MessageInputView: View {
     @Binding var messageText: String
     let onSend: () -> Void
+    var onTextChanged: (() -> Void)? = nil
     @FocusState private var isFocused: Bool
     
     var body: some View {
@@ -16,6 +17,9 @@ struct MessageInputView: View {
                 .textInputAutocapitalization(.sentences)
                 .disableAutocorrection(false)
                 .focused($isFocused)
+                .onChange(of: messageText) { _, _ in
+                    onTextChanged?()
+                }
             
             Button(action: onSend) {
                 ZStack {
