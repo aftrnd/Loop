@@ -173,4 +173,77 @@ final class ConversationViewModel {
             }
         }
     }
+    
+    func toggleLike(for message: Message) {
+        Task { [weak self] in
+            guard let self = self else { return }
+            guard let currentUserId = firebaseService.getCurrentUser()?.id else { return }
+            
+            let isCurrentlyLiked = message.isLikedBy(userId: currentUserId)
+            let messageId = message.id.uuidString
+            
+            // Optimistic update
+            if let index = messages.firstIndex(where: { $0.id == message.id }) {
+                var updatedMessage = messages[index]
+                var newLikedBy = updatedMessage.likedBy
+                
+                if isCurrentlyLiked {
+                    newLikedBy.removeAll { $0 == currentUserId }
+                } else {
+                    newLikedBy.append(currentUserId)
+                }
+                
+                updatedMessage = Message(
+                    id: updatedMessage.id,
+                    content: updatedMessage.content,
+                    timestamp: updatedMessage.timestamp,
+                    isFromUser: updatedMessage.isFromUser,
+                    senderName: updatedMessage.senderName,
+                    senderId: updatedMessage.senderId,
+                    likedBy: newLikedBy
+                )
+                
+                await MainActor.run {
+                    messages[index] = updatedMessage
+                }
+            }
+            
+            // Perform backend operation
+            do {
+                if isCurrentlyLiked {
+                    try await firebaseService.unlikeMessage(chatId: chatId, messageId: messageId)
+                } else {
+                    try await firebaseService.likeMessage(chatId: chatId, messageId: messageId)
+                }
+            } catch {
+                print("❌ Error toggling like: \(error.localizedDescription)")
+                
+                // Revert optimistic update on error
+                if let index = messages.firstIndex(where: { $0.id == message.id }) {
+                    var revertedMessage = messages[index]
+                    var revertedLikedBy = revertedMessage.likedBy
+                    
+                    if isCurrentlyLiked {
+                        revertedLikedBy.append(currentUserId)
+                    } else {
+                        revertedLikedBy.removeAll { $0 == currentUserId }
+                    }
+                    
+                    revertedMessage = Message(
+                        id: revertedMessage.id,
+                        content: revertedMessage.content,
+                        timestamp: revertedMessage.timestamp,
+                        isFromUser: revertedMessage.isFromUser,
+                        senderName: revertedMessage.senderName,
+                        senderId: revertedMessage.senderId,
+                        likedBy: revertedLikedBy
+                    )
+                    
+                    await MainActor.run {
+                        messages[index] = revertedMessage
+                    }
+                }
+            }
+        }
+    }
 }

@@ -46,7 +46,7 @@ struct MessageInputView: View {
         )
         .padding(.horizontal, isFocused ? -(defaultPadding - focusedPadding) : 0)
         .padding(.vertical, 8)
-        .animation(.spring(response: 0.3, dampingFraction: 0.75), value: isFocused)
+        .animation(.spring(), value: isFocused)
     }
 }
 

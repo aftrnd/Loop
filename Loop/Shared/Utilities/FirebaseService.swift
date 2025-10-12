@@ -709,13 +709,98 @@ class FirebaseService {
                 isFromUser = senderId == currentUserId
             }
 
+            let likedBy = data["likedBy"] as? [String] ?? []
+            
             return Message(
                 id: UUID(uuidString: messageId) ?? UUID(),
                 content: content,
                 timestamp: timestamp.dateValue(),
                 isFromUser: isFromUser,
-                senderName: nil
+                senderName: nil,
+                senderId: senderId,
+                likedBy: likedBy
             )
+        }
+    }
+    
+    func likeMessage(chatId: String, messageId: String) async throws {
+        guard let currentUserId = Auth.auth().currentUser?.uid else {
+            throw NSError(domain: "FirebaseService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
+        }
+        
+        let messageRef = db.collection("chats").document(chatId).collection("messages").document(messageId)
+        
+        // Add current user to likedBy array
+        try await messageRef.updateData([
+            "likedBy": FieldValue.arrayUnion([currentUserId])
+        ])
+        
+        print("✅ Successfully liked message: \(messageId)")
+        
+        // Get message data to send notification
+        let messageDoc = try await messageRef.getDocument()
+        guard let messageData = messageDoc.data(),
+              let senderId = messageData["senderId"] as? String,
+              let content = messageData["content"] as? String,
+              senderId != currentUserId else { // Don't notify yourself
+            return
+        }
+        
+        // Get chat participants to determine who to notify
+        let chatDoc = try await db.collection("chats").document(chatId).getDocument()
+        guard let chatData = chatDoc.data(),
+              let participants = chatData["participants"] as? [String] else {
+            return
+        }
+        
+        // Send notification to message sender
+        await sendLikeNotification(chatId: chatId, messageId: messageId, messageSenderId: senderId, messageContent: content)
+    }
+    
+    func unlikeMessage(chatId: String, messageId: String) async throws {
+        guard let currentUserId = Auth.auth().currentUser?.uid else {
+            throw NSError(domain: "FirebaseService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
+        }
+        
+        let messageRef = db.collection("chats").document(chatId).collection("messages").document(messageId)
+        
+        // Remove current user from likedBy array
+        try await messageRef.updateData([
+            "likedBy": FieldValue.arrayRemove([currentUserId])
+        ])
+        
+        print("✅ Successfully unliked message: \(messageId)")
+    }
+    
+    private func sendLikeNotification(chatId: String, messageId: String, messageSenderId: String, messageContent: String) async {
+        guard let currentUser = try? await getUser(withId: Auth.auth().currentUser?.uid ?? "") else { return }
+        let likerName = currentUser.displayName ?? "Someone"
+        
+        // Get the message sender's FCM token
+        guard let messageSender = try? await getUser(withId: messageSenderId),
+              let fcmToken = messageSender.fcmToken else {
+            print("⚠️ Could not get FCM token for message sender")
+            return
+        }
+        
+        do {
+            let functions = Functions.functions()
+            let sendNotification = functions.httpsCallable("sendNotification")
+            
+            // Truncate message content for notification
+            let truncatedContent = messageContent.prefix(50) + (messageContent.count > 50 ? "..." : "")
+            
+            let result = try await sendNotification.call([
+                "fcmToken": fcmToken,
+                "title": "\(likerName) liked your message",
+                "body": "\"\(truncatedContent)\"",
+                "chatId": chatId,
+                "senderId": Auth.auth().currentUser?.uid ?? "",
+                "type": "message_like"
+            ])
+            print("✅ Like notification sent to \(messageSenderId)")
+        } catch {
+            print("❌ Failed to send like notification: \(error.localizedDescription)")
         }
     }
 
@@ -833,15 +918,19 @@ class FirebaseService {
                         print("🔍 Message listener: Calculated isFromUser=\(isFromUser) for message \(messageId) (senderId=\(senderId), currentUserId=\(currentUserId))")
                     }
 
+                    let likedBy = data["likedBy"] as? [String] ?? []
+                    
                     let message = Message(
                         id: UUID(uuidString: messageId) ?? UUID(),
                         content: content,
                         timestamp: timestamp.dateValue(),
                         isFromUser: isFromUser,
-                        senderName: nil
+                        senderName: nil,
+                        senderId: senderId,
+                        likedBy: likedBy
                     )
                     
-                    print("✅ Message retrieved: id=\(messageId), content='\(content)', isFromUser=\(isFromUser)")
+                    print("✅ Message retrieved: id=\(messageId), content='\(content)', isFromUser=\(isFromUser), likes=\(likedBy.count)")
                     return message
                 }
                 

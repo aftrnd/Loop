@@ -23,7 +23,7 @@ exports.sendNotification = functions.https.onCall(async (data, context) => {
     );
   }
 
-  const { fcmToken, title, body, chatId, senderId } = data;
+  const { fcmToken, title, body, chatId, senderId, type } = data;
   
   // Validate required parameters
   if (!fcmToken || !title || !body || !chatId) {
@@ -42,7 +42,7 @@ exports.sendNotification = functions.https.onCall(async (data, context) => {
     data: {
       chatId: chatId,
       senderId: senderId || '',
-      type: 'message',
+      type: type || 'message', // Use provided type or default to 'message'
     },
     apns: {
       payload: {

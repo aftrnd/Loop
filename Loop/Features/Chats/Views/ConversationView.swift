@@ -125,7 +125,7 @@ struct ConversationView: View {
                 messagesWithTypingIndicator
             }
         }
-        .animation(.spring(response: 0.6, dampingFraction: 0.65, blendDuration: 0), value: viewModel.messages.count)
+        .animation(.spring(), value: viewModel.messages.count)
         .frame(maxWidth: .infinity, alignment: .leading)
         .listRowInsets(EdgeInsets())
         .padding(.horizontal, AppConstants.UI.padding)
@@ -168,7 +168,9 @@ struct ConversationView: View {
     @ViewBuilder
     private var messagesWithTypingIndicator: some View {
         ForEach(Array(viewModel.messages.enumerated()), id: \.element.id) { index, message in
-            MessageBubble(message: message)
+            MessageBubble(message: message, isGroupChat: chat.isGroupChat, onLike: {
+                viewModel.toggleLike(for: message)
+            })
                 .id(message.id)
                 .padding(.top, shouldAddExtraSpacing(at: index) ? AppConstants.UI.spacing : 0)
                 .transition(.asymmetric(
@@ -237,11 +239,11 @@ struct ConversationView: View {
                     .combined(with: .opacity)
             )
         )
-        .animation(.spring(response: 0.4, dampingFraction: 0.65), value: viewModel.isOtherUserTyping)
+        .animation(.spring(), value: viewModel.isOtherUserTyping)
     }
     
     private func scrollToBottom(proxy: ScrollViewProxy) {
-        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+        withAnimation(.spring()) {
             proxy.scrollTo("messagesBottom", anchor: .bottom)
         }
     }
