@@ -67,7 +67,14 @@ final class ConversationViewModel {
 
     private func setupMessageListener() {
         messageListener = firebaseService.listenForMessages(chatId: chatId) { [weak self] messages in
-            self?.messages = messages
+            guard let self = self else { return }
+            self.messages = messages
+            
+            // Mark chat as read when new messages arrive while viewing
+            Task { [weak self] in
+                guard let self = self else { return }
+                try? await self.firebaseService.markChatAsRead(chatId: self.chatId)
+            }
         }
     }
     
@@ -88,9 +95,8 @@ final class ConversationViewModel {
             let wasTyping = self.isOtherUserTyping
             let shouldBeTyping = !activeTypingUsers.isEmpty
             
-            // Animate the state change for smooth transitions
             if shouldBeTyping != wasTyping {
-                withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                withAnimation(.easeInOut(duration: 0.2)) {
                     self.isOtherUserTyping = shouldBeTyping
                 }
                 

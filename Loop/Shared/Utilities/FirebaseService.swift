@@ -423,6 +423,10 @@ class FirebaseService {
             let participants = data["participants"] as? [String] ?? []
             let otherParticipantId = participants.first { $0 != currentUserId }
             
+            if unreadCount > 0 {
+                print("📩 Chat \(title) has \(unreadCount) unread messages")
+            }
+            
             // For 1:1 chats, fetch the other user's current display name and avatar
             var otherParticipantDisplayName: String?
             var otherParticipantAvatarURL: String?
@@ -534,8 +538,12 @@ class FirebaseService {
             "lastMessageTime": Timestamp(date: now)
         ])
         
-        // Send push notifications to other participants (unless it's a self-chat)
-        if !isSelfChat {
+        // For self-chats: still increment unread count (but don't send push notification)
+        if isSelfChat {
+            print("📬 Self-chat: Incrementing unread count without sending notification")
+            try? await incrementUnreadCount(chatId: chatId, userId: currentUserId)
+        } else {
+            // For normal chats: send push notifications which also increments unread counts
             await sendMessageNotifications(chatId: chatId, participants: participants, content: content, senderId: currentUserId)
         }
     }
@@ -574,9 +582,11 @@ class FirebaseService {
         let chatRef = db.collection("chats").document(chatId)
         let unreadFieldName = "unreadCount_\(userId)"
         
+        print("📊 Incrementing \(unreadFieldName) in chat \(chatId)")
         try await chatRef.updateData([
             unreadFieldName: FieldValue.increment(Int64(1))
         ])
+        print("✅ Unread count incremented successfully")
     }
     
     func markChatAsRead(chatId: String) async throws {

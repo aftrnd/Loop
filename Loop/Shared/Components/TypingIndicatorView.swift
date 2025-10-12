@@ -1,41 +1,46 @@
 import SwiftUI
 
 struct TypingIndicatorView: View {
-    @State private var animationPhase = [false, false, false]
-    @State private var timer: Timer?
+    @State private var startTime = Date()
     
     var body: some View {
-        HStack(spacing: 4) {
-            ForEach(0..<3) { index in
-                Circle()
-                    .fill(Color.secondary)
-                    .frame(width: 8, height: 8)
-                    .scaleEffect(animationPhase[index] ? 1.2 : 0.8)
-                    .opacity(animationPhase[index] ? 1.0 : 0.5)
-                    .animation(
-                        .easeInOut(duration: 0.5)
-                            .repeatForever(autoreverses: true),
-                        value: animationPhase[index]
-                    )
+        TimelineView(.animation(minimumInterval: 0.016)) { timeline in
+            HStack(spacing: 4) {
+                ForEach(0..<3) { index in
+                    Circle()
+                        .fill(Color.secondary)
+                        .frame(width: 6, height: 6)
+                        .scaleEffect(dotScale(for: index, at: timeline.date))
+                        .opacity(dotOpacity(for: index, at: timeline.date))
+                }
             }
         }
-        .frame(height: 20) // Match typical message text height
+        .frame(height: 20)
         .onAppear {
-            startAnimation()
-        }
-        .onDisappear {
-            timer?.invalidate()
-            timer = nil
+            startTime = Date()
         }
     }
     
-    private func startAnimation() {
-        // Stagger the animation for each dot
-        for index in 0..<3 {
-            DispatchQueue.main.asyncAfter(deadline: .now() + Double(index) * 0.15) {
-                animationPhase[index] = true
-            }
-        }
+    private func dotScale(for index: Int, at date: Date) -> CGFloat {
+        let elapsed = date.timeIntervalSince(startTime)
+        // Animates left to right: first dot (index 0) starts, then 1, then 2
+        let phase = (elapsed - Double(index) * 0.2).truncatingRemainder(dividingBy: 1.2)
+        let normalized = phase / 1.2
+        
+        // Ease in-out using sine wave
+        let sine = sin(normalized * .pi)
+        return 0.7 + (sine * 0.6) // Ranges from 0.7 to 1.3
+    }
+    
+    private func dotOpacity(for index: Int, at date: Date) -> Double {
+        let elapsed = date.timeIntervalSince(startTime)
+        // Animates left to right: first dot (index 0) starts, then 1, then 2
+        let phase = (elapsed - Double(index) * 0.2).truncatingRemainder(dividingBy: 1.2)
+        let normalized = phase / 1.2
+        
+        // Ease in-out using sine wave
+        let sine = sin(normalized * .pi)
+        return 0.4 + (sine * 0.6) // Ranges from 0.4 to 1.0
     }
 }
 

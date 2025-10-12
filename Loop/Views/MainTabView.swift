@@ -21,7 +21,6 @@ struct MainTabView: View {
             Tab("Home", systemImage: "house", value: "Home") {
                 HomeView()
             }
-            .badge(chatsViewModel.totalUnreadCount > 0 ? chatsViewModel.totalUnreadCount : 0)
             
             // Messages Tab
             Tab("Messages", systemImage: "message", value: "Messages") {

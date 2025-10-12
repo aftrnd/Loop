@@ -14,7 +14,14 @@ final class ChatsListViewModel {
     // Computed property for total unread message count
     var totalUnreadCount: Int {
         let allChats = pinned + recent
-        return allChats.reduce(0) { $0 + $1.unreadCount }
+        let total = allChats.reduce(0) { $0 + $1.unreadCount }
+        if total > 0 {
+            print("🔴 Total unread count: \(total)")
+            for chat in allChats where chat.unreadCount > 0 {
+                print("   - Chat '\(chat.displayTitle)': \(chat.unreadCount) unread")
+            }
+        }
+        return total
     }
 
     init() {

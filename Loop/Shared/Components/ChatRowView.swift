@@ -53,7 +53,7 @@ struct ChatRowView: View {
             .overlay(alignment: .topTrailing) {
                 if chat.unreadCount > 0 {
                     Circle()
-                        .fill(colorScheme == .light ? Color.red : Color.blue)
+                        .fill(Color.red)
                         .frame(width: 22, height: 22)
                         .overlay {
                             Text(badgeText(chat.unreadCount))

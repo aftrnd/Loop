@@ -64,11 +64,15 @@ struct ConversationView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 messageContent
+                    .id("messagesBottom")
             }
             .scrollDismissesKeyboard(.interactively)
             .defaultScrollAnchor(shouldAnchorToBottom ? .bottom : .top)
             .onChange(of: viewModel.messages.count) { _, _ in
-                if shouldAnchorToBottom {
+                scrollToBottom(proxy: proxy)
+            }
+            .onChange(of: viewModel.isOtherUserTyping) { _, isTyping in
+                if isTyping {
                     scrollToBottom(proxy: proxy)
                 }
             }
@@ -112,6 +116,7 @@ struct ConversationView: View {
         }
         .padding(.horizontal, 0)
         .padding(.top, 20)
+        .padding(.bottom, 0) // Ensure no extra bottom padding
         .background(contentSizeReader)
     }
     
@@ -157,6 +162,7 @@ struct ConversationView: View {
         // Typing indicator
         if viewModel.isOtherUserTyping {
             typingIndicatorBubble
+                .transition(.opacity)
         }
     }
     
@@ -175,40 +181,25 @@ struct ConversationView: View {
     // Computed property for typing indicator to reduce expression complexity
     private var typingIndicatorBubble: some View {
         HStack(spacing: 8) {
-            VStack(alignment: .leading, spacing: 4) {
-                TypingIndicatorView()
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .background(Color(.systemGray5))
-                    .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-            }
+            TypingIndicatorView()
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(Color(.systemGray5))
+                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
             
             Spacer(minLength: 60)
         }
         .padding(.horizontal, 20)
-        .transition(typingIndicatorTransition)
-        .animation(.spring(response: 0.4, dampingFraction: 0.7), value: viewModel.isOtherUserTyping)
-    }
-    
-    // Separate transition to help compiler
-    private var typingIndicatorTransition: AnyTransition {
-        let insertionTransition = AnyTransition.scale(scale: 0.8, anchor: .leading)
-            .combined(with: .move(edge: .leading))
-            .combined(with: .opacity)
-        
-        let removalTransition = AnyTransition.scale(scale: 0.8, anchor: .leading)
-            .combined(with: .move(edge: .leading))
-            .combined(with: .opacity)
-        
-        return .asymmetric(insertion: insertionTransition, removal: removalTransition)
+        .transition(
+            .asymmetric(
+                insertion: .move(edge: .leading).combined(with: .scale(scale: 0.8, anchor: .leading)).combined(with: .opacity),
+                removal: .opacity.combined(with: .scale(scale: 0.8, anchor: .leading))
+            )
+        )
     }
     
     private func scrollToBottom(proxy: ScrollViewProxy) {
-        if let lastMessage = viewModel.messages.last {
-            withAnimation(.easeInOut(duration: 0.3)) {
-                proxy.scrollTo(lastMessage.id, anchor: .bottom)
-            }
-        }
+        proxy.scrollTo("messagesBottom", anchor: .bottom)
     }
 }
 

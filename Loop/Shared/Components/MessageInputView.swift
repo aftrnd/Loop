@@ -40,8 +40,9 @@ struct MessageInputView: View {
             Color.clear
                 .glassEffect(.regular, in: Capsule())
         )
-        .padding(.horizontal, 20)
+        .padding(.horizontal, isFocused ? 5 : 20)
         .padding(.vertical, 8)
+        .animation(.spring(response: 0.3, dampingFraction: 0.75), value: isFocused)
     }
 }
 
