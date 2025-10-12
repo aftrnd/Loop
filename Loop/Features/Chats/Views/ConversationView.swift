@@ -137,12 +137,12 @@ struct ConversationView: View {
         VStack(spacing: 20) {
             Image(systemName: "message.circle.fill")
                 .font(.system(size: 60))
-                .foregroundColor(.blue.opacity(0.6))
+                .foregroundColor(.primary)
             
             Text("Start the conversation")
                 .font(.title2)
                 .fontWeight(.semibold)
-                .foregroundColor(.secondary)
+                .foregroundColor(.primary)
             
             Text("Send a message to begin chatting with \(chat.displayTitle)")
                 .font(.body)

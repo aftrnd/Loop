@@ -38,6 +38,8 @@ struct MessageBubble: View {
                         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                 )
                 .scaleEffect(isPressed ? 0.95 : 1.0)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: UIScreen.main.bounds.width * 0.66, alignment: .leading)
             
             // Timestamp
             if showTimestamp {
@@ -75,6 +77,8 @@ struct MessageBubble: View {
                         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                 )
                 .scaleEffect(isPressed ? 0.95 : 1.0)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: UIScreen.main.bounds.width * 0.66, alignment: .trailing)
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
         .contentShape(Rectangle())

@@ -2,6 +2,7 @@ import Foundation
 import SwiftUI
 import FirebaseFirestore
 import UIKit
+import UserNotifications
 
 @MainActor
 @Observable
@@ -119,9 +120,11 @@ final class ChatsListViewModel {
             }
         }
 
-        // Remove duplicates from the new arrays
+        // Remove duplicates and sort by most recent message
         newPinned = removeDuplicates(newPinned)
+            .sorted { $0.lastMessageTime > $1.lastMessageTime }
         newRecent = removeDuplicates(newRecent)
+            .sorted { $0.lastMessageTime > $1.lastMessageTime }
 
         // Only update if there are actually changes needed
         let currentPinnedIDs = Set(pinned.map { $0.id })
@@ -181,8 +184,9 @@ final class ChatsListViewModel {
 
         // Only update if we actually made changes
         if changesMade {
-            // Update the recent array with merged chats
+            // Update the recent array with merged chats, sorted by most recent message
             recent = removeDuplicates(Array(existingChatDict.values))
+                .sorted { $0.lastMessageTime > $1.lastMessageTime }
 
             // Also update pinned chats if they exist in the new data
             var pinnedChatDict: [UUID: Chat] = [:]
@@ -193,6 +197,7 @@ final class ChatsListViewModel {
                 pinnedChatDict[id] = chat
             }
             pinned = removeDuplicates(Array(pinnedChatDict.values))
+                .sorted { $0.lastMessageTime > $1.lastMessageTime }
         }
     }
 
@@ -243,7 +248,15 @@ final class ChatsListViewModel {
             print("🔄 Fetching fresh chat data from Firebase...")
             let chats = try await FirebaseService.shared.getChats()
             print("✅ Received \(chats.count) chats with fresh data")
+            
+            // Update display names, avatars, and latest messages
             mergeChats(chats)
+            applyStoredPinnedState()
+            
+            // Small delay to ensure smooth refresh animation
+            try? await Task.sleep(nanoseconds: 300_000_000) // 0.3 seconds
+            
+            print("✅ Chats refreshed successfully")
         } catch {
             print("❌ Error refreshing chats: \(error)")
         }
@@ -291,9 +304,10 @@ final class ChatsListViewModel {
         // Remove from pinned
         pinned.removeAll { $0.id == chat.id }
 
-        // Add to recent at the top
+        // Add to recent and re-sort by most recent message
         recent.removeAll { $0.id == chat.id } // Remove if it exists
-        recent.insert(chat, at: 0)
+        recent.append(chat)
+        recent.sort { $0.lastMessageTime > $1.lastMessageTime }
 
         // Save pinned state to UserDefaults
         savePinnedChatsToStorage()

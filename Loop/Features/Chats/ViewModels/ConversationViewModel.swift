@@ -6,7 +6,7 @@ import FirebaseFirestore
 @Observable
 final class ConversationViewModel {
     private(set) var messages: [Message] = []
-    private(set) var isLoading = false
+    private(set) var isLoading = true // Start as loading to prevent empty state flash
     var messageText = ""
     private(set) var isOtherUserTyping = false
 

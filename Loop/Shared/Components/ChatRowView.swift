@@ -4,66 +4,68 @@ struct ChatRowView: View {
     let chat: Chat
     var parallax: CGFloat = 0
     var onAvatarTap: (() -> Void)?
-    @Environment(\.colorScheme) private var colorScheme
+    
+    // Layout constants
+    private let rowLeadingPadding: CGFloat = 10
+    private let listRowLeadingInset: CGFloat = 10 // From listRowInsets in ChatsListView
+    private let dotSize: CGFloat = 8
     
     var body: some View {
         HStack(spacing: 16) {
-            // Avatar
-            ZStack {
-                if let avatarURLString = chat.otherParticipantAvatarURL, let avatarURL = URL(string: avatarURLString) {
-                    // Show actual user avatar
-                    CachedAsyncImage(url: avatarURL) { image in
-                        image
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                            .frame(width: 56, height: 56)
-                            .clipShape(Circle())
-                    } placeholder: {
-                        // Placeholder while loading
+            // Avatar with unread dot
+            ZStack(alignment: .leading) {
+                // Unread indicator dot - positioned to the left of avatar
+                if chat.unreadCount > 0 {
+                    let totalLeadingSpace = listRowLeadingInset + rowLeadingPadding
+                    let dotOffset = -(totalLeadingSpace / 2 + dotSize / 2)
+                    
+                    Circle()
+                        .fill(Color.blue)
+                        .frame(width: dotSize, height: dotSize)
+                        .offset(x: dotOffset) // Centered between screen edge and avatar
+                }
+                
+                // Avatar
+                ZStack {
+                    if let avatarURLString = chat.otherParticipantAvatarURL, let avatarURL = URL(string: avatarURLString) {
+                        // Show actual user avatar
+                        CachedAsyncImage(url: avatarURL) { image in
+                            image
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: 56, height: 56)
+                                .clipShape(Circle())
+                        } placeholder: {
+                            // Placeholder while loading
+                            Circle()
+                                .fill(Color(.systemGray5))
+                                .frame(width: 56, height: 56)
+                                .overlay {
+                                    ProgressView()
+                                        .scaleEffect(0.7)
+                                }
+                        }
+                    } else {
+                        // Default avatar with initials
                         Circle()
                             .fill(Color(.systemGray5))
                             .frame(width: 56, height: 56)
-                            .overlay {
-                                ProgressView()
-                                    .scaleEffect(0.7)
-                            }
+                        
+                        Color.clear
+                            .frame(width: 56, height: 56)
+                            .glassEffect(.regular, in: Circle())
+                        
+                        Text(String(chat.displayTitle.prefix(1)).uppercased())
+                            .font(.headline)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.primary)
                     }
-                } else {
-                    // Default avatar with initials
-                    Circle()
-                        .fill(Color(.systemGray5))
-                        .frame(width: 56, height: 56)
-                    
-                    Color.clear
-                        .frame(width: 56, height: 56)
-                        .glassEffect(.regular, in: Circle())
-                    
-                    Text(String(chat.displayTitle.prefix(1)).uppercased())
-                        .font(.headline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.primary)
                 }
-            }
-            .onTapGesture {
-                // Only show profile for 1:1 chats
-                if !chat.isGroupChat {
-                    onAvatarTap?()
-                }
-            }
-            .overlay(alignment: .topTrailing) {
-                if chat.unreadCount > 0 {
-                    Circle()
-                        .fill(Color.red)
-                        .frame(width: 22, height: 22)
-                        .overlay {
-                            Text(badgeText(chat.unreadCount))
-                                .font(.caption2)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.white)
-                                .minimumScaleFactor(0.6)
-                                .lineLimit(1)
-                        }
-                        .offset(x: 7, y: -7)
+                .onTapGesture {
+                    // Only show profile for 1:1 chats
+                    if !chat.isGroupChat {
+                        onAvatarTap?()
+                    }
                 }
             }
             
@@ -113,7 +115,7 @@ struct ChatRowView: View {
             .frame(maxHeight: .infinity, alignment: .center)
         }
         .offset(y: 0)
-        .padding(.leading, 10)
+        .padding(.leading, rowLeadingPadding)
         .padding(.trailing, 0) // No trailing padding to allow time to extend to edge
         .padding(.top, 8)
         .padding(.bottom, 12)
@@ -135,11 +137,6 @@ struct ChatRowView: View {
         }
         
         return formatter.string(from: date)
-    }
-
-    private func badgeText(_ count: Int) -> String {
-        if count > 99 { return "99+" }
-        return "\(count)"
     }
 }
 

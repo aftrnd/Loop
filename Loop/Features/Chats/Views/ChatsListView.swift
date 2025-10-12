@@ -276,84 +276,94 @@ struct PinnedMessagesView: View {
     }
     
     private func pinnedChatItem(chat: Chat, isLongPressed: Bool, profileUserToShow: Binding<ProfileUser?>) -> some View {
-        VStack(spacing: 8) {
-            ZStack {
-                if let avatarURLString = chat.otherParticipantAvatarURL, let avatarURL = URL(string: avatarURLString) {
-                    // Show actual user avatar
-                    CachedAsyncImage(url: avatarURL) { image in
-                        image
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                            .frame(width: 90, height: 90)
-                            .clipShape(Circle())
-                    } placeholder: {
-                        // Placeholder while loading
+        let avatarSize: CGFloat = 90
+        let dotSize: CGFloat = 10
+        
+        return VStack(spacing: 8) {
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    // Unread indicator dot - positioned to the left of avatar
+                    if chat.unreadCount > 0 && !isLongPressed {
+                        let containerWidth = geometry.size.width
+                        let leadingSpace = (containerWidth - avatarSize) / 2
+                        let dotOffset = -(leadingSpace / 2 + dotSize / 2)
+                        
                         Circle()
-                            .fill(Color(.systemGray5))
-                            .frame(width: 90, height: 90)
-                            .overlay {
-                                ProgressView()
-                            }
+                            .fill(Color.blue)
+                            .frame(width: dotSize, height: dotSize)
+                            .offset(x: dotOffset) // Centered between edge and avatar
                     }
-                } else {
-                    // Default avatar with initials
-                    Circle()
-                        .fill(Color(.systemGray5))
-                        .frame(width: 90, height: 90)
+                    
+                    ZStack {
+                        if let avatarURLString = chat.otherParticipantAvatarURL, let avatarURL = URL(string: avatarURLString) {
+                            // Show actual user avatar
+                            CachedAsyncImage(url: avatarURL) { image in
+                                image
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fill)
+                                    .frame(width: avatarSize, height: avatarSize)
+                                    .clipShape(Circle())
+                            } placeholder: {
+                                // Placeholder while loading
+                                Circle()
+                                    .fill(Color(.systemGray5))
+                                    .frame(width: avatarSize, height: avatarSize)
+                                    .overlay {
+                                        ProgressView()
+                                    }
+                            }
+                        } else {
+                            // Default avatar with initials
+                            Circle()
+                                .fill(Color(.systemGray5))
+                                .frame(width: avatarSize, height: avatarSize)
 
-                    Color.clear
-                        .frame(width: 90, height: 90)
-                        .glassEffect(.regular, in: Circle())
+                            Color.clear
+                                .frame(width: avatarSize, height: avatarSize)
+                                .glassEffect(.regular, in: Circle())
 
-                    Text(String(chat.displayTitle.prefix(1)).uppercased())
-                        .font(.largeTitle)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.primary)
-                }
-            }
-            .onTapGesture(count: 1) {
-                // Avatar tap - show profile for 1:1 chats
-                if !chat.isGroupChat, let otherUserId = chat.otherParticipantId {
-                    print("👆 Pinned avatar tapped - opening profile for user: \(otherUserId)")
-                    profileUserToShow.wrappedValue = ProfileUser(userId: otherUserId)
-                    print("   profileUserToShow set to: \(profileUserToShow.wrappedValue?.userId ?? "nil")")
-                }
-            }
-            .overlay(alignment: .topTrailing) {
-                if isLongPressed {
-                    Circle()
-                        .fill(Color.clear)
-                        .frame(width: 30, height: 30)
-                        .overlay {
-                            Image(systemName: "minus")
-                                .font(.system(size: 16, weight: .bold))
+                            Text(String(chat.displayTitle.prefix(1)).uppercased())
+                                .font(.largeTitle)
+                                .fontWeight(.semibold)
                                 .foregroundColor(.primary)
                         }
-                        .background(
+                    }
+                    .frame(width: geometry.size.width, height: avatarSize)
+                    .overlay(alignment: .topTrailing) {
+                        if isLongPressed {
                             Circle()
-                                .fill(Color(.systemBackground))
-                                .glassEffect(.regular, in: Circle())
-                        )
-                        .onTapGesture {
-                            withAnimation {
-                                viewModel.unpinChat(chat)
-                                longPressedChat = nil
-                            }
+                                .fill(Color.clear)
+                                .frame(width: 30, height: 30)
+                                .overlay {
+                                    Image(systemName: "minus")
+                                        .font(.system(size: 16, weight: .bold))
+                                        .foregroundColor(.primary)
+                                }
+                                .background(
+                                    Circle()
+                                        .fill(Color(.systemBackground))
+                                        .glassEffect(.regular, in: Circle())
+                                )
+                                .onTapGesture {
+                                    withAnimation {
+                                        viewModel.unpinChat(chat)
+                                        longPressedChat = nil
+                                    }
+                                }
+                                .offset(x: 8, y: -8)
                         }
-                        .offset(x: 8, y: -8)
-                } else if chat.unreadCount > 0 {
-                    Circle()
-                        .fill(colorScheme == .light ? Color.red : Color.blue)
-                        .frame(width: 30, height: 30)
-                        .overlay {
-                            Text("\(min(chat.unreadCount, 99))")
-                                .font(.caption)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.white)
+                    }
+                    .onTapGesture(count: 1) {
+                        // Avatar tap - show profile for 1:1 chats
+                        if !chat.isGroupChat, let otherUserId = chat.otherParticipantId {
+                            print("👆 Pinned avatar tapped - opening profile for user: \(otherUserId)")
+                            profileUserToShow.wrappedValue = ProfileUser(userId: otherUserId)
+                            print("   profileUserToShow set to: \(profileUserToShow.wrappedValue?.userId ?? "nil")")
                         }
-                        .offset(x: 8, y: -8)
+                    }
                 }
             }
+            .frame(height: avatarSize)
             
             Text(chat.displayTitle)
                 .font(.caption)
