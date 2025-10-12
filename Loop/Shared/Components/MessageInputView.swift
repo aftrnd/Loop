@@ -34,8 +34,8 @@ struct MessageInputView: View {
             }
             .disabled(messageText.isEmpty)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.horizontal, AppConstants.UI.padding)
+        .padding(.vertical, AppConstants.UI.spacing + 2)
         .background(
             Color.clear
                 .glassEffect(.regular, in: Capsule())

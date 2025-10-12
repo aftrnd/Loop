@@ -50,7 +50,7 @@ struct ConversationView: View {
                 .disabled(chat.isGroupChat)
             }
         }
-        .toolbar(.visible, for: .tabBar)
+        .toolbar(.hidden, for: .tabBar)
         .sheet(isPresented: $showingProfile) {
             if let otherUserId = chat.otherParticipantId {
                 ProfileView(userId: otherUserId)
