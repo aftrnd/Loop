@@ -4,17 +4,29 @@ struct MessageBubble: View {
     let message: Message
     @State private var showTimestamp = false
     @State private var isPressed = false
+    @State private var hasAppeared = false
     
     var body: some View {
-        if message.isFromUser {
-            sentMessageView
-        } else {
-            receivedMessageView
+        Group {
+            if message.isFromUser {
+                sentMessageView
+            } else {
+                receivedMessageView
+            }
+        }
+        .scaleEffect(hasAppeared ? 1.0 : 0.5)
+        .opacity(hasAppeared ? 1.0 : 0)
+        .offset(y: hasAppeared ? 0 : 20)
+        .blur(radius: hasAppeared ? 0 : 3)
+        .onAppear {
+            withAnimation(.spring(response: 0.6, dampingFraction: 0.55, blendDuration: 0)) {
+                hasAppeared = true
+            }
         }
     }
     
     private var receivedMessageView: some View {
-        HStack(alignment: .bottom, spacing: 0) {
+        HStack(alignment: .center, spacing: 0) {
             // Message bubble
             Text(message.content)
                 .font(.body)

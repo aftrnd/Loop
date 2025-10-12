@@ -33,6 +33,7 @@ struct ConversationView: View {
                     viewModel.onTextChanged()
                 }
             )
+            .padding(.horizontal, 18)
         }
         .navigationTitle(chat.displayTitle)
         .navigationBarTitleDisplayMode(.inline)
@@ -67,6 +68,8 @@ struct ConversationView: View {
                 messageContent
                     .id("messagesBottom")
             }
+            .scrollBounceBehavior(.always, axes: [.vertical])
+            .scrollIndicators(.visible)
             .contentMargins(.horizontal, 0, for: .scrollContent)
             .scrollDismissesKeyboard(.interactively)
             .defaultScrollAnchor(shouldAnchorToBottom ? .bottom : .top)
@@ -122,6 +125,7 @@ struct ConversationView: View {
                 messagesWithTypingIndicator
             }
         }
+        .animation(.spring(response: 0.6, dampingFraction: 0.65, blendDuration: 0), value: viewModel.messages.count)
         .frame(maxWidth: .infinity, alignment: .leading)
         .listRowInsets(EdgeInsets())
         .padding(.horizontal, AppConstants.UI.padding)
@@ -163,17 +167,41 @@ struct ConversationView: View {
     
     @ViewBuilder
     private var messagesWithTypingIndicator: some View {
-        ForEach(viewModel.messages) { message in
+        ForEach(Array(viewModel.messages.enumerated()), id: \.element.id) { index, message in
             MessageBubble(message: message)
-                .modifier(ScrollEffectModifier())
                 .id(message.id)
+                .padding(.top, shouldAddExtraSpacing(at: index) ? AppConstants.UI.spacing : 0)
+                .transition(.asymmetric(
+                    insertion: .scale(scale: 0.3, anchor: message.isFromUser ? .bottomTrailing : .bottomLeading)
+                        .combined(with: .opacity)
+                        .combined(with: .move(edge: message.isFromUser ? .trailing : .leading))
+                        .combined(with: .offset(y: 15)),
+                    removal: .scale(scale: 0.8, anchor: message.isFromUser ? .bottomTrailing : .bottomLeading)
+                        .combined(with: .opacity)
+                ))
         }
         
         // Typing indicator
         if viewModel.isOtherUserTyping {
             typingIndicatorBubble
-                .transition(.opacity)
+                .padding(.top, shouldAddExtraSpacingForTypingIndicator() ? AppConstants.UI.spacing : 0)
         }
+    }
+    
+    // Check if we should add extra spacing between messages from different senders
+    private func shouldAddExtraSpacing(at index: Int) -> Bool {
+        guard index > 0 else { return false }
+        let currentMessage = viewModel.messages[index]
+        let previousMessage = viewModel.messages[index - 1]
+        // Add extra spacing when sender changes
+        return currentMessage.isFromUser != previousMessage.isFromUser
+    }
+    
+    // Check if we should add extra spacing before typing indicator
+    private func shouldAddExtraSpacingForTypingIndicator() -> Bool {
+        guard let lastMessage = viewModel.messages.last else { return false }
+        // Add extra spacing if last message was from current user (typing indicator is always from other user)
+        return lastMessage.isFromUser
     }
     
     private var contentSizeReader: some View {
@@ -201,38 +229,21 @@ struct ConversationView: View {
         }
         .transition(
             .asymmetric(
-                insertion: .move(edge: .leading).combined(with: .scale(scale: 0.8, anchor: .leading)).combined(with: .opacity),
-                removal: .opacity.combined(with: .scale(scale: 0.8, anchor: .leading))
+                insertion: .scale(scale: 0.5, anchor: .bottomLeading)
+                    .combined(with: .opacity)
+                    .combined(with: .move(edge: .leading))
+                    .combined(with: .offset(y: 10)),
+                removal: .scale(scale: 0.5, anchor: .bottomLeading)
+                    .combined(with: .opacity)
             )
         )
+        .animation(.spring(response: 0.4, dampingFraction: 0.65), value: viewModel.isOtherUserTyping)
     }
     
     private func scrollToBottom(proxy: ScrollViewProxy) {
-        proxy.scrollTo("messagesBottom", anchor: .bottom)
-    }
-}
-
-// MARK: - Scroll Effect Modifier
-struct ScrollEffectModifier: ViewModifier {
-    func body(content: Content) -> some View {
-        content
-            .visualEffect { content, geometryProxy in
-                content
-                    .scaleEffect(scaleForPosition(geometryProxy))
-            }
-    }
-    
-    private func scaleForPosition(_ proxy: GeometryProxy) -> CGFloat {
-        let midY = proxy.frame(in: .global).midY
-        let screenHeight = UIScreen.main.bounds.height
-        let centerY = screenHeight / 2
-        
-        let distance = abs(midY - centerY)
-        let maxDistance = screenHeight / 2
-        let normalizedDistance = min(distance / maxDistance, 1.0)
-        
-        // Scale from 1.0 at center to 0.95 at edges
-        return 1.0 - (normalizedDistance * 0.05)
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+            proxy.scrollTo("messagesBottom", anchor: .bottom)
+        }
     }
 }
 

@@ -478,10 +478,6 @@ class FirebaseService {
         
         print("🔍 DEBUG: isSelfChat = \(isSelfChat), participants = \(participants), currentUserId = \(currentUserId)")
         
-        // Network delay for testing (simulates real-world latency)
-        print("⏱️ Simulating 2-second network delay for testing...")
-        try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds
-        
         if isSelfChat {
             // For self-chats, create two messages - one as sent, one as received
             print("📨 Creating self-chat messages...")

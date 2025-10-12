@@ -7,6 +7,10 @@ struct MessageInputView: View {
     var onTextChanged: (() -> Void)? = nil
     @FocusState private var isFocused: Bool
     
+    // Padding values
+    private let defaultPadding: CGFloat = 18  // Distance from edge when not focused
+    private let focusedPadding: CGFloat = 5   // Distance from edge when focused
+    
     var body: some View {
         HStack(spacing: 8) {
             TextField("Message", text: $messageText)
@@ -40,7 +44,7 @@ struct MessageInputView: View {
             Color.clear
                 .glassEffect(.regular, in: Capsule())
         )
-        .padding(.horizontal, isFocused ? 5 : 20)
+        .padding(.horizontal, isFocused ? -(defaultPadding - focusedPadding) : 0)
         .padding(.vertical, 8)
         .animation(.spring(response: 0.3, dampingFraction: 0.75), value: isFocused)
     }
