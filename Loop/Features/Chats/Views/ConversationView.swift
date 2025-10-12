@@ -50,6 +50,7 @@ struct ConversationView: View {
                 .disabled(chat.isGroupChat)
             }
         }
+        .toolbar(.visible, for: .tabBar)
         .sheet(isPresented: $showingProfile) {
             if let otherUserId = chat.otherParticipantId {
                 ProfileView(userId: otherUserId)
@@ -66,6 +67,7 @@ struct ConversationView: View {
                 messageContent
                     .id("messagesBottom")
             }
+            .contentMargins(.horizontal, 0, for: .scrollContent)
             .scrollDismissesKeyboard(.interactively)
             .defaultScrollAnchor(shouldAnchorToBottom ? .bottom : .top)
             .onChange(of: viewModel.messages.count) { _, _ in
@@ -85,10 +87,16 @@ struct ConversationView: View {
             .onChange(of: geometry.size.height) { _, newHeight in
                 scrollViewHeight = newHeight
             }
-            .contentMargins(.bottom, 8, for: .scrollContent)
+            .contentMargins(.bottom, AppConstants.UI.spacing, for: .scrollContent)
             .task {
                 // Mark chat as read when conversation opens
                 try? await FirebaseService.shared.markChatAsRead(chatId: chat.id.uuidString)
+                
+                // Continuously mark as read while viewing (every 2 seconds)
+                while !Task.isCancelled {
+                    try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds
+                    try? await FirebaseService.shared.markChatAsRead(chatId: chat.id.uuidString)
+                }
             }
         }
     }
@@ -105,7 +113,7 @@ struct ConversationView: View {
     }
     
     private var messageList: some View {
-        LazyVStack(spacing: 8) {
+        LazyVStack(spacing: AppConstants.UI.spacing, pinnedViews: []) {
             if viewModel.messages.isEmpty && !viewModel.isLoading {
                 emptyState
             } else if viewModel.isLoading {
@@ -114,9 +122,10 @@ struct ConversationView: View {
                 messagesWithTypingIndicator
             }
         }
-        .padding(.horizontal, 0)
-        .padding(.top, 20)
-        .padding(.bottom, 0) // Ensure no extra bottom padding
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .listRowInsets(EdgeInsets())
+        .padding(.horizontal, AppConstants.UI.padding)
+        .padding(.top, AppConstants.UI.padding)
         .background(contentSizeReader)
     }
     
@@ -156,6 +165,7 @@ struct ConversationView: View {
     private var messagesWithTypingIndicator: some View {
         ForEach(viewModel.messages) { message in
             MessageBubble(message: message)
+                .modifier(ScrollEffectModifier())
                 .id(message.id)
         }
         
@@ -180,16 +190,15 @@ struct ConversationView: View {
     
     // Computed property for typing indicator to reduce expression complexity
     private var typingIndicatorBubble: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 0) {
             TypingIndicatorView()
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
+                .padding(.horizontal, AppConstants.UI.padding)
+                .padding(.vertical, AppConstants.UI.spacing + 2)
                 .background(Color(.systemGray5))
                 .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
             
-            Spacer(minLength: 60)
+            Spacer(minLength: 0)
         }
-        .padding(.horizontal, 20)
         .transition(
             .asymmetric(
                 insertion: .move(edge: .leading).combined(with: .scale(scale: 0.8, anchor: .leading)).combined(with: .opacity),
@@ -200,6 +209,30 @@ struct ConversationView: View {
     
     private func scrollToBottom(proxy: ScrollViewProxy) {
         proxy.scrollTo("messagesBottom", anchor: .bottom)
+    }
+}
+
+// MARK: - Scroll Effect Modifier
+struct ScrollEffectModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .visualEffect { content, geometryProxy in
+                content
+                    .scaleEffect(scaleForPosition(geometryProxy))
+            }
+    }
+    
+    private func scaleForPosition(_ proxy: GeometryProxy) -> CGFloat {
+        let midY = proxy.frame(in: .global).midY
+        let screenHeight = UIScreen.main.bounds.height
+        let centerY = screenHeight / 2
+        
+        let distance = abs(midY - centerY)
+        let maxDistance = screenHeight / 2
+        let normalizedDistance = min(distance / maxDistance, 1.0)
+        
+        // Scale from 1.0 at center to 0.95 at edges
+        return 1.0 - (normalizedDistance * 0.05)
     }
 }
 

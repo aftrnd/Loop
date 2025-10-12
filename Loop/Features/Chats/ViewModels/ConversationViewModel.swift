@@ -68,10 +68,12 @@ final class ConversationViewModel {
     private func setupMessageListener() {
         messageListener = firebaseService.listenForMessages(chatId: chatId) { [weak self] messages in
             guard let self = self else { return }
+            
             self.messages = messages
             
-            // Mark chat as read when new messages arrive while viewing
-            Task { [weak self] in
+            // Mark chat as read IMMEDIATELY when new messages arrive while viewing
+            // Use Task with high priority to minimize delay
+            Task(priority: .userInitiated) { [weak self] in
                 guard let self = self else { return }
                 try? await self.firebaseService.markChatAsRead(chatId: self.chatId)
             }

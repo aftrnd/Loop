@@ -6,76 +6,85 @@ struct MessageBubble: View {
     @State private var isPressed = false
     
     var body: some View {
-        HStack(spacing: 8) {
-            if message.isFromUser {
-                Spacer(minLength: 60)
-                
-                // Timestamp on left for sent messages
-                if showTimestamp {
-                    Text(formatTime(message.timestamp))
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                        .transition(.opacity.combined(with: .move(edge: .trailing)))
-                }
-            }
-            
-            VStack(alignment: message.isFromUser ? .trailing : .leading, spacing: 4) {
-                if let senderName = message.senderName, !message.isFromUser {
-                    Text(senderName)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .padding(.horizontal, 12)
-                }
-                
-                Text(message.content)
-                    .font(.body)
-                    .foregroundColor(message.isFromUser ? .white : .primary)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .background(
-                        Group {
-                            if message.isFromUser {
-                                Color.blue
-                            } else {
-                                Color(.systemGray5)
-                            }
-                        }
+        if message.isFromUser {
+            sentMessageView
+        } else {
+            receivedMessageView
+        }
+    }
+    
+    private var receivedMessageView: some View {
+        HStack(alignment: .bottom, spacing: 0) {
+            // Message bubble
+            Text(message.content)
+                .font(.body)
+                .foregroundColor(.primary)
+                .padding(.horizontal, AppConstants.UI.padding)
+                .padding(.vertical, AppConstants.UI.spacing + 2)
+                .background(
+                    Color(.systemGray5)
                         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                    )
-                    .scaleEffect(isPressed ? 0.95 : 1.0)
+                )
+                .scaleEffect(isPressed ? 0.95 : 1.0)
+            
+            // Timestamp
+            if showTimestamp {
+                Text(formatTime(message.timestamp))
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .padding(.leading, AppConstants.UI.spacing)
             }
             
-            if !message.isFromUser {
-                // Timestamp on right for received messages
-                if showTimestamp {
-                    Text(formatTime(message.timestamp))
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                        .transition(.opacity.combined(with: .move(edge: .leading)))
-                }
-                
-                Spacer(minLength: 60)
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: toggleTimestamp)
+    }
+    
+    private var sentMessageView: some View {
+        HStack(spacing: 0) {
+            Spacer(minLength: 0)
+            
+            if showTimestamp {
+                Text(formatTime(message.timestamp))
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .padding(.trailing, AppConstants.UI.spacing)
+            }
+            
+            Text(message.content)
+                .font(.body)
+                .foregroundColor(.white)
+                .padding(.horizontal, AppConstants.UI.padding)
+                .padding(.vertical, AppConstants.UI.spacing + 2)
+                .background(
+                    Color.blue
+                        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                )
+                .scaleEffect(isPressed ? 0.95 : 1.0)
+        }
+        .frame(maxWidth: .infinity, alignment: .trailing)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: toggleTimestamp)
+    }
+    
+    private func toggleTimestamp() {
+        // Subtle bounce animation for tap feedback
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.6, blendDuration: 0)) {
+            isPressed = true
+        }
+        
+        // Quick release
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.6, blendDuration: 0)) {
+                isPressed = false
             }
         }
-        .padding(.horizontal, 20)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            // Subtle bounce animation for tap feedback
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.6, blendDuration: 0)) {
-                isPressed = true
-            }
-            
-            // Quick release
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.6, blendDuration: 0)) {
-                    isPressed = false
-                }
-            }
-            
-            // Smooth timestamp reveal with spring
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.75, blendDuration: 0)) {
-                showTimestamp.toggle()
-            }
+        
+        // Smooth timestamp reveal with spring
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.75, blendDuration: 0)) {
+            showTimestamp.toggle()
         }
     }
     
