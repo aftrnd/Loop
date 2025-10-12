@@ -9,11 +9,7 @@ struct MessageBubble: View {
     @State private var showTimestamp = false
     @State private var isPressed = false
     @State private var hasAppeared = false
-    @State private var showHeartAnimation = false
-    @State private var heartOffset: CGFloat = 0
-    @State private var heartRotation: Double = 0
-    @State private var heartScale: CGFloat = 0.5
-    @State private var heartOpacity: Double = 1.0
+    @State private var likeButtonScale: CGFloat = 1.0
     
     var body: some View {
         Group {
@@ -37,85 +33,78 @@ struct MessageBubble: View {
     
     private var receivedMessageView: some View {
         HStack(alignment: .center, spacing: 0) {
-            // Message bubble with like overlay
-            Text(message.content)
-                .font(.body)
-                .foregroundColor(.primary)
-                .padding(.horizontal, AppConstants.UI.padding)
-                .padding(.vertical, AppConstants.UI.spacing + 2)
-                .background(
-                    Color(.systemGray5)
-                        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                )
-                .scaleEffect(isPressed ? 0.95 : 1.0)
-                .fixedSize(horizontal: false, vertical: true)
-                .overlay(alignment: .topTrailing) {
-                    // Like indicator
-                    if message.likeCount > 0, let currentUserId = getCurrentUserId() {
-                        let isLikedByCurrentUser = message.isLikedBy(userId: currentUserId)
-                        let bubbleHeight: CGFloat = 34
-                        
-                        ZStack(alignment: .center) {
-                            // Glass bubble background (drawn from center)
-                            if isGroupChat {
-                                Capsule()
-                                    .fill(Color.clear)
-                                    .glassEffect(isLikedByCurrentUser ? .regular : .clear, in: Capsule())
-                                    .frame(height: bubbleHeight)
-                            } else {
-                                Circle()
-                                    .fill(Color.clear)
-                                    .glassEffect(isLikedByCurrentUser ? .regular : .clear, in: Circle())
-                                    .frame(width: bubbleHeight, height: bubbleHeight)
-                            }
+            HStack(spacing: 0) {
+                // Message bubble with like overlay
+                Text(message.content)
+                    .font(.body)
+                    .foregroundColor(.primary)
+                    .padding(.horizontal, AppConstants.UI.padding)
+                    .padding(.vertical, AppConstants.UI.spacing + 2)
+                    .background(
+                        Color(.systemGray5)
+                            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    )
+                    .scaleEffect(isPressed ? 0.95 : 1.0)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .overlay(alignment: .topTrailing) {
+                        // Like indicator
+                        if message.likeCount > 0, let currentUserId = getCurrentUserId() {
+                            let isLikedByCurrentUser = message.isLikedBy(userId: currentUserId)
+                            let bubbleHeight: CGFloat = 34
                             
-                            // Content on top - perfectly centered
-                            if isGroupChat {
-                                HStack(spacing: 4) {
+                            ZStack(alignment: .center) {
+                                // Glass bubble background (drawn from center)
+                                if isGroupChat {
+                                    Capsule()
+                                        .fill(Color.clear)
+                                        .glassEffect(isLikedByCurrentUser ? .regular : .clear, in: Capsule())
+                                        .frame(height: bubbleHeight)
+                                } else {
+                                    Circle()
+                                        .fill(Color.clear)
+                                        .glassEffect(isLikedByCurrentUser ? .regular : .clear, in: Circle())
+                                        .frame(width: bubbleHeight, height: bubbleHeight)
+                                }
+                                
+                                // Content on top - perfectly centered
+                                if isGroupChat {
+                                    HStack(spacing: 4) {
+                                        Text("❤️")
+                                            .font(.system(size: 14))
+                                        Text("\(message.likeCount)")
+                                            .font(.system(size: 11, weight: .semibold))
+                                            .foregroundColor(.primary)
+                                    }
+                                    .padding(.horizontal, 8)
+                                } else {
                                     Text("❤️")
                                         .font(.system(size: 14))
-                                    Text("\(message.likeCount)")
-                                        .font(.system(size: 11, weight: .semibold))
-                                        .foregroundColor(.primary)
                                 }
-                                .padding(.horizontal, 8)
-                            } else {
-                                Text("❤️")
-                                    .font(.system(size: 14))
                             }
+                            .scaleEffect(likeButtonScale)
+                            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: likeButtonScale)
+                            .offset(
+                                x: isGroupChat ? (bubbleHeight + 16) * 0.65 - 5 : bubbleHeight * 0.65 - 5,
+                                y: -bubbleHeight * 0.65 + 5
+                            )
+                            .transition(.scale.combined(with: .opacity))
                         }
-                        .offset(
-                            x: isGroupChat ? (bubbleHeight + 16) * 0.65 - 5 : bubbleHeight * 0.65 - 5,
-                            y: -bubbleHeight * 0.65 + 5
-                        )
-                        .transition(.scale.combined(with: .opacity))
                     }
+                
+                // Timestamp
+                if showTimestamp {
+                    Text(formatTime(message.timestamp))
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                        .padding(.leading, AppConstants.UI.spacing)
+                        .transition(.move(edge: .leading).combined(with: .opacity))
                 }
-                .overlay(alignment: .center) {
-                    // Heart animation overlay - floating and levitating
-                    if showHeartAnimation {
-                        Image(systemName: "heart.fill")
-                            .font(.system(size: 50))
-                            .foregroundColor(.red)
-                            .scaleEffect(heartScale)
-                            .offset(y: heartOffset)
-                            .rotationEffect(.degrees(heartRotation))
-                            .opacity(heartOpacity)
-                            .shadow(color: .red.opacity(0.3), radius: 10, x: 0, y: 5)
-                    }
-                }
-                .frame(maxWidth: UIScreen.main.bounds.width * 0.66, alignment: .leading)
-            
-            // Timestamp
-            if showTimestamp {
-                Text(formatTime(message.timestamp))
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-                    .padding(.leading, AppConstants.UI.spacing)
             }
+            .frame(maxWidth: UIScreen.main.bounds.width * 0.66, alignment: .leading)
             
             Spacer(minLength: 0)
         }
+        .animation(.spring(), value: showTimestamp)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
         .onTapGesture(perform: toggleTimestamp)
@@ -126,82 +115,75 @@ struct MessageBubble: View {
         HStack(spacing: 0) {
             Spacer(minLength: 0)
             
-            if showTimestamp {
-                Text(formatTime(message.timestamp))
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-                    .padding(.trailing, AppConstants.UI.spacing)
-            }
-            
-            // Message bubble with like overlay
-            Text(message.content)
-                .font(.body)
-                .foregroundColor(.white)
-                .padding(.horizontal, AppConstants.UI.padding)
-                .padding(.vertical, AppConstants.UI.spacing + 2)
-                .background(
-                    Color.blue
-                        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                )
-                .scaleEffect(isPressed ? 0.95 : 1.0)
-                .fixedSize(horizontal: false, vertical: true)
-                .overlay(alignment: .topLeading) {
-                    // Like indicator
-                    if message.likeCount > 0, let currentUserId = getCurrentUserId() {
-                        let isLikedByCurrentUser = message.isLikedBy(userId: currentUserId)
-                        let bubbleHeight: CGFloat = 34
-                        
-                        ZStack(alignment: .center) {
-                            // Glass bubble background (drawn from center)
-                            if isGroupChat {
-                                Capsule()
-                                    .fill(Color.clear)
-                                    .glassEffect(isLikedByCurrentUser ? .regular : .clear, in: Capsule())
-                                    .frame(height: bubbleHeight)
-                            } else {
-                                Circle()
-                                    .fill(Color.clear)
-                                    .glassEffect(isLikedByCurrentUser ? .regular : .clear, in: Circle())
-                                    .frame(width: bubbleHeight, height: bubbleHeight)
-                            }
+            HStack(spacing: 0) {
+                if showTimestamp {
+                    Text(formatTime(message.timestamp))
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                        .padding(.trailing, AppConstants.UI.spacing)
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                }
+                
+                // Message bubble with like overlay
+                Text(message.content)
+                    .font(.body)
+                    .foregroundColor(.white)
+                    .padding(.horizontal, AppConstants.UI.padding)
+                    .padding(.vertical, AppConstants.UI.spacing + 2)
+                    .background(
+                        Color.blue
+                            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    )
+                    .scaleEffect(isPressed ? 0.95 : 1.0)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .overlay(alignment: .topLeading) {
+                        // Like indicator
+                        if message.likeCount > 0, let currentUserId = getCurrentUserId() {
+                            let isLikedByCurrentUser = message.isLikedBy(userId: currentUserId)
+                            let bubbleHeight: CGFloat = 34
                             
-                            // Content on top - perfectly centered
-                            if isGroupChat {
-                                HStack(spacing: 4) {
+                            ZStack(alignment: .center) {
+                                // Glass bubble background (drawn from center)
+                                if isGroupChat {
+                                    Capsule()
+                                        .fill(Color.clear)
+                                        .glassEffect(isLikedByCurrentUser ? .regular : .clear, in: Capsule())
+                                        .frame(height: bubbleHeight)
+                                } else {
+                                    Circle()
+                                        .fill(Color.clear)
+                                        .glassEffect(isLikedByCurrentUser ? .regular : .clear, in: Circle())
+                                        .frame(width: bubbleHeight, height: bubbleHeight)
+                                }
+                                
+                                // Content on top - perfectly centered
+                                if isGroupChat {
+                                    HStack(spacing: 4) {
+                                        Text("❤️")
+                                            .font(.system(size: 14))
+                                        Text("\(message.likeCount)")
+                                            .font(.system(size: 11, weight: .semibold))
+                                            .foregroundColor(.primary)
+                                    }
+                                    .padding(.horizontal, 8)
+                                } else {
                                     Text("❤️")
                                         .font(.system(size: 14))
-                                    Text("\(message.likeCount)")
-                                        .font(.system(size: 11, weight: .semibold))
-                                        .foregroundColor(.primary)
                                 }
-                                .padding(.horizontal, 8)
-                            } else {
-                                Text("❤️")
-                                    .font(.system(size: 14))
                             }
+                            .scaleEffect(likeButtonScale)
+                            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: likeButtonScale)
+                            .offset(
+                                x: isGroupChat ? -(bubbleHeight + 16) * 0.65 + 5 : -bubbleHeight * 0.65 + 5,
+                                y: -bubbleHeight * 0.65 + 5
+                            )
+                            .transition(.scale.combined(with: .opacity))
                         }
-                        .offset(
-                            x: isGroupChat ? -(bubbleHeight + 16) * 0.65 + 5 : -bubbleHeight * 0.65 + 5,
-                            y: -bubbleHeight * 0.65 + 5
-                        )
-                        .transition(.scale.combined(with: .opacity))
                     }
-                }
-                .overlay(alignment: .center) {
-                    // Heart animation overlay - floating and levitating
-                    if showHeartAnimation {
-                        Image(systemName: "heart.fill")
-                            .font(.system(size: 50))
-                            .foregroundColor(.red)
-                            .scaleEffect(heartScale)
-                            .offset(y: heartOffset)
-                            .rotationEffect(.degrees(heartRotation))
-                            .opacity(heartOpacity)
-                            .shadow(color: .red.opacity(0.3), radius: 10, x: 0, y: 5)
-                    }
-                }
-                .frame(maxWidth: UIScreen.main.bounds.width * 0.66, alignment: .trailing)
+            }
+            .frame(maxWidth: UIScreen.main.bounds.width * 0.66, alignment: .trailing)
         }
+        .animation(.spring(), value: showTimestamp)
         .frame(maxWidth: .infinity, alignment: .trailing)
         .contentShape(Rectangle())
         .onTapGesture(perform: toggleTimestamp)
@@ -221,10 +203,8 @@ struct MessageBubble: View {
             }
         }
         
-        // Smooth timestamp reveal with spring
-        withAnimation(.spring()) {
-            showTimestamp.toggle()
-        }
+        // Smooth timestamp reveal with spring (animation handled by .animation modifier on view)
+        showTimestamp.toggle()
     }
     
     private func formatTime(_ date: Date) -> String {
@@ -234,36 +214,24 @@ struct MessageBubble: View {
     }
     
     private func handleDoubleTap() {
-        // Reset state
-        showHeartAnimation = true
-        heartOffset = 0
-        heartScale = 0.5
-        heartRotation = 0
-        heartOpacity = 1.0
-        
-        // Bounce and float up with native spring animation
-        withAnimation(.spring()) {
-            heartScale = 1.2
-            heartOffset = -60
-            heartRotation = Double.random(in: -5...5)
-        }
-        
-        // Fade out
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
-            withAnimation(.easeOut) {
-                heartOpacity = 0
-            }
-        }
-        
-        // Hide after fade completes
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-            showHeartAnimation = false
-        }
-        
-        // Call the like callback with haptic feedback
+        // Instant haptic feedback
         let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
         impactFeedback.impactOccurred()
+        
+        // Call the like callback
         onLike?()
+        
+        // Animate: start small → grow bigger → bounce back to normal
+        // Animation is handled by the .animation() modifier on the view
+        likeButtonScale = 0.5
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) {
+            likeButtonScale = 1.2
+        }
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            likeButtonScale = 1.0
+        }
     }
     
     private func getCurrentUserId() -> String? {

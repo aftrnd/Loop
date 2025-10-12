@@ -44,9 +44,18 @@ struct ConversationView: View {
                         showingProfile = true
                     }
                 }) {
-                    Text(chat.displayTitle)
-                        .font(.headline)
-                        .foregroundColor(.primary)
+                    HStack(spacing: 4) {
+                        Text(chat.displayTitle)
+                            .font(.headline)
+                            .foregroundColor(.primary)
+                        
+                        // Show badge for 1-on-1 chats if user has one
+                        if !chat.isGroupChat, let badge = chat.otherParticipantBadgeType {
+                            Image(systemName: badge.iconName)
+                                .font(.system(size: 12))
+                                .foregroundColor(badge.color)
+                        }
+                    }
                 }
                 .disabled(chat.isGroupChat)
             }
@@ -126,6 +135,7 @@ struct ConversationView: View {
             }
         }
         .animation(.spring(), value: viewModel.messages.count)
+        .animation(.spring(), value: viewModel.messages.map { $0.likeCount })
         .frame(maxWidth: .infinity, alignment: .leading)
         .listRowInsets(EdgeInsets())
         .padding(.horizontal, AppConstants.UI.padding)
@@ -168,19 +178,38 @@ struct ConversationView: View {
     @ViewBuilder
     private var messagesWithTypingIndicator: some View {
         ForEach(Array(viewModel.messages.enumerated()), id: \.element.id) { index, message in
-            MessageBubble(message: message, isGroupChat: chat.isGroupChat, onLike: {
-                viewModel.toggleLike(for: message)
-            })
-                .id(message.id)
-                .padding(.top, shouldAddExtraSpacing(at: index) ? AppConstants.UI.spacing : 0)
-                .transition(.asymmetric(
-                    insertion: .scale(scale: 0.3, anchor: message.isFromUser ? .bottomTrailing : .bottomLeading)
-                        .combined(with: .opacity)
-                        .combined(with: .move(edge: message.isFromUser ? .trailing : .leading))
-                        .combined(with: .offset(y: 15)),
-                    removal: .scale(scale: 0.8, anchor: message.isFromUser ? .bottomTrailing : .bottomLeading)
-                        .combined(with: .opacity)
-                ))
+            VStack(spacing: 0) {
+                // Date separator
+                if shouldShowDateSeparator(at: index) {
+                    Text(formatDateSeparator(message.timestamp))
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .padding(.vertical, 12)
+                }
+                
+                // Timestamp
+                if shouldShowTimestamp(at: index) {
+                    Text(formatTimestamp(message.timestamp))
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                        .padding(.bottom, 4)
+                }
+                
+                MessageBubble(message: message, isGroupChat: chat.isGroupChat, onLike: {
+                    viewModel.toggleLike(for: message)
+                })
+                    .id(message.id)
+                    .padding(.top, calculateTopPadding(at: index, message: message))
+                    .animation(.spring(), value: message.likeCount)
+                    .transition(.asymmetric(
+                        insertion: .scale(scale: 0.3, anchor: message.isFromUser ? .bottomTrailing : .bottomLeading)
+                            .combined(with: .opacity)
+                            .combined(with: .move(edge: message.isFromUser ? .trailing : .leading))
+                            .combined(with: .offset(y: 15)),
+                        removal: .scale(scale: 0.8, anchor: message.isFromUser ? .bottomTrailing : .bottomLeading)
+                            .combined(with: .opacity)
+                    ))
+            }
         }
         
         // Typing indicator
@@ -190,13 +219,85 @@ struct ConversationView: View {
         }
     }
     
-    // Check if we should add extra spacing between messages from different senders
-    private func shouldAddExtraSpacing(at index: Int) -> Bool {
-        guard index > 0 else { return false }
+    // Calculate top padding for message
+    private func calculateTopPadding(at index: Int, message: Message) -> CGFloat {
+        var padding: CGFloat = 0
+        
+        // Base spacing when sender changes
+        if index > 0 {
+            let previousMessage = viewModel.messages[index - 1]
+            if message.isFromUser != previousMessage.isFromUser {
+                padding += AppConstants.UI.spacing
+            }
+        }
+        
+        // Add extra 10 points if message has likes
+        if message.likeCount > 0 {
+            padding += 10
+        }
+        
+        return padding
+    }
+    
+    // Check if we should show a date separator (new calendar day)
+    private func shouldShowDateSeparator(at index: Int) -> Bool {
+        guard index > 0 else { return true } // Always show date for first message
+        
         let currentMessage = viewModel.messages[index]
         let previousMessage = viewModel.messages[index - 1]
-        // Add extra spacing when sender changes
-        return currentMessage.isFromUser != previousMessage.isFromUser
+        
+        let calendar = Calendar.current
+        let currentDay = calendar.startOfDay(for: currentMessage.timestamp)
+        let previousDay = calendar.startOfDay(for: previousMessage.timestamp)
+        
+        return currentDay != previousDay
+    }
+    
+    // Check if we should show a timestamp (5+ minute gap)
+    private func shouldShowTimestamp(at: Int) -> Bool {
+        guard at > 0 else { return false } // Don't show timestamp for first message (date separator handles it)
+        
+        let currentMessage = viewModel.messages[at]
+        let previousMessage = viewModel.messages[at - 1]
+        
+        // Check if we're showing a date separator (if so, skip timestamp)
+        if shouldShowDateSeparator(at: at) {
+            return false
+        }
+        
+        // Show timestamp if gap is 5 minutes or more
+        let gap = currentMessage.timestamp.timeIntervalSince(previousMessage.timestamp)
+        return gap >= 5 * 60 // 5 minutes in seconds
+    }
+    
+    // Format date separator (e.g., "Yesterday", "Monday, October 7")
+    private func formatDateSeparator(_ date: Date) -> String {
+        let calendar = Calendar.current
+        let now = Date()
+        
+        if calendar.isDateInToday(date) {
+            return "Today"
+        } else if calendar.isDateInYesterday(date) {
+            return "Yesterday"
+        } else if calendar.isDate(date, equalTo: now, toGranularity: .weekOfYear) {
+            // This week - show day name
+            let formatter = DateFormatter()
+            formatter.dateFormat = "EEEE" // Full day name
+            return formatter.string(from: date)
+        } else {
+            // Older - show full date
+            let formatter = DateFormatter()
+            formatter.dateStyle = .medium
+            formatter.timeStyle = .none
+            return formatter.string(from: date)
+        }
+    }
+    
+    // Format timestamp (e.g., "10:14 AM")
+    private func formatTimestamp(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
     }
     
     // Check if we should add extra spacing before typing indicator
