@@ -84,6 +84,8 @@ struct LoopCardView: View {
     let onReply: () -> Void
     let onDelete: (() -> Void)?
     let onAvatarTap: (() -> Void)?
+    let onCardTap: (() -> Void)? // New: handle tap to view details
+    let replyPreviews: [Loop]? // New: optional reply previews to show inline
     
     // Animation state persists across view re-renders
     @StateObject private var animationState = LoopCardAnimationState()
@@ -101,32 +103,40 @@ struct LoopCardView: View {
     private let cardCornerRadius: CGFloat = 16
     private let mediaCornerRadius: CGFloat = 12
     private let actionIconSize: CGFloat = 18
+    private let maxReplyPreviews = 1 // Show max 1 reply preview (most recent from followed users)
     
     var body: some View {
-        cardContent
-            .zIndex(0)
-            .overlay(alignment: .bottomLeading) {
-                // Particle layer - renders above card content AND subsequent cards
-                GeometryReader { geo in
-                    HeartParticleAnimationView(
-                        iconSize: actionIconSize,
-                        triggerID: animationState.particleTriggerID
-                    )
-                    .frame(width: 200, height: 200) // Large enough for particles to fly
-                    .position(x: 25, y: geo.size.height - 30) // Position at heart button
-                    .allowsHitTesting(false)
+        VStack(spacing: 0) {
+            cardContent
+                .zIndex(0)
+                .overlay(alignment: .bottomLeading) {
+                    // Particle layer - renders above card content AND subsequent cards
+                    GeometryReader { geo in
+                        HeartParticleAnimationView(
+                            iconSize: actionIconSize,
+                            triggerID: animationState.particleTriggerID
+                        )
+                        .frame(width: 200, height: 200) // Large enough for particles to fly
+                        .position(x: 25, y: geo.size.height - 30) // Position at heart button
+                        .allowsHitTesting(false)
+                    }
+                    .zIndex(Double(1000 - cardIndex)) // Higher z-index for earlier posts
                 }
-                .zIndex(Double(1000 - cardIndex)) // Higher z-index for earlier posts
+                .fullScreenCover(isPresented: $showPhotoViewer) {
+                    FullScreenPhotoViewer(
+                        allMedia: loop.media,
+                        startingIndex: selectedPhotoIndex,
+                        isPresented: $showPhotoViewer
+                    )
+                    .presentationBackground(.clear)
+                }
+            
+            // Reply previews section
+            if let replies = replyPreviews, !replies.isEmpty {
+                replyPreviewsSection(replies: replies)
             }
-            .fullScreenCover(isPresented: $showPhotoViewer) {
-                FullScreenPhotoViewer(
-                    allMedia: loop.media,
-                    startingIndex: selectedPhotoIndex,
-                    isPresented: $showPhotoViewer
-                )
-                .presentationBackground(.clear)
-            }
-            .id(loop.id) // Stable identity prevents view recreation during updates
+        }
+        .id(loop.id) // Stable identity prevents view recreation during updates
     }
     
     private var cardContent: some View {
@@ -230,8 +240,14 @@ struct LoopCardView: View {
                 .frame(width: 50, alignment: .leading)
                 .contentShape(Rectangle())
                 
-                // Reply button
-                Button(action: onReply) {
+                // Reply button - tapping shows detail view if onCardTap is provided
+                Button(action: {
+                    if let onCardTap = onCardTap {
+                        onCardTap()
+                    } else {
+                        onReply()
+                    }
+                }) {
                     HStack(spacing: 4) {
                         Image(systemName: "bubble.left")
                             .font(.system(size: actionIconSize, weight: .medium))
@@ -289,7 +305,169 @@ struct LoopCardView: View {
             
         }
     }
+    
+    @ViewBuilder
+    private func replyPreviewsSection(replies: [Loop]) -> some View {
+        VStack(spacing: 0) {
+            // Show only the most recent reply from someone you follow (max 1)
+            let previewReplies = Array(replies.prefix(maxReplyPreviews))
+            
+            ForEach(Array(previewReplies.enumerated()), id: \.element.id) { index, reply in
+                ReplyPreviewRow(
+                    reply: reply,
+                    heartIconYPosition: 8 + 10 + 18/2, // padding.top + button padding.vertical + half icon size
+                    totalReplyCount: loop.replyCount
+                )
+            }
+        }
+        .background(Color(.systemBackground)) // Use primary background color
+    }
 }
+
+struct ReplyPreviewRow: View {
+    let reply: Loop
+    let heartIconYPosition: CGFloat
+    let totalReplyCount: Int
+    
+    @State private var arrowProgress: CGFloat = 0.0
+    @State private var hasTriggered = false
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            // Reply content
+            HStack(alignment: .center, spacing: 0) {
+                // Left padding to match home page (10)
+                Spacer()
+                    .frame(width: 10)
+                
+                // Arrow icon - horizontally centered with simple scale and fade
+                Image(systemName: "arrow.turn.down.right")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(.secondary.opacity(0.6))
+                    .frame(width: 28, height: 24)
+                    .scaleEffect(arrowProgress)
+                    .opacity(arrowProgress)
+                    .padding(.trailing, 8)
+                
+                // Avatar - horizontally centered
+                Group {
+                    if let avatarURLString = reply.authorAvatarURL, let avatarURL = URL(string: avatarURLString) {
+                        CachedAsyncImage(url: avatarURL) { image in
+                            image
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: 24, height: 24)
+                                .clipShape(Circle())
+                        } placeholder: {
+                            Circle()
+                                .fill(Color(.systemGray5))
+                                .frame(width: 24, height: 24)
+                        }
+                    } else {
+                        Circle()
+                            .fill(Color(.systemGray5))
+                            .frame(width: 24, height: 24)
+                            .overlay {
+                                Text(String((reply.authorDisplayName ?? "?").prefix(1)).uppercased())
+                                    .font(.caption2)
+                                    .fontWeight(.semibold)
+                            }
+                    }
+                }
+                .padding(.trailing, 8)
+                
+                // Content - horizontally centered while keeping internal vertical spacing
+                VStack(alignment: .leading, spacing: 2) {
+                    // Author name with badge
+                    HStack(spacing: 3) {
+                        Text(reply.displayAuthorName)
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.primary)
+                        
+                        // Badge if user has one
+                        if let badgeType = reply.authorBadgeType {
+                            Image(systemName: badgeType.iconName)
+                                .font(.system(size: 10))
+                                .foregroundColor(badgeType.color)
+                        }
+                    }
+                    
+                    // Reply content preview (truncated)
+                    Text(reply.content)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(2)
+                }
+                .frame(maxHeight: .infinity, alignment: .center) // Center the VStack vertically
+                
+                Spacer()
+                
+                // Right padding to match home page (10)
+                Spacer()
+                    .frame(width: 10)
+            }
+            .padding(.top, 0) // No top padding on outside
+            .padding(.bottom, 10) // Only bottom padding
+        }
+        .background(
+            GeometryReader { geometry in
+                Color.clear
+                    .preference(
+                        key: ViewPositionKey.self,
+                        value: geometry.frame(in: .global).midY
+                    )
+            }
+        )
+        .onPreferenceChange(ViewPositionKey.self) { viewMidY in
+            // Animate when view enters middle 1/3 of screen
+            let screenHeight = UIScreen.main.bounds.height
+            let middleThirdStart = screenHeight / 3
+            let middleThirdEnd = (screenHeight / 3) * 2
+            
+            if viewMidY >= middleThirdStart && viewMidY <= middleThirdEnd {
+                // Animate if not already triggered
+                if !hasTriggered {
+                    hasTriggered = true
+                    withAnimation(.spring(duration: 0.5, bounce: 0.3)) {
+                        arrowProgress = 1.0
+                    }
+                }
+            } else if viewMidY < middleThirdStart - 100 || viewMidY > middleThirdEnd + 100 {
+                // Reset when far from middle third (with buffer) so it can animate again
+                if hasTriggered {
+                    hasTriggered = false
+                    arrowProgress = 0.0
+                }
+            }
+        }
+        .onAppear {
+            // Trigger animation immediately if already in view
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                if !hasTriggered {
+                    hasTriggered = true
+                    withAnimation(.spring(duration: 0.5, bounce: 0.3)) {
+                        arrowProgress = 1.0
+                    }
+                }
+            }
+        }
+        .onDisappear {
+            // Reset when view disappears
+            hasTriggered = false
+            arrowProgress = 0.0
+        }
+    }
+}
+
+// MARK: - View Position Preference Key
+struct ViewPositionKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
 
 struct LoopMediaView: View {
     let media: [LoopMedia]
@@ -557,11 +735,12 @@ struct PageIndicator: View {
 #Preview {
     ScrollView {
         VStack(spacing: 16) {
-            // Sample loop with text only
+            // Sample loop with text only and reply preview
             LoopCardView(
                 loop: Loop(
                     authorId: "user1",
                     content: "Just shipped a new feature for our app! Really excited to see how users respond to the new design. The team has been working hard on this for months. 🚀",
+                    replies: ["reply1"],
                     authorDisplayName: "John Doe",
                     authorUsername: "johndoe",
                     authorBadgeType: .verified
@@ -571,7 +750,46 @@ struct PageIndicator: View {
                 onLike: {},
                 onReply: {},
                 onDelete: {},
-                onAvatarTap: {}
+                onAvatarTap: {},
+                onCardTap: {},
+                replyPreviews: [
+                    Loop(
+                        authorId: "user2",
+                        content: "This is amazing! Can't wait to try it out. The new design looks really sleek and modern!",
+                        isReply: true,
+                        authorDisplayName: "Jane Smith",
+                        authorUsername: "janesmith",
+                        authorBadgeType: .verified
+                    )
+                ]
+            )
+            
+            // Sample loop with multiple replies to show "See more replies"
+            LoopCardView(
+                loop: Loop(
+                    authorId: "user3",
+                    content: "What do you think about the new iOS update? There are so many new features to explore!",
+                    replies: ["reply1", "reply2", "reply3", "reply4"],
+                    authorDisplayName: "Mike Johnson",
+                    authorUsername: "mikej"
+                ),
+                isLiked: false,
+                cardIndex: 1,
+                onLike: {},
+                onReply: {},
+                onDelete: nil,
+                onAvatarTap: {},
+                onCardTap: {},
+                replyPreviews: [
+                    Loop(
+                        authorId: "user4",
+                        content: "I love the new control center! So much more customizable now.",
+                        isReply: true,
+                        authorDisplayName: "Sarah Wilson",
+                        authorUsername: "sarahw",
+                        authorBadgeType: .premium
+                    )
+                ]
             )
             
             // Square image (1:1)
@@ -595,7 +813,9 @@ struct PageIndicator: View {
                 onLike: {},
                 onReply: {},
                 onDelete: nil,
-                onAvatarTap: {}
+                onAvatarTap: {},
+                onCardTap: nil,
+                replyPreviews: nil
             )
             
             // 16:9 landscape
@@ -619,121 +839,9 @@ struct PageIndicator: View {
                 onLike: {},
                 onReply: {},
                 onDelete: nil,
-                onAvatarTap: {}
-            )
-            
-            // 9:16 portrait (should be tall)
-            LoopCardView(
-                loop: Loop(
-                    authorId: "user4",
-                    content: "Tall portrait mode 📱 (9:16 ratio)",
-                    media: [
-                        LoopMedia(
-                            type: .image,
-                            url: "https://picsum.photos/900/1600",
-                            width: 900,
-                            height: 1600
-                        )
-                    ],
-                    authorDisplayName: "Sarah Wilson",
-                    authorUsername: "sarahw"
-                ),
-                isLiked: false,
-                cardIndex: 3,
-                onLike: {},
-                onReply: {},
-                onDelete: nil,
-                onAvatarTap: {}
-            )
-            
-            // Very wide panorama
-            LoopCardView(
-                loop: Loop(
-                    authorId: "user5",
-                    content: "Ultra-wide panorama (should be short)",
-                    media: [
-                        LoopMedia(
-                            type: .image,
-                            url: "https://picsum.photos/2000/600",
-                            width: 2000,
-                            height: 600
-                        )
-                    ],
-                    authorDisplayName: "Alex Chen",
-                    authorUsername: "alexc"
-                ),
-                isLiked: true,
-                cardIndex: 4,
-                onLike: {},
-                onReply: {},
-                onDelete: nil,
-                onAvatarTap: {}
-            )
-            
-            // Very tall portrait
-            LoopCardView(
-                loop: Loop(
-                    authorId: "user6",
-                    content: "Very tall portrait (should be tall)",
-                    media: [
-                        LoopMedia(
-                            type: .image,
-                            url: "https://picsum.photos/600/2000",
-                            width: 600,
-                            height: 2000
-                        )
-                    ],
-                    authorDisplayName: "Emma Davis",
-                    authorUsername: "emmad"
-                ),
-                isLiked: false,
-                cardIndex: 5,
-                onLike: {},
-                onReply: {},
-                onDelete: nil,
-                onAvatarTap: {}
-            )
-            
-            // Multiple photos carousel
-            LoopCardView(
-                loop: Loop(
-                    authorId: "user7",
-                    content: "Check out this amazing carousel! Swipe to see more photos 📸✨",
-                    media: [
-                        LoopMedia(
-                            type: .image,
-                            url: "https://picsum.photos/400/600?random=1",
-                            width: 400,
-                            height: 600
-                        ),
-                        LoopMedia(
-                            type: .image,
-                            url: "https://picsum.photos/600/400?random=2",
-                            width: 600,
-                            height: 400
-                        ),
-                        LoopMedia(
-                            type: .image,
-                            url: "https://picsum.photos/500/500?random=3",
-                            width: 500,
-                            height: 500
-                        ),
-                        LoopMedia(
-                            type: .image,
-                            url: "https://picsum.photos/800/400?random=4",
-                            width: 800,
-                            height: 400
-                        )
-                    ],
-                    authorDisplayName: "Sarah Wilson",
-                    authorUsername: "sarahw"
-                ),
-                isLiked: false,
-                cardIndex: 6,
-                onLike: {},
-                onReply: {},
-                onDelete: nil,
-                onAvatarTap: {}
+                onAvatarTap: {},
+                onCardTap: nil,
+                replyPreviews: nil
             )
         }
         .padding(.horizontal, 16)

@@ -8,19 +8,22 @@ struct UserInfoHeader: View {
     let username: String?
     let badgeType: BadgeType?
     let onAvatarTap: (() -> Void)?
+    let avatarSize: CGFloat
     
     init(
         avatarURL: String?,
         displayName: String,
         username: String?,
         badgeType: BadgeType?,
-        onAvatarTap: (() -> Void)? = nil
+        onAvatarTap: (() -> Void)? = nil,
+        avatarSize: CGFloat = 56
     ) {
         self.avatarURL = avatarURL
         self.displayName = displayName
         self.username = username
         self.badgeType = badgeType
         self.onAvatarTap = onAvatarTap
+        self.avatarSize = avatarSize
     }
     
     var body: some View {
@@ -33,13 +36,13 @@ struct UserInfoHeader: View {
                         image
                             .resizable()
                             .aspectRatio(contentMode: .fill)
-                            .frame(width: 56, height: 56)
+                            .frame(width: avatarSize, height: avatarSize)
                             .clipShape(Circle())
                     } placeholder: {
                         // Placeholder while loading
                         Circle()
                             .fill(Color(.systemGray5))
-                            .frame(width: 56, height: 56)
+                            .frame(width: avatarSize, height: avatarSize)
                             .overlay {
                                 ProgressView()
                                     .scaleEffect(0.7)
@@ -49,10 +52,10 @@ struct UserInfoHeader: View {
                     // Default avatar with initials
                     Circle()
                         .fill(Color(.systemGray5))
-                        .frame(width: 50, height: 50)
+                        .frame(width: avatarSize, height: avatarSize)
                     
                     Color.clear
-                        .frame(width: 50, height: 50)
+                        .frame(width: avatarSize, height: avatarSize)
                         .glassEffect(.regular, in: Circle())
                     
                     Text(String(displayName.prefix(1)).uppercased())

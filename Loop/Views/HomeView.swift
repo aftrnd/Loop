@@ -5,6 +5,7 @@ struct HomeView: View {
     @State private var scrollOffset: CGFloat = 0
     @State private var profileUserToShow: ProfileUser?
     @State private var showProfile = false
+    @State private var loopToShowDetail: Loop? // For navigation to detail view
     
     var body: some View {
         NavigationStack {
@@ -56,6 +57,17 @@ struct HomeView: View {
         }
         .sheet(item: $profileUserToShow) { profileUser in
             ProfileView(userId: profileUser.userId)
+        }
+        .sheet(item: $loopToShowDetail) { loop in
+            LoopDetailView(
+                loop: loop,
+                onRepliesChanged: {
+                    // Refresh the reply preview for this loop when replies change
+                    Task {
+                        await viewModel.refreshReplyPreviewForLoop(loop.id)
+                    }
+                }
+            )
         }
         .alert("Error", isPresented: .constant(viewModel.errorMessage != nil)) {
             Button("OK") {
@@ -165,7 +177,15 @@ struct HomeView: View {
                             onAvatarTap: {
                                 print("👆 Avatar tapped - opening profile for user: \(loop.authorId)")
                                 profileUserToShow = ProfileUser(userId: loop.authorId)
-                            }
+                            },
+                            onCardTap: loop.replyCount > 0 ? {
+                                // Haptic feedback
+                                let impactFeedback = UIImpactFeedbackGenerator(style: .light)
+                                impactFeedback.impactOccurred()
+                                
+                                loopToShowDetail = loop
+                            } : nil,
+                            replyPreviews: viewModel.replyPreviews[loop.id]
                         )
                         .padding(.top, index == 0 ? 0 : 5) // Add top padding except for first post
                         .padding(.bottom, index == viewModel.loops.count - 1 ? 0 : 5) // Add bottom padding except for last post

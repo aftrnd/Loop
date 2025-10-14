@@ -12,6 +12,9 @@ class HomeFeedViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var hasMoreContent = true
     
+    // Reply previews for each loop
+    @Published var replyPreviews: [String: [Loop]] = [:] // loopId -> reply previews
+    
     // Compose state
     @Published var showingCompose = false
     @Published var composeDraft = LoopDraft()
@@ -178,6 +181,55 @@ class HomeFeedViewModel: ObservableObject {
         }
         
         lastDocument = documents.last
+        
+        // Fetch reply previews for loops with replies
+        await fetchReplyPreviewsForLoops(newLoops)
+    }
+    
+    private func fetchReplyPreviewsForLoops(_ loops: [Loop]) async {
+        guard let currentUserId = Auth.auth().currentUser?.uid else { return }
+        
+        // Get current user's following list
+        let currentUser = try? await FirebaseService.shared.getUser(withId: currentUserId)
+        let followingIds = currentUser?.following ?? []
+        
+        for loop in loops {
+            // Only fetch if loop has replies
+            guard loop.replyCount > 0 else {
+                print("🔍 DEBUG: Loop \(loop.id) has no replies, skipping")
+                continue
+            }
+            
+            do {
+                // Fetch replies (already sorted newest first from Firestore)
+                let replies = try await FirebaseService.shared.getReplies(for: loop.id)
+                
+                print("🔍 DEBUG: Fetched \(replies.count) total replies for loop \(loop.id)")
+                
+                // Filter to only show replies from:
+                // 1. Users you're following, OR
+                // 2. Yourself (even though you don't follow yourself)
+                let relevantReplies = replies.filter { reply in
+                    followingIds.contains(reply.authorId) || reply.authorId == currentUserId
+                }
+                
+                print("🔍 DEBUG: Found \(relevantReplies.count) relevant replies for loop \(loop.id)")
+                
+                // Only show the most recent relevant reply (max 1)
+                if let mostRecentRelevantReply = relevantReplies.first {
+                    print("✅ DEBUG: Showing reply preview from \(mostRecentRelevantReply.authorDisplayName ?? "unknown") for loop \(loop.id)")
+                    var transaction = Transaction()
+                    transaction.disablesAnimations = true
+                    withTransaction(transaction) {
+                        replyPreviews[loop.id] = [mostRecentRelevantReply]
+                    }
+                } else {
+                    print("❌ DEBUG: No relevant replies to show for loop \(loop.id)")
+                }
+            } catch {
+                print("❌ Error fetching reply previews for loop \(loop.id): \(error)")
+            }
+        }
     }
     
     private func parseLoopFromDocument(_ doc: QueryDocumentSnapshot) async -> Loop? {
@@ -223,6 +275,7 @@ class HomeFeedViewModel: ObservableObject {
             replies: data["replies"] as? [String] ?? [],
             isReply: data["isReply"] as? Bool ?? false,
             parentLoopId: data["parentLoopId"] as? String,
+            replyToReplyId: data["replyToReplyId"] as? String,
             authorDisplayName: author?.displayName,
             authorUsername: author?.username,
             authorAvatarURL: author?.avatarURL,
@@ -246,22 +299,88 @@ class HomeFeedViewModel: ObservableObject {
         guard composeDraft.isValid, composeDraft.isWithinCharacterLimit else { return }
         
         isPosting = true
+        let isReply = composeDraft.isReply
+        let parentLoopId = composeDraft.parentLoopId
         
         do {
             try await FirebaseService.shared.createLoop(
                 content: composeDraft.content,
                 media: composeDraft.media,
                 isReply: composeDraft.isReply,
-                parentLoopId: composeDraft.parentLoopId
+                parentLoopId: composeDraft.parentLoopId,
+                replyToReplyId: composeDraft.replyToReplyId
             )
             
             // Success - clear the compose state
             hideCompose()
+            
+            // If this was a reply, refresh the reply preview for that loop
+            if isReply, let parentId = parentLoopId {
+                await refreshReplyPreviewForLoop(parentId)
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
         
         isPosting = false
+    }
+    
+    func refreshReplyPreviewForLoop(_ loopId: String) async {
+        guard let currentUserId = Auth.auth().currentUser?.uid else { return }
+        
+        // Get current user's following list
+        let currentUser = try? await FirebaseService.shared.getUser(withId: currentUserId)
+        let followingIds = currentUser?.following ?? []
+        
+        do {
+            // Fetch replies (already sorted newest first from Firestore)
+            let replies = try await FirebaseService.shared.getReplies(for: loopId)
+            
+            print("🔍 DEBUG: Fetched \(replies.count) total replies for loop \(loopId)")
+            
+            // If no replies, clear the preview
+            if replies.isEmpty {
+                print("❌ DEBUG: No replies found, clearing preview")
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
+                    replyPreviews.removeValue(forKey: loopId)
+                }
+                return
+            }
+            
+            // Filter to only show replies from:
+            // 1. Users you're following, OR
+            // 2. Yourself (even though you don't follow yourself)
+            let relevantReplies = replies.filter { reply in
+                let isFollowing = followingIds.contains(reply.authorId)
+                let isYou = reply.authorId == currentUserId
+                print("🔍 DEBUG: Reply from \(reply.authorDisplayName ?? "unknown") - isFollowing: \(isFollowing), isYou: \(isYou)")
+                return isFollowing || isYou
+            }
+            
+            print("🔍 DEBUG: Found \(relevantReplies.count) relevant replies")
+            
+            // Only show the most recent relevant reply (max 1)
+            if let mostRecentRelevantReply = relevantReplies.first {
+                print("✅ DEBUG: Showing reply preview from \(mostRecentRelevantReply.authorDisplayName ?? "unknown")")
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
+                    replyPreviews[loopId] = [mostRecentRelevantReply]
+                }
+            } else {
+                // No relevant replies, clear preview
+                print("❌ DEBUG: No relevant replies to show, clearing preview")
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
+                    replyPreviews.removeValue(forKey: loopId)
+                }
+            }
+        } catch {
+            print("❌ Error fetching reply preview for loop \(loopId): \(error)")
+        }
     }
     
     // MARK: - Loop Actions
@@ -423,14 +542,32 @@ class HomeFeedViewModel: ObservableObject {
         // OPTIMISTIC UPDATE: Remove from UI immediately
         guard let index = loops.firstIndex(where: { $0.id == loop.id }) else { return }
         let deletedLoop = loops[index]
-        loops.remove(at: index)
+        
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            loops.remove(at: index)
+            // Also clear any reply previews for this loop
+            replyPreviews.removeValue(forKey: loop.id)
+        }
         
         // Perform backend operation
         do {
             try await FirebaseService.shared.deleteLoop(loop.id)
         } catch {
             // REVERT: Operation failed, restore the loop
-            loops.insert(deletedLoop, at: min(index, loops.count))
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                loops.insert(deletedLoop, at: min(index, loops.count))
+            }
+            
+            // Re-fetch reply preview if it had one
+            if deletedLoop.replyCount > 0 {
+                Task {
+                    await fetchReplyPreviewsForLoops([deletedLoop])
+                }
+            }
             
             // Show error message
             errorMessage = "Couldn't delete post. Please try again."

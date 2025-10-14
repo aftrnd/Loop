@@ -46,7 +46,8 @@ struct Loop: Identifiable, Codable, Hashable {
     let likes: [String] // Array of user IDs who liked this loop
     let replies: [String] // Array of reply loop IDs
     let isReply: Bool
-    let parentLoopId: String? // If this is a reply, the parent loop ID
+    let parentLoopId: String? // If this is a reply, the parent loop ID (root post)
+    let replyToReplyId: String? // If this is a reply to another reply
     
     // Cached author info for performance
     var authorDisplayName: String?
@@ -65,6 +66,7 @@ struct Loop: Identifiable, Codable, Hashable {
         replies: [String] = [],
         isReply: Bool = false,
         parentLoopId: String? = nil,
+        replyToReplyId: String? = nil,
         authorDisplayName: String? = nil,
         authorUsername: String? = nil,
         authorAvatarURL: String? = nil,
@@ -80,6 +82,7 @@ struct Loop: Identifiable, Codable, Hashable {
         self.replies = replies
         self.isReply = isReply
         self.parentLoopId = parentLoopId
+        self.replyToReplyId = replyToReplyId
         self.authorDisplayName = authorDisplayName
         self.authorUsername = authorUsername
         self.authorAvatarURL = authorAvatarURL
@@ -136,6 +139,7 @@ struct LoopDraft {
     var media: [LoopMedia] = []
     var isReply: Bool = false
     var parentLoopId: String?
+    var replyToReplyId: String? // If replying to another reply
     
     var isValid: Bool {
         return !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !media.isEmpty

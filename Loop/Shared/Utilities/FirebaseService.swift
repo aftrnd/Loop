@@ -1051,7 +1051,7 @@ class FirebaseService {
     
     // MARK: - Loop Operations
     
-    func createLoop(content: String, media: [LoopMedia] = [], isReply: Bool = false, parentLoopId: String? = nil) async throws {
+    func createLoop(content: String, media: [LoopMedia] = [], isReply: Bool = false, parentLoopId: String? = nil, replyToReplyId: String? = nil) async throws {
         guard let currentUserId = Auth.auth().currentUser?.uid else {
             throw NSError(domain: "FirebaseService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
         }
@@ -1096,6 +1096,10 @@ class FirebaseService {
         
         if let parentLoopId = parentLoopId {
             loopData["parentLoopId"] = parentLoopId
+        }
+        
+        if let replyToReplyId = replyToReplyId {
+            loopData["replyToReplyId"] = replyToReplyId
         }
         
         try await loopRef.setData(loopData)
@@ -1219,6 +1223,7 @@ class FirebaseService {
             replies: data["replies"] as? [String] ?? [],
             isReply: data["isReply"] as? Bool ?? false,
             parentLoopId: data["parentLoopId"] as? String,
+            replyToReplyId: data["replyToReplyId"] as? String,
             authorDisplayName: author?.displayName,
             authorUsername: author?.username,
             authorAvatarURL: author?.avatarURL,
@@ -1229,7 +1234,7 @@ class FirebaseService {
     func getReplies(for loopId: String) async throws -> [Loop] {
         let snapshot = try await db.collection("loops")
             .whereField("parentLoopId", isEqualTo: loopId)
-            .order(by: "createdAt", descending: false)
+            .order(by: "createdAt", descending: true) // Newest first (Reddit-style)
             .getDocuments()
         
         var replies: [Loop] = []
@@ -1285,6 +1290,7 @@ class FirebaseService {
             replies: data["replies"] as? [String] ?? [],
             isReply: data["isReply"] as? Bool ?? false,
             parentLoopId: data["parentLoopId"] as? String,
+            replyToReplyId: data["replyToReplyId"] as? String,
             authorDisplayName: author?.displayName,
             authorUsername: author?.username,
             authorAvatarURL: author?.avatarURL,
