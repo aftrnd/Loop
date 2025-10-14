@@ -107,118 +107,132 @@ struct LoopDetailView: View {
                         // Replies list - threaded structure with collapsible nested replies
                         LazyVStack(spacing: 0) {
                             ForEach(Array(viewModel.threadedReplies.enumerated()), id: \.element.id) { index, threadedReply in
-                                // Top-level reply
-                                ReplyCardView(
-                                    reply: threadedReply.reply,
-                                    isLiked: viewModel.isLikedByCurrentUser(threadedReply.reply),
-                                    indentLevel: 0,
-                                    nestedReplyCount: threadedReply.nestedReplies.count,
-                                    isExpanded: threadedReply.isExpanded,
-                                    onLike: {
-                                        let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
-                                        impactFeedback.impactOccurred()
-                                        
-                                        Task {
-                                            await viewModel.toggleLike(for: threadedReply.reply)
-                                        }
-                                    },
-                                    onReply: {
-                                        let impactFeedback = UIImpactFeedbackGenerator(style: .light)
-                                        impactFeedback.impactOccurred()
-                                        
-                                        viewModel.replyToReply(threadedReply.reply)
-                                    },
-                                    onToggleExpanded: threadedReply.nestedReplies.isEmpty ? nil : {
-                                        withAnimation(.spring(duration: 0.4, bounce: 0.1)) {
-                                            viewModel.toggleReplyExpansion(threadedReply.id)
-                                        }
-                                    },
-                                    onDelete: viewModel.canDeleteLoop(threadedReply.reply) ? {
-                                        let impactFeedback = UINotificationFeedbackGenerator()
-                                        impactFeedback.notificationOccurred(.warning)
-                                        
-                                        Task {
-                                            await viewModel.deleteLoop(threadedReply.reply)
-                                        }
-                                    } : nil,
-                                    onAvatarTap: {
-                                        profileUserToShow = ProfileUser(userId: threadedReply.reply.authorId)
+                                ZStack(alignment: .topLeading) {
+                                    // Connecting line overlay (only when expanded)
+                                    if threadedReply.isExpanded && !threadedReply.nestedReplies.isEmpty {
+                                        // Calculate line height based on number of nested replies
+                                        let nestedRepliesHeight = CGFloat(threadedReply.nestedReplies.count) * 100 // Approximate height per reply
+                                        Rectangle()
+                                            .fill(Color.secondary.opacity(0.3))
+                                            .frame(width: 2)
+                                            .offset(x: 27, y: 68) // Position at avatar center, start below parent avatar
+                                            .frame(height: nestedRepliesHeight + 30) // Extend to last nested avatar with padding
                                     }
-                                )
-                                
-                                // Show nested replies if expanded
-                                if threadedReply.isExpanded {
-                                    ForEach(Array(threadedReply.nestedReplies.enumerated()), id: \.element.id) { nestedIndex, nestedReply in
+                                    
+                                    VStack(spacing: 0) {
+                                        // Top-level reply
                                         ReplyCardView(
-                                            reply: nestedReply,
-                                            isLiked: viewModel.isLikedByCurrentUser(nestedReply),
-                                            indentLevel: 1,
-                                            nestedReplyCount: 0,
-                                            isExpanded: false,
+                                            reply: threadedReply.reply,
+                                            isLiked: viewModel.isLikedByCurrentUser(threadedReply.reply),
+                                            indentLevel: 0,
+                                            nestedReplyCount: threadedReply.nestedReplies.count,
+                                            isExpanded: threadedReply.isExpanded,
                                             onLike: {
                                                 let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
                                                 impactFeedback.impactOccurred()
                                                 
                                                 Task {
-                                                    await viewModel.toggleLike(for: nestedReply)
+                                                    await viewModel.toggleLike(for: threadedReply.reply)
                                                 }
                                             },
                                             onReply: {
                                                 let impactFeedback = UIImpactFeedbackGenerator(style: .light)
                                                 impactFeedback.impactOccurred()
                                                 
-                                                viewModel.replyToReply(nestedReply)
+                                                viewModel.replyToReply(threadedReply.reply)
                                             },
-                                            onToggleExpanded: nil,
-                                            onDelete: viewModel.canDeleteLoop(nestedReply) ? {
+                                            onToggleExpanded: threadedReply.nestedReplies.isEmpty ? nil : {
+                                                withAnimation(.spring(duration: 0.4, bounce: 0.1)) {
+                                                    viewModel.toggleReplyExpansion(threadedReply.id)
+                                                }
+                                            },
+                                            onDelete: viewModel.canDeleteLoop(threadedReply.reply) ? {
                                                 let impactFeedback = UINotificationFeedbackGenerator()
                                                 impactFeedback.notificationOccurred(.warning)
                                                 
                                                 Task {
-                                                    await viewModel.deleteLoop(nestedReply)
+                                                    await viewModel.deleteLoop(threadedReply.reply)
                                                 }
                                             } : nil,
                                             onAvatarTap: {
-                                                profileUserToShow = ProfileUser(userId: nestedReply.authorId)
+                                                profileUserToShow = ProfileUser(userId: threadedReply.reply.authorId)
                                             }
                                         )
                                         
-                                        if nestedIndex < threadedReply.nestedReplies.count - 1 {
-                                            Divider()
-                                                .padding(.horizontal, 12)
-                                        }
-                                    }
-                                    
-                                    // "Hide replies" button at bottom when expanded
-                                    HStack {
-                                        Button(action: {
-                                            withAnimation(.spring(duration: 0.4, bounce: 0.1)) {
-                                                viewModel.toggleReplyExpansion(threadedReply.id)
-                                            }
-                                        }) {
-                                            HStack(spacing: 6) {
-                                                Image(systemName: "chevron.up")
-                                                    .font(.system(size: 12, weight: .semibold))
-                                                    .foregroundColor(.secondary)
+                                        // Show nested replies if expanded
+                                        if threadedReply.isExpanded {
+                                            ForEach(Array(threadedReply.nestedReplies.enumerated()), id: \.element.id) { nestedIndex, nestedReply in
+                                                ReplyCardView(
+                                                    reply: nestedReply,
+                                                    isLiked: viewModel.isLikedByCurrentUser(nestedReply),
+                                                    indentLevel: 1,
+                                                    nestedReplyCount: 0,
+                                                    isExpanded: false,
+                                                    onLike: {
+                                                        let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
+                                                        impactFeedback.impactOccurred()
+                                                        
+                                                        Task {
+                                                            await viewModel.toggleLike(for: nestedReply)
+                                                        }
+                                                    },
+                                                    onReply: {
+                                                        let impactFeedback = UIImpactFeedbackGenerator(style: .light)
+                                                        impactFeedback.impactOccurred()
+                                                        
+                                                        viewModel.replyToReply(nestedReply)
+                                                    },
+                                                    onToggleExpanded: nil,
+                                                    onDelete: viewModel.canDeleteLoop(nestedReply) ? {
+                                                        let impactFeedback = UINotificationFeedbackGenerator()
+                                                        impactFeedback.notificationOccurred(.warning)
+                                                        
+                                                        Task {
+                                                            await viewModel.deleteLoop(nestedReply)
+                                                        }
+                                                    } : nil,
+                                                    onAvatarTap: {
+                                                        profileUserToShow = ProfileUser(userId: nestedReply.authorId)
+                                                    }
+                                                )
                                                 
-                                                Text("Hide replies")
-                                                    .font(.caption)
-                                                    .fontWeight(.medium)
-                                                    .foregroundColor(.secondary)
+                                                if nestedIndex < threadedReply.nestedReplies.count - 1 {
+                                                    Divider()
+                                                        .padding(.horizontal, 12)
+                                                }
                                             }
-                                            .padding(.vertical, 6)
-                                            .padding(.horizontal, 12)
-                                            .background(Color(.systemGray5))
-                                            .cornerRadius(8)
+                                            
+                                            // "Hide replies" button at bottom when expanded
+                                            HStack {
+                                                Button(action: {
+                                                    withAnimation(.spring(duration: 0.4, bounce: 0.1)) {
+                                                        viewModel.toggleReplyExpansion(threadedReply.id)
+                                                    }
+                                                }) {
+                                                    HStack(spacing: 6) {
+                                                        Image(systemName: "chevron.up")
+                                                            .font(.system(size: 12, weight: .semibold))
+                                                            .foregroundColor(.secondary)
+                                                        
+                                                        Text("Hide replies")
+                                                            .font(.caption)
+                                                            .fontWeight(.medium)
+                                                            .foregroundColor(.secondary)
+                                                    }
+                                                    .padding(.vertical, 6)
+                                                    .padding(.horizontal, 12)
+                                                    .background(Color(.systemGray5))
+                                                    .cornerRadius(8)
+                                                }
+                                                .buttonStyle(.plain)
+                                                .padding(.leading, 0) // Left-aligned like "View replies"
+                                                .padding(.top, 12)
+                                                
+                                                Spacer()
+                                            }
+                                            .transition(.opacity.combined(with: .move(edge: .bottom)))
                                         }
-                                        .buttonStyle(.plain)
-                                        .padding(.leading, 72) // Align with content (56px avatar + 16px spacing)
-                                        .padding(.top, 12)
-                                        .padding(.bottom, 4)
-                                        
-                                        Spacer()
                                     }
-                                    .transition(.opacity.combined(with: .move(edge: .bottom)))
                                 }
                                 
                                 // Divider after each top-level reply

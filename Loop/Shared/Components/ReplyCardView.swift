@@ -27,19 +27,9 @@ struct ReplyCardView: View {
             VStack(alignment: .leading, spacing: 10) {
                 // Header row: Avatar + Name/Badge/Time
                 HStack(alignment: .top, spacing: 12) {
-                    // Avatar (with optional connecting line when expanded)
-                    VStack(spacing: 0) {
-                        avatarView
-                        
-                        // Connecting line (only when expanded with nested replies)
-                        if indentLevel == 0 && isExpanded && nestedReplyCount > 0 {
-                            Rectangle()
-                                .fill(Color.secondary.opacity(0.3))
-                                .frame(width: 2)
-                                .padding(.top, 8)
-                        }
-                    }
-                    .frame(width: 56)
+                    // Avatar
+                    avatarView
+                        .frame(width: 56)
                     
                     // Name, badge, username, and time
                     VStack(alignment: .leading, spacing: 4) {
