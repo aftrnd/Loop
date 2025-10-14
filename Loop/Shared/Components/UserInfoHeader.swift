@@ -92,7 +92,7 @@ struct UserInfoHeader: View {
                         Text("@\(username)")
                             .font(.callout)
                             .fontWeight(.regular)
-                            .foregroundStyle(.secondary)
+                            .foregroundColor(.secondary)
                         
                         Spacer()
                     }

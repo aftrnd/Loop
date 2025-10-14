@@ -10,12 +10,14 @@ struct ThreadedReply: Identifiable {
     let reply: Loop
     let nestedReplies: [Loop] // Replies to this reply, sorted oldest first
     let indentLevel: Int
+    var isExpanded: Bool // For collapsing/expanding nested replies
     
-    init(reply: Loop, nestedReplies: [Loop] = [], indentLevel: Int = 0) {
+    init(reply: Loop, nestedReplies: [Loop] = [], indentLevel: Int = 0, isExpanded: Bool = false) {
         self.id = reply.id
         self.reply = reply
         self.nestedReplies = nestedReplies
         self.indentLevel = indentLevel
+        self.isExpanded = isExpanded
     }
 }
 
@@ -84,19 +86,35 @@ class LoopDetailViewModel: ObservableObject {
             let nestedReplies = replies.filter { $0.replyToReplyId == topLevelReply.id }
                 .sorted { $0.createdAt < $1.createdAt } // Oldest first for nested
             
-            // Add the top-level reply
-            threaded.append(ThreadedReply(reply: topLevelReply, nestedReplies: nestedReplies, indentLevel: 0))
+            // Check if this reply was previously expanded
+            let wasExpanded = threadedReplies.first(where: { $0.id == topLevelReply.id })?.isExpanded ?? false
             
-            // Add nested replies with indentation
-            for nestedReply in nestedReplies {
-                threaded.append(ThreadedReply(reply: nestedReply, indentLevel: 1))
-            }
+            // Add only the top-level reply (nested replies are hidden by default)
+            threaded.append(ThreadedReply(
+                reply: topLevelReply,
+                nestedReplies: nestedReplies,
+                indentLevel: 0,
+                isExpanded: wasExpanded
+            ))
         }
         
         var transaction = Transaction()
         transaction.disablesAnimations = true
         withTransaction(transaction) {
             threadedReplies = threaded
+        }
+    }
+    
+    func toggleReplyExpansion(_ replyId: String) {
+        if let index = threadedReplies.firstIndex(where: { $0.id == replyId }) {
+            var updated = threadedReplies[index]
+            updated = ThreadedReply(
+                reply: updated.reply,
+                nestedReplies: updated.nestedReplies,
+                indentLevel: updated.indentLevel,
+                isExpanded: !updated.isExpanded
+            )
+            threadedReplies[index] = updated
         }
     }
     

@@ -343,7 +343,7 @@ struct ReplyPreviewRow: View {
                 // Arrow icon - horizontally centered with simple scale and fade
                 Image(systemName: "arrow.turn.down.right")
                     .font(.system(size: 16, weight: .medium))
-                    .foregroundColor(.secondary.opacity(0.6))
+                    .foregroundColor(.secondary)
                     .frame(width: 28, height: 24)
                     .scaleEffect(arrowProgress)
                     .opacity(arrowProgress)
