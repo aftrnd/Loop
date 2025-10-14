@@ -267,9 +267,7 @@ class FirebaseService {
             // Check if this chat has exactly the same participants
             if Set(participants) == Set(participantIds) {
                 // Found existing chat
-                guard let title = data["title"] as? String,
-                      let lastMessage = data["lastMessage"] as? String,
-                      let timestamp = data["lastMessageTime"] as? Timestamp else {
+                guard let title = data["title"] as? String else {
                     continue
                 }
                 
@@ -279,13 +277,26 @@ class FirebaseService {
                 let chatId = data["id"] as? String ?? doc.documentID
                 let otherParticipantId = participants.first { $0 != currentUserId }
                 
+                // Fetch the actual most recent message from messages subcollection
+                let messagesSnapshot = try? await db.collection("chats")
+                    .document(chatId)
+                    .collection("messages")
+                    .order(by: "timestamp", descending: true)
+                    .limit(to: 1)
+                    .getDocuments()
+                
+                let lastMessage = messagesSnapshot?.documents.first?.data()["content"] as? String ?? ""
+                let timestamp = (messagesSnapshot?.documents.first?.data()["timestamp"] as? Timestamp)?.dateValue() ?? (data["lastMessageTime"] as? Timestamp)?.dateValue() ?? Date()
+                
                 // For 1:1 chats, fetch the other user's current display name and avatar
                 var otherParticipantDisplayName: String?
                 var otherParticipantAvatarURL: String?
+                var otherParticipantBadgeType: BadgeType?
                 if participants.count == 2, let otherUserId = otherParticipantId {
                     if let otherUser = try? await getUser(withId: otherUserId) {
                         otherParticipantDisplayName = otherUser.displayName
                         otherParticipantAvatarURL = otherUser.avatarURL
+                        otherParticipantBadgeType = otherUser.badgeType
                     }
                 }
                 
@@ -295,11 +306,12 @@ class FirebaseService {
                     lastMessagePreview: lastMessage,
                     unreadCount: unreadCount,
                     messages: [],
-                    lastMessageTime: timestamp.dateValue(),
+                    lastMessageTime: timestamp,
                     participants: participants,
                     otherParticipantId: otherParticipantId,
                     otherParticipantDisplayName: otherParticipantDisplayName,
-                    otherParticipantAvatarURL: otherParticipantAvatarURL
+                    otherParticipantAvatarURL: otherParticipantAvatarURL,
+                    otherParticipantBadgeType: otherParticipantBadgeType
                 )
             }
         }
@@ -314,8 +326,14 @@ class FirebaseService {
         
         let participants = [currentUserId, userId]
         
-        // Check if chat already exists between these users
+        // Check if chat already exists between these users (even if hidden)
         if let existingChat = try await findExistingChat(withParticipants: participants) {
+            // Unhide the chat for the current user so it appears in their list
+            let chatRef = db.collection("chats").document(existingChat.id.uuidString)
+            try await chatRef.updateData([
+                "hiddenFor": FieldValue.arrayRemove([currentUserId])
+            ])
+            print("✅ Unhidden existing chat for user: \(currentUserId)")
             return existingChat
         }
         
@@ -388,15 +406,18 @@ class FirebaseService {
     }
 
     func deleteChat(withId chatId: String) async throws {
-        // Delete all messages in the chat
-        let messagesRef = db.collection("chats").document(chatId).collection("messages")
-        let messages = try await messagesRef.getDocuments()
-        for message in messages.documents {
-            try await message.reference.delete()
+        guard let currentUserId = Auth.auth().currentUser?.uid else {
+            throw NSError(domain: "FirebaseService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
         }
-
-        // Delete the chat document itself
-        try await db.collection("chats").document(chatId).delete()
+        
+        // Instead of deleting, hide the chat for this user
+        // Messages and conversation persist for when they message again
+        let chatRef = db.collection("chats").document(chatId)
+        try await chatRef.updateData([
+            "hiddenFor": FieldValue.arrayUnion([currentUserId])
+        ])
+        
+        print("✅ Chat hidden for user: \(currentUserId)")
     }
 
     func getChats() async throws -> [Chat] {
@@ -411,9 +432,13 @@ class FirebaseService {
         var chats: [Chat] = []
         for doc in snapshot.documents {
             let data = doc.data()
-            guard let title = data["title"] as? String,
-                  let lastMessage = data["lastMessage"] as? String,
-                  let timestamp = data["lastMessageTime"] as? Timestamp else {
+            guard let title = data["title"] as? String else {
+                continue
+            }
+            
+            // Skip chats that are hidden for this user
+            let hiddenFor = data["hiddenFor"] as? [String] ?? []
+            if hiddenFor.contains(currentUserId) {
                 continue
             }
 
@@ -427,6 +452,17 @@ class FirebaseService {
             if unreadCount > 0 {
                 print("📩 Chat \(title) has \(unreadCount) unread messages")
             }
+            
+            // Fetch the actual most recent message from messages subcollection
+            let messagesSnapshot = try? await db.collection("chats")
+                .document(chatId)
+                .collection("messages")
+                .order(by: "timestamp", descending: true)
+                .limit(to: 1)
+                .getDocuments()
+            
+            let lastMessage = messagesSnapshot?.documents.first?.data()["content"] as? String ?? ""
+            let timestamp = (messagesSnapshot?.documents.first?.data()["timestamp"] as? Timestamp)?.dateValue() ?? (data["lastMessageTime"] as? Timestamp)?.dateValue() ?? Date()
             
             // For 1:1 chats, fetch the other user's current display name and avatar
             var otherParticipantDisplayName: String?
@@ -446,7 +482,7 @@ class FirebaseService {
                 lastMessagePreview: lastMessage,
                 unreadCount: unreadCount,
                 messages: [],
-                lastMessageTime: timestamp.dateValue(),
+                lastMessageTime: timestamp,
                 participants: participants,
                 otherParticipantId: otherParticipantId,
                 otherParticipantDisplayName: otherParticipantDisplayName,
@@ -528,11 +564,12 @@ class FirebaseService {
             print("✅ Message created: id=\(messageId), senderId=\(currentUserId)")
         }
 
-        // Update chat's last message
+        // Update chat's last message and unhide for sender
         let chatRef = db.collection("chats").document(chatId)
         try await chatRef.updateData([
             "lastMessage": content,
-            "lastMessageTime": Timestamp(date: now)
+            "lastMessageTime": Timestamp(date: now),
+            "hiddenFor": FieldValue.arrayRemove([currentUserId]) // Unhide for sender
         ])
         
         // For self-chats: still increment unread count (but don't send push notification)
@@ -824,22 +861,24 @@ class FirebaseService {
                 // Parse basic chat data first
                 let chatData: [(data: [String: Any], doc: QueryDocumentSnapshot)] = documents.compactMap { doc in
                     let data = doc.data()
-                    guard data["title"] != nil,
-                          data["lastMessage"] != nil,
-                          data["lastMessageTime"] != nil else {
+                    guard data["title"] != nil else {
                         return nil
                     }
                     return (data: data, doc: doc)
                 }
                 
-                // Fetch user data asynchronously for 1:1 chats
+                // Fetch user data and latest message asynchronously for each chat
                 Task {
                     var chats: [Chat] = []
                     
                     for (data, doc) in chatData {
-                        guard let title = data["title"] as? String,
-                              let lastMessage = data["lastMessage"] as? String,
-                              let timestamp = data["lastMessageTime"] as? Timestamp else {
+                        guard let title = data["title"] as? String else {
+                            continue
+                        }
+                        
+                        // Skip chats that are hidden for this user
+                        let hiddenFor = data["hiddenFor"] as? [String] ?? []
+                        if hiddenFor.contains(currentUserId) {
                             continue
                         }
                         
@@ -849,6 +888,17 @@ class FirebaseService {
                         let chatId = data["id"] as? String ?? doc.documentID
                         let participants = data["participants"] as? [String] ?? []
                         let otherParticipantId = participants.first { $0 != currentUserId }
+                        
+                        // Fetch the actual most recent message from messages subcollection
+                        let messagesSnapshot = try? await self.db.collection("chats")
+                            .document(chatId)
+                            .collection("messages")
+                            .order(by: "timestamp", descending: true)
+                            .limit(to: 1)
+                            .getDocuments()
+                        
+                        let lastMessage = messagesSnapshot?.documents.first?.data()["content"] as? String ?? ""
+                        let timestamp = (messagesSnapshot?.documents.first?.data()["timestamp"] as? Timestamp)?.dateValue() ?? (data["lastMessageTime"] as? Timestamp)?.dateValue() ?? Date()
                         
                         // For 1:1 chats, fetch the other user's current display name and avatar
                         var otherParticipantDisplayName: String?
@@ -868,7 +918,7 @@ class FirebaseService {
                             lastMessagePreview: lastMessage,
                             unreadCount: unreadCount,
                             messages: [],
-                            lastMessageTime: timestamp.dateValue(),
+                            lastMessageTime: timestamp,
                             participants: participants,
                             otherParticipantId: otherParticipantId,
                             otherParticipantDisplayName: otherParticipantDisplayName,

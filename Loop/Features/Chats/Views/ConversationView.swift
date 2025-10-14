@@ -77,42 +77,55 @@ struct ConversationView: View {
     
     @ViewBuilder
     private func messageScrollView(geometry: GeometryProxy) -> some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                messageContent
-                    .id("messagesBottom")
-            }
-            .scrollBounceBehavior(.always, axes: [.vertical])
-            .scrollIndicators(.visible)
-            .contentMargins(.horizontal, 0, for: .scrollContent)
-            .scrollDismissesKeyboard(.interactively)
-            .defaultScrollAnchor(shouldAnchorToBottom ? .bottom : .top)
-            .onChange(of: viewModel.messages.count) { _, _ in
-                scrollToBottom(proxy: proxy)
-            }
-            .onChange(of: viewModel.isOtherUserTyping) { _, isTyping in
-                if isTyping {
+        if viewModel.messages.isEmpty && !viewModel.isLoading {
+            // Show empty state centered on screen (outside scroll view)
+            emptyState
+                .onAppear {
+                    scrollViewHeight = geometry.size.height
+                }
+        } else if viewModel.isLoading {
+            // Show loading state
+            loadingState
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            // Show messages in scroll view
+            ScrollViewReader { proxy in
+                ScrollView {
+                    messageContent
+                        .id("messagesBottom")
+                }
+                .scrollBounceBehavior(.always, axes: [.vertical])
+                .scrollIndicators(.visible)
+                .contentMargins(.horizontal, 0, for: .scrollContent)
+                .scrollDismissesKeyboard(.interactively)
+                .defaultScrollAnchor(shouldAnchorToBottom ? .bottom : .top)
+                .onChange(of: viewModel.messages.count) { _, _ in
                     scrollToBottom(proxy: proxy)
                 }
-            }
-            .onAppear {
-                scrollViewHeight = geometry.size.height
-                if shouldAnchorToBottom {
-                    scrollToBottom(proxy: proxy)
+                .onChange(of: viewModel.isOtherUserTyping) { _, isTyping in
+                    if isTyping {
+                        scrollToBottom(proxy: proxy)
+                    }
                 }
-            }
-            .onChange(of: geometry.size.height) { _, newHeight in
-                scrollViewHeight = newHeight
-            }
-            .contentMargins(.bottom, AppConstants.UI.spacing, for: .scrollContent)
-            .task {
-                // Mark chat as read when conversation opens
-                try? await FirebaseService.shared.markChatAsRead(chatId: chat.id.uuidString)
-                
-                // Continuously mark as read while viewing (every 2 seconds)
-                while !Task.isCancelled {
-                    try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds
+                .onAppear {
+                    scrollViewHeight = geometry.size.height
+                    if shouldAnchorToBottom {
+                        scrollToBottom(proxy: proxy)
+                    }
+                }
+                .onChange(of: geometry.size.height) { _, newHeight in
+                    scrollViewHeight = newHeight
+                }
+                .contentMargins(.bottom, AppConstants.UI.spacing, for: .scrollContent)
+                .task {
+                    // Mark chat as read when conversation opens
                     try? await FirebaseService.shared.markChatAsRead(chatId: chat.id.uuidString)
+                    
+                    // Continuously mark as read while viewing (every 2 seconds)
+                    while !Task.isCancelled {
+                        try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds
+                        try? await FirebaseService.shared.markChatAsRead(chatId: chat.id.uuidString)
+                    }
                 }
             }
         }
@@ -131,13 +144,7 @@ struct ConversationView: View {
     
     private var messageList: some View {
         LazyVStack(spacing: 0, pinnedViews: []) {
-            if viewModel.messages.isEmpty && !viewModel.isLoading {
-                emptyState
-            } else if viewModel.isLoading {
-                loadingState
-            } else {
-                messagesWithTypingIndicator
-            }
+            messagesWithTypingIndicator
         }
         .animation(.spring(), value: viewModel.messages.count)
         .animation(.spring(), value: viewModel.messages.map { $0.likeCount })
@@ -150,14 +157,7 @@ struct ConversationView: View {
     
     private var emptyState: some View {
         VStack(spacing: 20) {
-            Image(systemName: "message.circle.fill")
-                .font(.system(size: 60))
-                .foregroundColor(.primary)
-            
-            Text("Start the conversation")
-                .font(.title2)
-                .fontWeight(.semibold)
-                .foregroundColor(.primary)
+            DrawOnIcon(iconName: "arrow.up.message")
             
             Text("Send a message to begin chatting with \(chat.displayTitle)")
                 .font(.body)
@@ -165,8 +165,7 @@ struct ConversationView: View {
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 40)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.top, 100)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     
     private var loadingState: some View {
@@ -465,6 +464,22 @@ struct ConversationView: View {
         withAnimation(.spring()) {
             proxy.scrollTo("messagesBottom", anchor: .bottom)
         }
+    }
+}
+
+// Draw-on icon component with SF Symbol bounce animation
+struct DrawOnIcon: View {
+    let iconName: String
+    @State private var bounceCount = 0
+    
+    var body: some View {
+        Image(systemName: iconName)
+            .font(.system(size: 64))
+            .foregroundColor(.primary)
+            .symbolEffect(.bounce, value: bounceCount)
+            .onAppear {
+                bounceCount += 1
+            }
     }
 }
 

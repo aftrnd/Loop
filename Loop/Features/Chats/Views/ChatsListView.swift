@@ -11,6 +11,8 @@ struct ChatsListView: View {
     @State private var showNewMessage = false
     @State private var showProfile = false
     @State private var profileUserToShow: ProfileUser?
+    @State private var chatToDelete: Chat?
+    @State private var showDeleteConfirmation = false
     @Environment(\.colorScheme) private var colorScheme
     @ObservedObject private var debugManager = DebugManager.shared
     @StateObject private var notificationManager = NotificationNavigationManager.shared
@@ -92,6 +94,18 @@ struct ChatsListView: View {
         .onChange(of: notificationManager.chatToOpen) { _, chatId in
             guard let chatId = chatId else { return }
             handleNotificationNavigation(chatId: chatId)
+        }
+        .alert("Delete Conversation?", isPresented: $showDeleteConfirmation, presenting: chatToDelete) { chat in
+            Button("Delete", role: .destructive) {
+                Task {
+                    try? await viewModel.deleteChat(withId: chat.id)
+                }
+            }
+            Button("Cancel", role: .cancel) {
+                chatToDelete = nil
+            }
+        } message: { chat in
+            Text("This will remove the conversation from your list. Your messages will still be there if you message \(chat.displayTitle) again.\n\nThis won't delete the conversation for the other person.")
         }
     }
     
@@ -193,9 +207,8 @@ struct ChatsListView: View {
                     }
                     .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                         Button {
-                            Task {
-                                try? await viewModel.deleteChat(withId: chat.id)
-                            }
+                            chatToDelete = chat
+                            showDeleteConfirmation = true
                         } label: {
                             Image(systemName: "trash")
                         }
