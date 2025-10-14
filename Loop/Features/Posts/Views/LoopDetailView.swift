@@ -39,12 +39,12 @@ struct LoopDetailView: View {
                         onCardTap: nil, // Already in detail view, no need to navigate
                         replyPreviews: nil // Don't show reply previews in detail view
                     )
-                    .padding(.horizontal, -10) // Cancel out LoopCardView's internal padding
+                    .padding(.horizontal, -10) // Cancel out LoopCardView's internal 10pt padding to match page padding
                     .padding(.top, 10)
                     
                     // Divider above replies section
                     Divider()
-                        .padding(.top, 12)
+                        .padding(.top, 3)
                     
                     // Replies section
                     if viewModel.isLoading && viewModel.threadedReplies.isEmpty {
@@ -112,11 +112,12 @@ struct LoopDetailView: View {
                                     if threadedReply.isExpanded && !threadedReply.nestedReplies.isEmpty {
                                         // Calculate line height based on number of nested replies
                                         let nestedRepliesHeight = CGFloat(threadedReply.nestedReplies.count) * 100 // Approximate height per reply
+                                        let lineGap: CGFloat = 10 // Gap between line and avatars
                                         Rectangle()
                                             .fill(Color.secondary.opacity(0.3))
                                             .frame(width: 2)
-                                            .offset(x: 27, y: 68) // Position at avatar center, start below parent avatar
-                                            .frame(height: nestedRepliesHeight + 30) // Extend to last nested avatar with padding
+                                            .offset(x: 28, y: 68 + lineGap) // Centered on 56px avatar (56/2 = 28), with gap below parent avatar
+                                            .frame(height: nestedRepliesHeight - lineGap) // End with gap before last nested avatar
                                     }
                                     
                                     VStack(spacing: 0) {
@@ -226,7 +227,7 @@ struct LoopDetailView: View {
                                                 }
                                                 .buttonStyle(.plain)
                                                 .padding(.leading, 0) // Left-aligned like "View replies"
-                                                .padding(.top, 12)
+                                                .padding(.bottom, 12) // Bottom padding to match divider spacing
                                                 
                                                 Spacer()
                                             }
@@ -244,7 +245,7 @@ struct LoopDetailView: View {
                         .padding(.bottom, 20)
                     }
                 }
-                .padding(.horizontal, 18) // Apply consistent horizontal padding to entire VStack
+                .padding(.horizontal, 20) // Doubled padding for more breathing room
             }
             .background(Color(.systemBackground))
             .navigationTitle("Reply")
