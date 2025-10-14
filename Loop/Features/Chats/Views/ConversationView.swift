@@ -23,7 +23,7 @@ struct ConversationView: View {
         GeometryReader { geometry in
             messageScrollView(geometry: geometry)
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
+        .safeAreaInset(edge: .bottom, spacing: 8) {
             MessageInputView(
                 messageText: $viewModel.messageText,
                 onSend: {
@@ -33,7 +33,7 @@ struct ConversationView: View {
                     viewModel.onTextChanged()
                 }
             )
-            .padding(.horizontal, 18)
+            .padding(.horizontal, 8)
         }
         .navigationTitle(chat.displayTitle)
         .navigationBarTitleDisplayMode(.inline)
@@ -125,7 +125,7 @@ struct ConversationView: View {
     }
     
     private var messageList: some View {
-        LazyVStack(spacing: AppConstants.UI.spacing, pinnedViews: []) {
+        LazyVStack(spacing: 0, pinnedViews: []) {
             if viewModel.messages.isEmpty && !viewModel.isLoading {
                 emptyState
             } else if viewModel.isLoading {
@@ -179,27 +179,38 @@ struct ConversationView: View {
     private var messagesWithTypingIndicator: some View {
         ForEach(Array(viewModel.messages.enumerated()), id: \.element.id) { index, message in
             VStack(spacing: 0) {
-                // Date separator
+                // Date separator - centered with balanced spacing
                 if shouldShowDateSeparator(at: index) {
                     Text(formatDateSeparator(message.timestamp))
-                        .font(.caption)
+                        .font(.caption2)
                         .foregroundColor(.secondary)
-                        .padding(.vertical, 12)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, index == 0 ? 0 : 16)
+                        .padding(.bottom, 6)
                 }
                 
-                // Timestamp
+                // Timestamp - centered with minimal spacing
                 if shouldShowTimestamp(at: index) {
                     Text(formatTimestamp(message.timestamp))
                         .font(.caption2)
                         .foregroundColor(.secondary)
-                        .padding(.bottom, 4)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 10)
+                        .padding(.bottom, 2)
                 }
                 
-                MessageBubble(message: message, isGroupChat: chat.isGroupChat, onLike: {
-                    viewModel.toggleLike(for: message)
-                })
+                MessageBubble(
+                    message: message,
+                    isGroupChat: chat.isGroupChat,
+                    hasTail: shouldShowTail(at: index),
+                    onLike: {
+                        viewModel.toggleLike(for: message)
+                    }
+                )
                     .id(message.id)
-                    .padding(.top, calculateTopPadding(at: index, message: message))
+                    .padding(.top, calculateMessageSpacing(at: index, message: message))
                     .animation(.spring(), value: message.likeCount)
                     .transition(.asymmetric(
                         insertion: .scale(scale: 0.3, anchor: message.isFromUser ? .bottomTrailing : .bottomLeading)
@@ -215,28 +226,59 @@ struct ConversationView: View {
         // Typing indicator
         if viewModel.isOtherUserTyping {
             typingIndicatorBubble
-                .padding(.top, shouldAddExtraSpacingForTypingIndicator() ? AppConstants.UI.spacing : 0)
+                .padding(.top, calculateTypingIndicatorSpacing())
         }
     }
     
-    // Calculate top padding for message
-    private func calculateTopPadding(at index: Int, message: Message) -> CGFloat {
-        var padding: CGFloat = 0
-        
-        // Base spacing when sender changes
-        if index > 0 {
-            let previousMessage = viewModel.messages[index - 1]
-            if message.isFromUser != previousMessage.isFromUser {
-                padding += AppConstants.UI.spacing
-            }
+    // Calculate spacing between messages (iMessage-style grouping)
+    private func calculateMessageSpacing(at index: Int, message: Message) -> CGFloat {
+        // First message after date/timestamp separator needs minimal spacing
+        if shouldShowDateSeparator(at: index) || shouldShowTimestamp(at: index) {
+            return 2 // Minimal spacing after separator
         }
         
-        // Add extra 10 points if message has likes
+        // First message in conversation
+        guard index > 0 else {
+            return 0
+        }
+        
+        let previousMessage = viewModel.messages[index - 1]
+        let sameSender = message.isFromUser == previousMessage.isFromUser
+        
+        // Define spacing constants (grouped is exactly half of non-grouped)
+        let differentSenderSpacing: CGFloat = 16
+        let sameSenderSpacing: CGFloat = differentSenderSpacing / 2 // 8pt - exactly half
+        
+        // Calculate base spacing
+        var spacing: CGFloat
+        if sameSender {
+            // Grouped messages from same sender - exactly half the spacing
+            spacing = sameSenderSpacing
+        } else {
+            // Different sender - full spacing for visual separation
+            spacing = differentSenderSpacing
+        }
+        
+        // Add extra spacing if CURRENT message has likes (to make room for like bubble above)
         if message.likeCount > 0 {
-            padding += 10
+            spacing += 8
         }
         
-        return padding
+        return spacing
+    }
+    
+    // Check if message should have a tail (only last message in a group)
+    private func shouldShowTail(at index: Int) -> Bool {
+        // Always show tail if it's the last message
+        guard index < viewModel.messages.count - 1 else {
+            return true
+        }
+        
+        let currentMessage = viewModel.messages[index]
+        let nextMessage = viewModel.messages[index + 1]
+        
+        // Show tail if next message is from different sender
+        return currentMessage.isFromUser != nextMessage.isFromUser
     }
     
     // Check if we should show a date separator (new calendar day)
@@ -250,6 +292,7 @@ struct ConversationView: View {
         let currentDay = calendar.startOfDay(for: currentMessage.timestamp)
         let previousDay = calendar.startOfDay(for: previousMessage.timestamp)
         
+        // Only show date separator if it's a new calendar day
         return currentDay != previousDay
     }
     
@@ -270,41 +313,111 @@ struct ConversationView: View {
         return gap >= 5 * 60 // 5 minutes in seconds
     }
     
-    // Format date separator (e.g., "Yesterday", "Monday, October 7")
-    private func formatDateSeparator(_ date: Date) -> String {
+    // Format date separator (e.g., "Yesterday 3:45 PM", "Sunday 10:30 AM", "Today 2:30 PM")
+    private func formatDateSeparator(_ date: Date) -> AttributedString {
         let calendar = Calendar.current
         let now = Date()
+        let timeFormatter = DateFormatter()
+        timeFormatter.timeStyle = .short
+        let timeString = timeFormatter.string(from: date)
         
+        var dayString: String
         if calendar.isDateInToday(date) {
-            return "Today"
+            dayString = "Today"
         } else if calendar.isDateInYesterday(date) {
-            return "Yesterday"
+            dayString = "Yesterday"
         } else if calendar.isDate(date, equalTo: now, toGranularity: .weekOfYear) {
             // This week - show day name
             let formatter = DateFormatter()
             formatter.dateFormat = "EEEE" // Full day name
-            return formatter.string(from: date)
+            dayString = formatter.string(from: date)
         } else {
             // Older - show full date
             let formatter = DateFormatter()
             formatter.dateStyle = .medium
             formatter.timeStyle = .none
-            return formatter.string(from: date)
+            dayString = formatter.string(from: date)
         }
+        
+        // Always include time with the day
+        let fullString = "\(dayString) \(timeString)"
+        
+        // Create attributed string with medium weight for day, regular for time
+        var attributedString = AttributedString(fullString)
+        
+        // Make the day part medium weight
+        if let dayRange = attributedString.range(of: dayString) {
+            attributedString[dayRange].font = .caption2.weight(.medium)
+        }
+        
+        // Make the time part regular weight
+        if let timeRange = attributedString.range(of: timeString) {
+            attributedString[timeRange].font = .caption2.weight(.regular)
+        }
+        
+        return attributedString
     }
     
-    // Format timestamp (e.g., "10:14 AM")
-    private func formatTimestamp(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.timeStyle = .short
-        return formatter.string(from: date)
+    // Format timestamp (e.g., "Today 10:14 AM", "Yesterday 3:45 PM", "Monday 9:30 AM")
+    private func formatTimestamp(_ date: Date) -> AttributedString {
+        let calendar = Calendar.current
+        let now = Date()
+        let timeFormatter = DateFormatter()
+        timeFormatter.timeStyle = .short
+        
+        let timeString = timeFormatter.string(from: date)
+        
+        var dayString: String
+        if calendar.isDateInToday(date) {
+            dayString = "Today"
+        } else if calendar.isDateInYesterday(date) {
+            dayString = "Yesterday"
+        } else if calendar.isDate(date, equalTo: now, toGranularity: .weekOfYear) {
+            // This week - show day name
+            let dayFormatter = DateFormatter()
+            dayFormatter.dateFormat = "EEEE" // Full day name
+            dayString = dayFormatter.string(from: date)
+        } else {
+            // Older - show abbreviated date
+            let dateFormatter = DateFormatter()
+            dateFormatter.dateFormat = "MMM d" // e.g., "Oct 7"
+            dayString = dateFormatter.string(from: date)
+        }
+        
+        // Create attributed string with different font weights
+        var attributedString = AttributedString("\(dayString) \(timeString)")
+        
+        // Make the day part slightly bolder
+        if let dayRange = attributedString.range(of: dayString) {
+            attributedString[dayRange].font = .caption2.weight(.medium)
+        }
+        
+        // Keep the time part regular weight
+        if let timeRange = attributedString.range(of: timeString) {
+            attributedString[timeRange].font = .caption2.weight(.regular)
+        }
+        
+        return attributedString
     }
     
-    // Check if we should add extra spacing before typing indicator
-    private func shouldAddExtraSpacingForTypingIndicator() -> Bool {
-        guard let lastMessage = viewModel.messages.last else { return false }
-        // Add extra spacing if last message was from current user (typing indicator is always from other user)
-        return lastMessage.isFromUser
+    // Calculate spacing before typing indicator (consistent with message spacing)
+    private func calculateTypingIndicatorSpacing() -> CGFloat {
+        guard let lastMessage = viewModel.messages.last else {
+            return 0
+        }
+        
+        // Use the same spacing logic as messages (grouped is exactly half of non-grouped)
+        let differentSenderSpacing: CGFloat = 16
+        let sameSenderSpacing: CGFloat = differentSenderSpacing / 2 // 8pt - exactly half
+        
+        // Typing indicator is always from other user
+        // If last message was from current user, use different-sender spacing
+        // If last message was from other user, use same-sender spacing
+        if lastMessage.isFromUser {
+            return differentSenderSpacing // Different sender spacing
+        } else {
+            return sameSenderSpacing // Same sender spacing (grouped with previous messages)
+        }
     }
     
     private var contentSizeReader: some View {

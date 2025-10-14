@@ -5,6 +5,7 @@ import FirebaseAuth
 struct MessageBubble: View {
     let message: Message
     let isGroupChat: Bool
+    let hasTail: Bool
     var onLike: (() -> Void)?
     @State private var showTimestamp = false
     @State private var isPressed = false
@@ -24,25 +25,24 @@ struct MessageBubble: View {
         .offset(y: hasAppeared ? 0 : 20)
         .blur(radius: hasAppeared ? 0 : 3)
         .onAppear {
-            withAnimation(.spring()) {
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                 hasAppeared = true
             }
-            
         }
     }
     
     private var receivedMessageView: some View {
         HStack(alignment: .center, spacing: 0) {
             HStack(spacing: 0) {
-                // Message bubble with like overlay
+                // Message bubble with like overlay and tail
                 Text(message.content)
                     .font(.body)
                     .foregroundColor(.primary)
                     .padding(.horizontal, AppConstants.UI.padding)
                     .padding(.vertical, AppConstants.UI.spacing + 2)
                     .background(
-                        Color(.systemGray5)
-                            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        MessageBubbleShape(isFromCurrentUser: false, hasTail: hasTail)
+                            .fill(Color(.systemGray5))
                     )
                     .scaleEffect(isPressed ? 0.95 : 1.0)
                     .fixedSize(horizontal: false, vertical: true)
@@ -104,7 +104,7 @@ struct MessageBubble: View {
             
             Spacer(minLength: 0)
         }
-        .animation(.spring(), value: showTimestamp)
+        .animation(.easeInOut(duration: 0.2), value: showTimestamp)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
         .onTapGesture(perform: toggleTimestamp)
@@ -124,15 +124,15 @@ struct MessageBubble: View {
                         .transition(.move(edge: .trailing).combined(with: .opacity))
                 }
                 
-                // Message bubble with like overlay
+                // Message bubble with like overlay and tail
                 Text(message.content)
                     .font(.body)
                     .foregroundColor(.white)
                     .padding(.horizontal, AppConstants.UI.padding)
                     .padding(.vertical, AppConstants.UI.spacing + 2)
                     .background(
-                        Color.blue
-                            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        MessageBubbleShape(isFromCurrentUser: true, hasTail: hasTail)
+                            .fill(Color.blue)
                     )
                     .scaleEffect(isPressed ? 0.95 : 1.0)
                     .fixedSize(horizontal: false, vertical: true)
@@ -183,7 +183,7 @@ struct MessageBubble: View {
             }
             .frame(maxWidth: UIScreen.main.bounds.width * 0.66, alignment: .trailing)
         }
-        .animation(.spring(), value: showTimestamp)
+        .animation(.easeInOut(duration: 0.2), value: showTimestamp)
         .frame(maxWidth: .infinity, alignment: .trailing)
         .contentShape(Rectangle())
         .onTapGesture(perform: toggleTimestamp)
@@ -191,19 +191,17 @@ struct MessageBubble: View {
     }
     
     private func toggleTimestamp() {
-        // Subtle bounce animation for tap feedback
-        withAnimation(.spring()) {
+        // Immediate press feedback
+        withAnimation(.spring(response: 0.15, dampingFraction: 0.8)) {
             isPressed = true
         }
         
         // Quick release
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            withAnimation(.spring()) {
-                isPressed = false
-            }
+        withAnimation(.spring(response: 0.15, dampingFraction: 0.8).delay(0.03)) {
+            isPressed = false
         }
         
-        // Smooth timestamp reveal with spring (animation handled by .animation modifier on view)
+        // Toggle timestamp immediately
         showTimestamp.toggle()
     }
     
@@ -239,11 +237,24 @@ struct MessageBubble: View {
     }
 }
 
+// Message bubble shape with perfect rounded corners
+struct MessageBubbleShape: Shape {
+    let isFromCurrentUser: Bool
+    let hasTail: Bool
+    
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        // Use continuous corner radius for smooth, modern iOS appearance
+        path.addRoundedRect(in: rect, cornerSize: CGSize(width: 18, height: 18), style: .continuous)
+        return path
+    }
+}
+
 #Preview {
     VStack(spacing: 16) {
-        MessageBubble(message: Message(content: "Hey! How are you doing?", isFromUser: false, senderName: "Alex"), isGroupChat: false)
-        MessageBubble(message: Message(content: "I'm doing great! Thanks for asking. How about you?", isFromUser: true), isGroupChat: false)
-        MessageBubble(message: Message(content: "Pretty good! Just working on some new features for the app.", isFromUser: false, senderName: "Alex"), isGroupChat: false)
+        MessageBubble(message: Message(content: "Hey! How are you doing?", isFromUser: false, senderName: "Alex"), isGroupChat: false, hasTail: true)
+        MessageBubble(message: Message(content: "I'm doing great! Thanks for asking. How about you?", isFromUser: true), isGroupChat: false, hasTail: true)
+        MessageBubble(message: Message(content: "Pretty good! Just working on some new features for the app.", isFromUser: false, senderName: "Alex"), isGroupChat: false, hasTail: true)
     }
     .padding()
     .background(Color(.systemBackground))
