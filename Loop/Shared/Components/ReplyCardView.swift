@@ -24,7 +24,7 @@ struct ReplyCardView: View {
     
     var body: some View {
         VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 12) {
                 // Header row: Avatar + Name/Badge/Time
                 HStack(alignment: .top, spacing: 12) {
                     // Avatar
@@ -228,7 +228,6 @@ struct ReplyCardView: View {
                 .contentShape(Rectangle())
             }
         }
-        .padding(.top, 4)
     }
 }
 
