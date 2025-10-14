@@ -6,6 +6,7 @@ struct ConversationView: View {
     @State private var showingProfile = false
     @State private var scrollViewHeight: CGFloat = 0
     @State private var contentHeight: CGFloat = 0
+    @FocusState private var isInputFocused: Bool
 
     init(chat: Chat) {
         self.chat = chat
@@ -23,7 +24,7 @@ struct ConversationView: View {
         GeometryReader { geometry in
             messageScrollView(geometry: geometry)
         }
-        .safeAreaInset(edge: .bottom, spacing: 8) {
+        .safeAreaInset(edge: .bottom, spacing: 0) {
             MessageInputView(
                 messageText: $viewModel.messageText,
                 onSend: {
@@ -31,9 +32,13 @@ struct ConversationView: View {
                 },
                 onTextChanged: {
                     viewModel.onTextChanged()
-                }
+                },
+                isFocused: $isInputFocused
             )
-            .padding(.horizontal, 8)
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .padding(.bottom, isInputFocused ? 16 : 0)
+            .animation(.easeInOut(duration: 0.25), value: isInputFocused)
         }
         .navigationTitle(chat.displayTitle)
         .navigationBarTitleDisplayMode(.inline)
