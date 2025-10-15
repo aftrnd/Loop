@@ -185,6 +185,7 @@ struct ChatsListView: View {
                         if index < viewModel.recent.count - 1 {
                             Rectangle()
                                 .fill(CardLayoutConstants.dividerColor)
+                                .frame(maxWidth: .infinity)
                                 .frame(height: CardLayoutConstants.dividerHeight)
                                 .padding(.leading, 82)
                                 .padding(.trailing, 10)

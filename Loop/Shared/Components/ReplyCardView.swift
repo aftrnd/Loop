@@ -336,18 +336,7 @@ struct ReplyCardView: View {
                 }
             }
             
-            // Page indicators for multi-image posts (main post only)
-            // Centered in remaining space between buttons and right edge
-            if showAsMainPost && reply.media.count > 1 {
-                Spacer()
-                PageIndicator(
-                    currentPage: currentMediaIndex,
-                    pageCount: reply.media.count
-                )
-                Spacer()
-            } else {
-                Spacer()
-            }
+            Spacer()
             
             // Three dots menu (only show if user can delete)
             if let onDelete = onDelete {
@@ -455,6 +444,11 @@ struct MultipleReplyMediaView: View {
         }
         .frame(height: carouselHeight)
         .clipShape(RoundedRectangle(cornerRadius: CardLayoutConstants.mediaCornerRadius))
+        .overlay(alignment: .bottom) {
+            // Page indicators inside photo container
+            PageIndicator(currentPage: currentIndex, pageCount: media.count)
+                .padding(.bottom, 8)
+        }
         .onChange(of: scrollIndex) { _, newValue in
             if let newValue = newValue {
                 currentIndex = newValue

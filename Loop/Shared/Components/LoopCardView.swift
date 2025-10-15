@@ -277,12 +277,6 @@ struct LoopCardView: View {
                 .frame(width: CardLayoutConstants.actionButtonWidth, alignment: .leading)
                 .contentShape(Rectangle())
                 
-                // Page indicators for multi-image posts
-                if loop.media.count > 1 {
-                    PageIndicator(currentPage: currentCarouselIndex, pageCount: loop.media.count)
-                        .frame(width: CardLayoutConstants.actionButtonWidth, alignment: .center)
-                }
-                
                 Spacer()
                 
                 // Three dots menu (only show if user can delete)
@@ -424,9 +418,14 @@ struct ReplyThreadWithLineView: View {
                         }
                     )
                     
+                    // Small spacer to prevent media anti-aliasing from affecting divider
+                    if loop.hasMedia {
+                        Color.clear.frame(height: 0.5)
+                    }
+                    
                     // Divider - indented to align with main post's content
-                    Rectangle()
-                        .fill(CardLayoutConstants.dividerColor)
+                    CardLayoutConstants.dividerColor
+                        .frame(maxWidth: .infinity)
                         .frame(height: CardLayoutConstants.dividerHeight)
                         .padding(.leading, CardLayoutConstants.horizontalPadding + CardLayoutConstants.contentShift)
                         .padding(.trailing, CardLayoutConstants.horizontalPadding)
@@ -647,6 +646,11 @@ struct MultipleMediaView: View {
         }
         .frame(height: carouselHeight)
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+        .overlay(alignment: .bottom) {
+            // Page indicators inside photo container
+            PageIndicator(currentPage: currentIndex, pageCount: media.count)
+                .padding(.bottom, 8)
+        }
         .onChange(of: scrollIndex) { _, newValue in
             if let newValue = newValue {
                 currentIndex = newValue
@@ -715,8 +719,8 @@ struct PageIndicator: View {
         HStack(spacing: 4) {
             ForEach(0..<pageCount, id: \.self) { index in
                 Circle()
-                    .fill(currentPage == index ? Color.primary : Color.secondary.opacity(0.5))
-                    .frame(width: 5, height: 5)
+                    .fill(currentPage == index ? Color.white : Color.white.opacity(0.5))
+                    .frame(width: 4, height: 4)
             }
         }
     }
