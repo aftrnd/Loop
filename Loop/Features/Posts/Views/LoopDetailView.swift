@@ -114,14 +114,8 @@ struct LoopDetailView: View {
                                 ZStack(alignment: .topLeading) {
                                     // Connecting line overlay (only when expanded)
                                     if threadedReply.isExpanded && !threadedReply.nestedReplies.isEmpty {
-                                        // Calculate line positioning to connect avatars with proper gaps
-                                        // Avatar structure: 12pt padding + 56px avatar = avatar bottom at 68pt
-                                        let avatarSize: CGFloat = 56
-                                        let cardTopPadding: CGFloat = 12
-                                        let lineGap: CGFloat = 10 // Gap between line and avatars at both ends
-                                        
                                         // Line starts below parent avatar + gap
-                                        let lineStartY = cardTopPadding + avatarSize + lineGap // 12 + 56 + 10 = 78
+                                        let lineStartY = CardLayoutConstants.topPadding + CardLayoutConstants.avatarSize + CardLayoutConstants.avatarLineGap
                                         
                                         // Estimate card heights more accurately
                                         // Structure of ReplyCardView:
@@ -140,16 +134,16 @@ struct LoopDetailView: View {
                                         // 3. Then last reply's top padding to get to its avatar top
                                         let parentCardHeight = estimatedCardHeight
                                         let nestedRepliesBeforeLast = CGFloat(threadedReply.nestedReplies.count - 1) * estimatedCardHeight
-                                        let lastAvatarTop = parentCardHeight + nestedRepliesBeforeLast + cardTopPadding
+                                        let lastAvatarTop = parentCardHeight + nestedRepliesBeforeLast + CardLayoutConstants.topPadding
                                         
                                         // Line ends before last nested avatar - gap
-                                        let lineEndY = lastAvatarTop - lineGap
+                                        let lineEndY = lastAvatarTop - CardLayoutConstants.avatarLineGap
                                         let lineHeight = max(10, lineEndY - lineStartY) // Minimum 10pt line
                                         
-                                        Rectangle()
-                                            .fill(Color.primary.opacity(0.15))
-                                            .frame(width: 2, height: lineHeight)
-                                            .offset(x: 28, y: lineStartY) // x: centered on 56px avatar (28), y: start position
+                                        RoundedRectangle(cornerRadius: CardLayoutConstants.conversationLineWidth / 2)
+                                            .fill(Color(.quaternaryLabel))
+                                            .frame(width: CardLayoutConstants.conversationLineWidth, height: lineHeight)
+                                            .offset(x: CardLayoutConstants.avatarSize / 2 - CardLayoutConstants.conversationLineWidth / 2, y: lineStartY) // Replies have negative padding, so no need to add horizontal padding
                                     }
                                     
                                     VStack(spacing: 0) {
@@ -193,15 +187,16 @@ struct LoopDetailView: View {
                                                 profileUserToShow = ProfileUser(userId: threadedReply.reply.authorId)
                                             }
                                         )
+                                        .padding(.horizontal, -CardLayoutConstants.horizontalPadding) // Cancel internal padding to match main post
                                         
                                         // Show nested replies if expanded
                                         if threadedReply.isExpanded {
-                                            // Divider after parent reply when expanded (shifted right to align with content)
+                                            // Divider after parent reply when expanded (aligned with name/text)
                                             Rectangle()
                                                 .fill(Color(.separator))
                                                 .frame(maxWidth: .infinity)
-                                                .frame(height: 1.15)
-                                                .padding(.leading, 68) // Align with shifted content (56px avatar + 12px spacing)
+                                                .frame(height: CardLayoutConstants.dividerHeight)
+                                                .padding(.leading, CardLayoutConstants.contentShift) // Avatar + spacing (replies have negative padding)
                                             
                                             ForEach(Array(threadedReply.nestedReplies.enumerated()), id: \.element.id) { nestedIndex, nestedReply in
                                                 ReplyCardView(
@@ -239,14 +234,15 @@ struct LoopDetailView: View {
                                                         profileUserToShow = ProfileUser(userId: nestedReply.authorId)
                                                     }
                                                 )
+                                                .padding(.horizontal, -CardLayoutConstants.horizontalPadding) // Cancel internal padding to match main post
                                                 
-                                                // Divider between nested replies (shifted right to align with content)
+                                                // Divider between nested replies (aligned with name/text)
                                                 if nestedIndex < threadedReply.nestedReplies.count - 1 {
                                                     Rectangle()
                                                         .fill(Color(.separator))
                                                         .frame(maxWidth: .infinity)
-                                                        .frame(height: 1.15)
-                                                        .padding(.leading, 68) // Align with shifted content (56px avatar + 12px spacing)
+                                                        .frame(height: CardLayoutConstants.dividerHeight)
+                                                        .padding(.leading, CardLayoutConstants.contentShift) // Avatar + spacing (replies have negative padding)
                                                 }
                                             }
                                             

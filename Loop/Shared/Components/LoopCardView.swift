@@ -347,10 +347,8 @@ struct ReplyThreadWithLineView: View {
     /// Perfectly calculated connecting line between avatars with even spacing
     @ViewBuilder
     private var connectingLine: some View {
-        let _ = print("🟡 connectingLine called, mainPostHeight=\(mainPostHeight)")
-        
         if mainPostHeight > 0 {
-            let lineWidth: CGFloat = 4
+            let lineWidth = CardLayoutConstants.conversationLineWidth
             
             // Main avatar bottom edge
             let mainAvatarBottom = CardLayoutConstants.topPadding + CardLayoutConstants.avatarSize
@@ -367,9 +365,6 @@ struct ReplyThreadWithLineView: View {
             // Calculate line height
             let lineHeight = max(0, lineEnd - lineStart)
             
-            // Debug logging
-            let _ = print("🔵 LINE RENDERING: mainPostHeight=\(mainPostHeight), lineStart=\(lineStart), replyAvatarTop=\(replyAvatarTop), lineEnd=\(lineEnd), lineHeight=\(lineHeight), lineX=\(CardLayoutConstants.horizontalPadding + CardLayoutConstants.avatarSize / 2 - 2)")
-            
             // Horizontal position: center of avatar
             let avatarCenter = CardLayoutConstants.avatarSize / 2
             let lineX = CardLayoutConstants.horizontalPadding + avatarCenter - (lineWidth / 2)
@@ -378,8 +373,8 @@ struct ReplyThreadWithLineView: View {
                 VStack(spacing: 0) {
                     Color.clear.frame(height: lineStart)
                     
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(Color(.systemGray3))
+                    RoundedRectangle(cornerRadius: lineWidth / 2)
+                        .fill(Color(.quaternaryLabel))
                         .frame(width: lineWidth, height: lineHeight)
                     
                     Spacer()
@@ -389,8 +384,6 @@ struct ReplyThreadWithLineView: View {
                 
                 Spacer()
             }
-        } else {
-            let _ = print("🔴 LINE NOT RENDERING: mainPostHeight is 0")
         }
     }
     
@@ -429,12 +422,12 @@ struct ReplyThreadWithLineView: View {
                         }
                     )
                     
-                    // Divider - with same horizontal padding as cards
+                    // Divider - aligned with name/text
                     Rectangle()
                         .fill(Color(.separator))
                         .frame(height: CardLayoutConstants.dividerHeight)
-                        .padding(.horizontal, CardLayoutConstants.horizontalPadding)
-                        .padding(.leading, CardLayoutConstants.avatarSize + CardLayoutConstants.avatarSpacing)
+                        .padding(.leading, CardLayoutConstants.horizontalPadding + CardLayoutConstants.avatarSize + CardLayoutConstants.avatarSpacing)
+                        .padding(.trailing, CardLayoutConstants.horizontalPadding)
                     
                     // Reply preview
                     ForEach(Array(previewReplies.enumerated()), id: \.element.id) { index, reply in

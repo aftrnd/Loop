@@ -23,6 +23,7 @@ enum CardLayoutConstants {
     static let dividerHeight: CGFloat = 1.15
     static let cornerRadius: CGFloat = 16
     static let contentShift: CGFloat = 68 // avatarSize (56) + avatarSpacing (12)
+    static let conversationLineWidth: CGFloat = 2.5
 }
 
 struct ReplyCardView: View {
