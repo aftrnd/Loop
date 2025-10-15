@@ -10,20 +10,69 @@ extension View {
             self
         }
     }
+    
+    /// Debug helper to log frame coordinates
+    func debugFrame(_ label: String, enabled: Bool = false) -> some View {
+        self.overlay(
+            GeometryReader { geometry in
+                Color.clear
+                    .onAppear {
+                        if enabled {
+                            let frame = geometry.frame(in: .global)
+                            print("📐 \(label): x=\(frame.minX), y=\(frame.minY), width=\(frame.width), height=\(frame.height)")
+                        }
+                    }
+            }
+        )
+    }
 }
 
 // MARK: - Shared Layout Constants
+/// Single source of truth for ALL card layout values - ensures pixel-perfect alignment
 enum CardLayoutConstants {
+    // MARK: - Card Structure
+    /// Spacing from screen edges - IMMUTABLE, used everywhere
     static let horizontalPadding: CGFloat = 10
     static let topPadding: CGFloat = 8
     static let bottomPadding: CGFloat = 8
-    static let avatarSize: CGFloat = 56
-    static let avatarSpacing: CGFloat = 12
-    static let avatarLineGap: CGFloat = 10
-    static let dividerHeight: CGFloat = 1.15
     static let cornerRadius: CGFloat = 16
-    static let contentShift: CGFloat = 68 // avatarSize (56) + avatarSpacing (12)
+    
+    // MARK: - Avatar
+    static let avatarSize: CGFloat = 56
+    /// Space between avatar and text - MUST equal TOTAL left spacing for perfect symmetry
+    /// Left side: screen edge → list inset (10pt) → card padding (10pt) → avatar = 20pt total
+    /// Right side: avatar → 20pt → name/content (to match left side)
+    static let avatarSpacing: CGFloat = horizontalPadding * 2 // 20pt - matches total left spacing
+    
+    // MARK: - Content Spacing
+    /// IMMUTABLE spacing values - consistent across all post types
+    /// The pattern: Header -> 12pt -> Content (text/media) -> 12pt -> Actions
+    static let headerBottomSpacing: CGFloat = 12 // Space between header and content
+    static let contentSpacing: CGFloat = 12 // Space between content elements (text -> media)
+    static let contentToActionsSpacing: CGFloat = 12 // Space between any content and action buttons
+    
+    // MARK: - Action Buttons
+    static let actionButtonHeight: CGFloat = 32 // Standard hit target height
+    static let actionButtonIconSize: CGFloat = 18
+    static let actionButtonSpacing: CGFloat = 0 // No spacing between button frames (they have internal spacing)
+    static let actionButtonWidth: CGFloat = 50 // Standard width for each action button
+    
+    // MARK: - Dividers & Lines
+    static let dividerHeight: CGFloat = 1.15
     static let conversationLineWidth: CGFloat = 2.5
+    static let avatarLineGap: CGFloat = 10 // Gap between avatar edge and conversation line
+    
+    // MARK: - Media
+    static let mediaCornerRadius: CGFloat = 12
+    
+    // MARK: - Computed Values (DO NOT MODIFY - Derived from base values)
+    /// Total shift for content when aligning with name
+    /// This ensures content aligns perfectly: screenEdge(10) + cardPadding(10) + avatar(56) + spacing(20) = 96pt from screen edge
+    static let contentShift: CGFloat = avatarSize + avatarSpacing // 56 + 20 = 76
+    
+    // MARK: - Animations
+    static let contentShiftAnimationResponse: CGFloat = 0.3
+    static let contentShiftAnimationDamping: CGFloat = 0.8
 }
 
 struct ReplyCardView: View {
@@ -42,14 +91,11 @@ struct ReplyCardView: View {
     var applyInternalPadding: Bool = true // Whether to apply internal padding (false when in thread container)
     
     @State private var showingFullText = false
+    @State private var showPhotoViewer = false
+    @State private var selectedPhotoIndex: Int = 0
+    @State private var currentMediaIndex: Int = 0
     
     private let maxPreviewLength = 280
-    private let cardCornerRadius: CGFloat = 12
-    
-    // Clean, subtle indent for nested replies (like Reddit/Twitter)
-    private var totalIndent: CGFloat {
-        CGFloat(indentLevel) * 40 // 40px per nesting level
-    }
     
     // Determines if content should shift right (to align with name instead of avatar)
     private var shouldShiftContent: Bool {
@@ -62,67 +108,56 @@ struct ReplyCardView: View {
     
     var body: some View {
         VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: CardLayoutConstants.avatarSpacing) {
-                // Header row: Avatar + Name/Badge/Time
-                HStack(alignment: .center, spacing: CardLayoutConstants.avatarSpacing) {
-                    // Avatar
-                    avatarView
-                        .frame(width: CardLayoutConstants.avatarSize)
+            VStack(alignment: .leading, spacing: 0) {
+                // Header row: Avatar + Name/Badge/Time - using immutable UserInfoHeader component
+                HStack(spacing: 0) {
+                    UserInfoHeader(
+                        avatarURL: reply.authorAvatarURL,
+                        displayName: reply.displayAuthorName,
+                        username: reply.authorUsername,
+                        badgeType: reply.authorBadgeType,
+                        onAvatarTap: onAvatarTap
+                    )
+                    .debugFrame("ReplyCard-Header", enabled: AppConstants.Debug.logFrameCoordinates)
                     
-                    // Name, badge, username, and time
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack(spacing: 0) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                // Display name
-                                Text(reply.displayAuthorName)
-                                    .font(.headline)
-                                    .fontWeight(.semibold)
-                                    .lineLimit(1)
-                                
-                                // Username with badge
-                                if let username = reply.authorUsername, !username.isEmpty {
-                                    HStack(spacing: 4) {
-                                        if let badgeType = reply.authorBadgeType {
-                                            Image(systemName: badgeType.iconName)
-                                                .font(.system(size: 14))
-                                                .foregroundColor(badgeType.color)
-                                        }
-                                        
-                                        Text("@\(username)")
-                                            .font(.callout)
-                                            .fontWeight(.regular)
-                                            .foregroundColor(.secondary)
-                                    }
-                                }
-                            }
-                            
-                            Spacer()
-                            
-                            HStack(spacing: 4) {
-                                Text(reply.timeAgoString)
-                                    .font(.subheadline)
-                                    .monospacedDigit()
-                                    .foregroundColor(.secondary)
-                                    .lineLimit(1)
-                                    .truncationMode(.tail)
-                            }
-                        }
+                    Spacer()
+                    
+                    HStack(spacing: 4) {
+                        Text(reply.timeAgoString)
+                            .font(.subheadline)
+                            .monospacedDigit()
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
                     }
                 }
+                .padding(.bottom, CardLayoutConstants.headerBottomSpacing)
+                .debugFrame("ReplyCard-HeaderContainer", enabled: AppConstants.Debug.logFrameCoordinates)
                 
-                // Content - aligned with avatar's left edge, shifts right to align with name when:
-                // - Top-level reply that's expanded with nested replies, OR
-                // - Nested reply that's NOT the last one in the thread
-                if !reply.content.isEmpty {
-                    contentView
-                        .padding(.leading, shouldShiftContent ? CardLayoutConstants.contentShift : 0)
-                        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: shouldShiftContent)
+                // Content - text shifts, media stays full width
+                VStack(alignment: .leading, spacing: 0) {
+                    // Text content - shifts right when needed
+                    if !reply.content.isEmpty {
+                        contentView
+                            .padding(.leading, shouldShiftContent ? CardLayoutConstants.contentShift : 0)
+                            .padding(.bottom, reply.hasMedia ? CardLayoutConstants.contentSpacing : CardLayoutConstants.contentToActionsSpacing)
+                            .animation(.spring(response: CardLayoutConstants.contentShiftAnimationResponse, dampingFraction: CardLayoutConstants.contentShiftAnimationDamping), value: shouldShiftContent)
+                    }
+                    
+                    // Media content - always full width to right edge, shifts left
+                    if reply.hasMedia {
+                        mediaView
+                            .padding(.leading, shouldShiftContent ? CardLayoutConstants.contentShift : 0)
+                            .padding(.bottom, CardLayoutConstants.contentToActionsSpacing)
+                            .animation(.spring(response: CardLayoutConstants.contentShiftAnimationResponse, dampingFraction: CardLayoutConstants.contentShiftAnimationDamping), value: shouldShiftContent)
+                    }
                 }
                 
                 // Action buttons - aligned with avatar's left edge, shifts right when content does
                 actionButtonsView
                     .padding(.leading, shouldShiftContent ? CardLayoutConstants.contentShift : 0)
-                    .animation(.spring(response: 0.3, dampingFraction: 0.8), value: shouldShiftContent)
+                    .animation(.spring(response: CardLayoutConstants.contentShiftAnimationResponse, dampingFraction: CardLayoutConstants.contentShiftAnimationDamping), value: shouldShiftContent)
+                    .debugFrame("ReplyCard-ActionButtons", enabled: AppConstants.Debug.logFrameCoordinates)
             }
             .if(applyInternalPadding) { view in
                 view
@@ -160,47 +195,17 @@ struct ReplyCardView: View {
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
+        .fullScreenCover(isPresented: $showPhotoViewer) {
+            FullScreenPhotoViewer(
+                allMedia: reply.media,
+                startingIndex: selectedPhotoIndex,
+                isPresented: $showPhotoViewer
+            )
+            .presentationBackground(.clear)
+        }
     }
     
     // MARK: - Reusable Components
-    private var avatarView: some View {
-        Group {
-            if let avatarURLString = reply.authorAvatarURL, let avatarURL = URL(string: avatarURLString) {
-                CachedAsyncImage(url: avatarURL) { image in
-                    image
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(width: CardLayoutConstants.avatarSize, height: CardLayoutConstants.avatarSize)
-                        .clipShape(Circle())
-                } placeholder: {
-                    Circle()
-                        .fill(Color(.systemGray5))
-                        .frame(width: CardLayoutConstants.avatarSize, height: CardLayoutConstants.avatarSize)
-                }
-            } else {
-                Circle()
-                    .fill(Color(.systemGray5))
-                    .frame(width: CardLayoutConstants.avatarSize, height: CardLayoutConstants.avatarSize)
-                    .overlay {
-                        Text(String((reply.displayAuthorName ?? "?").prefix(1)).uppercased())
-                            .font(.headline)
-                            .fontWeight(.semibold)
-                    }
-            }
-        }
-        .background {
-            // Add mask/border for middle nested replies to create spacing from the line
-            if indentLevel == 1 && !isLastInThread {
-                Circle()
-                    .fill(Color(.systemBackground))
-                    .frame(width: CardLayoutConstants.avatarSize + 20, height: CardLayoutConstants.avatarSize + 20)
-            }
-        }
-        .onTapGesture {
-            onAvatarTap?()
-        }
-    }
-    
     private var contentView: some View {
         Group {
             if !reply.content.isEmpty {
@@ -236,13 +241,60 @@ struct ReplyCardView: View {
         }
     }
     
+    private var mediaView: some View {
+        GeometryReader { geometry in
+            let availableWidth = geometry.size.width
+            
+            if reply.media.count == 1, let firstMedia = reply.media.first {
+                // Single image - tappable
+                SingleReplyMediaView(
+                    media: firstMedia,
+                    availableWidth: availableWidth,
+                    onPhotoTap: {
+                        selectedPhotoIndex = 0
+                        showPhotoViewer = true
+                    }
+                )
+            } else if reply.media.count > 1 {
+                // Multiple images - swipeable carousel
+                MultipleReplyMediaView(
+                    media: reply.media,
+                    availableWidth: availableWidth,
+                    currentIndex: $currentMediaIndex,
+                    onPhotoTap: { index in
+                        selectedPhotoIndex = index
+                        showPhotoViewer = true
+                    }
+                )
+            }
+        }
+        .frame(height: calculateMediaHeight())
+    }
+    
+    private func calculateMediaHeight() -> CGFloat {
+        guard let firstMedia = reply.media.first,
+              let width = firstMedia.width,
+              let height = firstMedia.height else { return 0 }
+        
+        // Get available width - full width to right edge when content is shifted
+        let screenWidth = UIScreen.main.bounds.width
+        let cardPadding = CardLayoutConstants.horizontalPadding * 2
+        let availableWidth = shouldShiftContent ? 
+            screenWidth - cardPadding - CardLayoutConstants.contentShift : 
+            screenWidth - cardPadding
+        
+        // Maintain aspect ratio
+        let aspectRatio = CGFloat(width) / CGFloat(height)
+        return availableWidth / aspectRatio
+    }
+    
     private var actionButtonsView: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: CardLayoutConstants.actionButtonSpacing) {
             // Like button
             Button(action: onLike) {
                 HStack(spacing: 4) {
                     Image(systemName: isLiked ? "heart.fill" : "heart")
-                        .font(.system(size: 18, weight: .medium))
+                        .font(.system(size: CardLayoutConstants.actionButtonIconSize, weight: .medium))
                         .foregroundColor(isLiked ? .red : .secondary)
                     
                     if reply.likeCount > 0 {
@@ -254,7 +306,7 @@ struct ReplyCardView: View {
                 }
             }
             .buttonStyle(.plain)
-            .frame(width: 50, alignment: .leading)
+            .frame(width: CardLayoutConstants.actionButtonWidth, alignment: .leading)
             .contentShape(Rectangle())
             
             // Show different buttons based on context
@@ -264,7 +316,7 @@ struct ReplyCardView: View {
                     Button(action: onReply) {
                         HStack(spacing: 4) {
                             Image(systemName: "bubble.left")
-                                .font(.system(size: 18, weight: .medium))
+                                .font(.system(size: CardLayoutConstants.actionButtonIconSize, weight: .medium))
                                 .foregroundColor(.secondary)
                             
                             Text(reply.replyCount > 99 ? "99+" : reply.replyCount > 0 ? "\(reply.replyCount)" : "")
@@ -274,7 +326,7 @@ struct ReplyCardView: View {
                         }
                     }
                     .buttonStyle(.plain)
-                    .frame(width: 50, alignment: .leading)
+                    .frame(width: CardLayoutConstants.actionButtonWidth, alignment: .leading)
                     .contentShape(Rectangle())
                 }
                 
@@ -283,27 +335,38 @@ struct ReplyCardView: View {
                     // TODO: Implement share functionality
                 }) {
                     Image(systemName: "paperplane")
-                        .font(.system(size: 18, weight: .medium))
+                        .font(.system(size: CardLayoutConstants.actionButtonIconSize, weight: .medium))
                         .foregroundColor(.secondary)
                 }
                 .buttonStyle(.plain)
-                .frame(width: 50, alignment: .leading)
+                .frame(width: CardLayoutConstants.actionButtonWidth, alignment: .leading)
                 .contentShape(Rectangle())
             } else {
                 // Reply button (for actual replies)
                 if let onReply = onReply {
                     Button(action: onReply) {
                         Image(systemName: "arrow.turn.up.left")
-                            .font(.system(size: 18, weight: .medium))
+                            .font(.system(size: CardLayoutConstants.actionButtonIconSize, weight: .medium))
                             .foregroundColor(.secondary)
                     }
                     .buttonStyle(.plain)
-                    .frame(width: 50, alignment: .leading)
+                    .frame(width: CardLayoutConstants.actionButtonWidth, alignment: .leading)
                     .contentShape(Rectangle())
                 }
             }
             
-            Spacer()
+            // Page indicators for multi-image posts (main post only)
+            // Centered in remaining space between buttons and right edge
+            if showAsMainPost && reply.media.count > 1 {
+                Spacer()
+                PageIndicator(
+                    currentPage: currentMediaIndex,
+                    pageCount: reply.media.count
+                )
+                Spacer()
+            } else {
+                Spacer()
+            }
             
             // Three dots menu (only show if user can delete)
             if let onDelete = onDelete {
@@ -311,12 +374,117 @@ struct ReplyCardView: View {
                     Button("Delete", role: .destructive, action: onDelete)
                 } label: {
                     Image(systemName: "ellipsis")
-                        .font(.system(size: 18, weight: .medium))
+                        .font(.system(size: CardLayoutConstants.actionButtonIconSize, weight: .medium))
                         .foregroundColor(.secondary)
                 }
                 .buttonStyle(.plain)
                 .contentShape(Rectangle())
             }
+        }
+    }
+}
+
+// MARK: - Helper Views for Reply Media
+
+struct SingleReplyMediaView: View {
+    let media: LoopMedia
+    let availableWidth: CGFloat
+    let onPhotoTap: () -> Void
+    
+    var body: some View {
+        if let width = media.width, let height = media.height, height > 0 {
+            let aspectRatio = CGFloat(width) / CGFloat(height)
+            let mediaHeight = availableWidth / aspectRatio
+            
+            CachedAsyncImage(url: URL(string: media.url)) { image in
+                image
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: availableWidth, height: mediaHeight)
+                    .clipShape(RoundedRectangle(cornerRadius: CardLayoutConstants.mediaCornerRadius))
+            } placeholder: {
+                RoundedRectangle(cornerRadius: CardLayoutConstants.mediaCornerRadius)
+                    .fill(Color(.systemGray5))
+                    .frame(width: availableWidth, height: mediaHeight)
+                    .overlay(
+                        ProgressView()
+                            .scaleEffect(1.0)
+                    )
+            }
+            .onTapGesture {
+                onPhotoTap()
+            }
+        }
+    }
+}
+
+struct MultipleReplyMediaView: View {
+    let media: [LoopMedia]
+    let availableWidth: CGFloat
+    @Binding var currentIndex: Int
+    let onPhotoTap: (Int) -> Void
+    @State private var scrollIndex: Int? = 0
+    
+    var carouselHeight: CGFloat {
+        guard let firstMedia = media.first,
+              let width = firstMedia.width,
+              let height = firstMedia.height,
+              height > 0 else { return 200 }
+        
+        let aspectRatio = CGFloat(width) / CGFloat(height)
+        return availableWidth / aspectRatio
+    }
+    
+    var body: some View {
+        GeometryReader { geometry in
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: 0) {
+                    ForEach(Array(media.enumerated()), id: \.offset) { index, mediaItem in
+                        ReplyCarouselPhotoView(
+                            media: mediaItem,
+                            height: carouselHeight,
+                            onPhotoTap: { onPhotoTap(index) }
+                        )
+                        .frame(width: geometry.size.width)
+                        .containerRelativeFrame(.horizontal)
+                    }
+                }
+                .scrollTargetLayout()
+            }
+            .scrollTargetBehavior(.paging)
+            .scrollPosition(id: $scrollIndex)
+        }
+        .onChange(of: scrollIndex) { _, newValue in
+            if let newValue = newValue {
+                currentIndex = newValue
+            }
+        }
+    }
+}
+
+struct ReplyCarouselPhotoView: View {
+    let media: LoopMedia
+    let height: CGFloat
+    let onPhotoTap: () -> Void
+    
+    var body: some View {
+        CachedAsyncImage(url: URL(string: media.url)) { image in
+            image
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+                .frame(height: height)
+                .clipShape(RoundedRectangle(cornerRadius: CardLayoutConstants.mediaCornerRadius))
+        } placeholder: {
+            RoundedRectangle(cornerRadius: CardLayoutConstants.mediaCornerRadius)
+                .fill(Color(.systemGray5))
+                .frame(height: height)
+                .overlay(
+                    ProgressView()
+                        .scaleEffect(1.0)
+                )
+        }
+        .onTapGesture {
+            onPhotoTap()
         }
     }
 }

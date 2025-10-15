@@ -2,6 +2,7 @@ import SwiftUI
 
 /// Reusable user info header component showing avatar, display name, username, and badge
 /// Used in both LoopCardView and ComposeLoopView for consistent styling
+/// Uses CardLayoutConstants for pixel-perfect alignment across all card types
 struct UserInfoHeader: View {
     let avatarURL: String?
     let displayName: String
@@ -9,6 +10,7 @@ struct UserInfoHeader: View {
     let badgeType: BadgeType?
     let onAvatarTap: (() -> Void)?
     let avatarSize: CGFloat
+    let spacing: CGFloat // Configurable spacing between avatar and text
     
     init(
         avatarURL: String?,
@@ -16,7 +18,8 @@ struct UserInfoHeader: View {
         username: String?,
         badgeType: BadgeType?,
         onAvatarTap: (() -> Void)? = nil,
-        avatarSize: CGFloat = 56
+        avatarSize: CGFloat = CardLayoutConstants.avatarSize,
+        spacing: CGFloat = CardLayoutConstants.avatarSpacing // Default: 10pt spacing (symmetrical with screen edge)
     ) {
         self.avatarURL = avatarURL
         self.displayName = displayName
@@ -24,10 +27,11 @@ struct UserInfoHeader: View {
         self.badgeType = badgeType
         self.onAvatarTap = onAvatarTap
         self.avatarSize = avatarSize
+        self.spacing = spacing
     }
     
     var body: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: spacing) {
             // Avatar
             ZStack {
                 if let avatarURLString = avatarURL, let avatarURL = URL(string: avatarURLString) {
@@ -67,17 +71,14 @@ struct UserInfoHeader: View {
             .onTapGesture {
                 onAvatarTap?()
             }
+            .debugFrame("UserInfoHeader-Avatar", enabled: AppConstants.Debug.logFrameCoordinates)
             
             VStack(alignment: .leading, spacing: 4) {
-                // Display name (no badge here)
-                HStack(alignment: .center) {
-                    Text(displayName)
-                        .font(.headline)
-                        .fontWeight(.semibold)
-                        .lineLimit(1)
-                    
-                    Spacer()
-                }
+                // Display name
+                Text(displayName)
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                    .lineLimit(1)
                 
                 // Username with badge on its own line
                 if let username = username, !username.isEmpty {
@@ -93,8 +94,7 @@ struct UserInfoHeader: View {
                             .font(.callout)
                             .fontWeight(.regular)
                             .foregroundColor(.secondary)
-                        
-                        Spacer()
+                            .lineLimit(1)
                     }
                 }
             }

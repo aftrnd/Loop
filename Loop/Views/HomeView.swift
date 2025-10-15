@@ -80,69 +80,81 @@ struct HomeView: View {
         }
     }
     
+    // MARK: - Scroll Sentinel
+    private var scrollSentinel: some View {
+        GeometryReader { geo in
+            let topMinY = geo.frame(in: .named("loopScroll")).minY
+            Color.clear
+                .onChange(of: topMinY) { _, newValue in
+                    let offset = max(0, -newValue)
+                    scrollOffset = offset
+                }
+        }
+        .frame(height: 0)
+        .listRowSeparator(.hidden)
+        .listRowBackground(Color.clear)
+        .listRowInsets(EdgeInsets())
+    }
+    
+    // MARK: - Loading View
+    private var loadingView: some View {
+        GeometryReader { geometry in
+            VStack {
+                Spacer()
+                VStack(spacing: 16) {
+                    ProgressView()
+                        .scaleEffect(1.2)
+                    Text("Getting your Loops...")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+            }
+            .frame(width: geometry.size.width, height: geometry.size.height)
+        }
+        .frame(height: UIScreen.main.bounds.height - 200)
+        .listRowSeparator(.hidden)
+        .listRowBackground(Color.clear)
+        .listRowInsets(EdgeInsets())
+    }
+    
+    // MARK: - Empty State View
+    private var emptyStateView: some View {
+        HStack {
+            Spacer()
+            VStack(spacing: 20) {
+                Image(systemName: "bubble.left.and.bubble.right")
+                    .font(.system(size: 60))
+                    .foregroundColor(.secondary)
+                
+                VStack(spacing: 8) {
+                    Text("Welcome to Loop!")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                    
+                    Text("Start following people to see their loops in your feed, or create your first loop!")
+                        .font(.body)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 32)
+                }
+            }
+            .padding(.vertical, 60)
+            Spacer()
+        }
+        .listRowSeparator(.hidden)
+        .listRowBackground(Color.clear)
+    }
+    
     private var feedListView: some View {
         GeometryReader { scrollGeometry in
             List {
-                // Scroll sentinel
-                GeometryReader { geo in
-                    let topMinY = geo.frame(in: .named("loopScroll")).minY
-                    Color.clear
-                        .onChange(of: topMinY) { _, newValue in
-                            let offset = max(0, -newValue)
-                            scrollOffset = offset
-                        }
-                }
-                .frame(height: 0)
-                .listRowSeparator(.hidden)
-                .listRowBackground(Color.clear)
-                .listRowInsets(EdgeInsets())
-                // Feed content
+                scrollSentinel
+                
                 if viewModel.isLoading && viewModel.loops.isEmpty {
-                    // Loading state
-                    GeometryReader { geometry in
-                        VStack {
-                            Spacer()
-                            VStack(spacing: 16) {
-                                ProgressView()
-                                    .scaleEffect(1.2)
-                                Text("Getting your Loops...")
-                                    .font(.subheadline)
-                                    .foregroundColor(.secondary)
-                            }
-                            Spacer()
-                        }
-                        .frame(width: geometry.size.width, height: geometry.size.height)
-                    }
-                    .frame(height: UIScreen.main.bounds.height - 200) // Account for navigation and safe areas
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(Color.clear)
-                    .listRowInsets(EdgeInsets())
+                    loadingView
                 } else if viewModel.loops.isEmpty {
-                    // Empty state
-                    HStack {
-                        Spacer()
-                        VStack(spacing: 20) {
-                            Image(systemName: "bubble.left.and.bubble.right")
-                                .font(.system(size: 60))
-                                .foregroundColor(.secondary)
-                            
-                            VStack(spacing: 8) {
-                                Text("Welcome to Loop!")
-                                    .font(.title2)
-                                    .fontWeight(.bold)
-                                
-                                Text("Start following people to see their loops in your feed, or create your first loop!")
-                                    .font(.body)
-                                    .foregroundColor(.secondary)
-                                    .multilineTextAlignment(.center)
-                                    .padding(.horizontal, 32)
-                            }
-                        }
-                        .padding(.vertical, 60)
-                        Spacer()
-                    }
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(Color.clear)
+                    emptyStateView
                 } else {
                     ForEach(Array(viewModel.loops.enumerated()), id: \.element.id) { index, loop in
                         let replies = viewModel.replyPreviews[loop.id]
@@ -194,10 +206,13 @@ struct HomeView: View {
                         .padding(.bottom, index == viewModel.loops.count - 1 ? 0 : 5) // Add bottom padding except for last post
                         .overlay(alignment: .bottom) {
                             if index < viewModel.loops.count - 1 {
+                                // Align divider with text when post has replies, otherwise standard padding
+                                let hasReplies = replies != nil && !replies!.isEmpty
                                 Rectangle()
                                     .fill(Color(.separator))
                                     .frame(height: CardLayoutConstants.dividerHeight)
-                                    .padding(.horizontal, CardLayoutConstants.horizontalPadding)
+                                    .padding(.leading, hasReplies ? CardLayoutConstants.horizontalPadding + CardLayoutConstants.avatarSize + CardLayoutConstants.avatarSpacing : CardLayoutConstants.horizontalPadding)
+                                    .padding(.trailing, CardLayoutConstants.horizontalPadding)
                             }
                         }
                         .listRowSeparator(.hidden)

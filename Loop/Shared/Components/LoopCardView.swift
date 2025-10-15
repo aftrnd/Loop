@@ -100,9 +100,6 @@ struct LoopCardView: View {
     @State private var currentCarouselIndex: Int = 0
     
     private let maxPreviewLength = 280
-    private let cardCornerRadius: CGFloat = 16
-    private let mediaCornerRadius: CGFloat = 12
-    private let actionIconSize: CGFloat = 18
     private let maxReplyPreviews = 1 // Show max 1 reply preview (most recent from followed users)
     
     var body: some View {
@@ -118,11 +115,11 @@ struct LoopCardView: View {
                         // Particle layer - renders above card content AND subsequent cards
                         GeometryReader { geo in
                             HeartParticleAnimationView(
-                                iconSize: actionIconSize,
+                                iconSize: CardLayoutConstants.actionButtonIconSize,
                                 triggerID: animationState.particleTriggerID
                             )
                             .frame(width: 200, height: 200) // Large enough for particles to fly
-                            .position(x: 25, y: geo.size.height - 30) // Position at heart button
+                            .position(x: CardLayoutConstants.actionButtonWidth / 2, y: geo.size.height - CardLayoutConstants.actionButtonHeight / 2) // Position at heart button
                             .allowsHitTesting(false)
                         }
                         .zIndex(Double(1000 - cardIndex)) // Higher z-index for earlier posts
@@ -143,7 +140,7 @@ struct LoopCardView: View {
     private var cardContent: some View {
         VStack(spacing: 0) {
             // Card content with padding
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 0) {
             // Header with author info using reusable component
             HStack(spacing: 0) {
                 UserInfoHeader(
@@ -153,6 +150,7 @@ struct LoopCardView: View {
                     badgeType: loop.authorBadgeType,
                     onAvatarTap: onAvatarTap
                 )
+                .debugFrame("LoopCard-Header", enabled: AppConstants.Debug.logFrameCoordinates)
                 
                 Spacer()
                 
@@ -165,6 +163,8 @@ struct LoopCardView: View {
                         .truncationMode(.tail)
                 }
             }
+            .padding(.bottom, CardLayoutConstants.headerBottomSpacing)
+            .debugFrame("LoopCard-HeaderContainer", enabled: AppConstants.Debug.logFrameCoordinates)
             
             // Content
             VStack(alignment: .leading, spacing: 0) {
@@ -198,7 +198,7 @@ struct LoopCardView: View {
                             .foregroundColor(.accentColor)
                         }
                     }
-                    .padding(.bottom, loop.hasMedia ? 12 : 0)
+                    .padding(.bottom, loop.hasMedia ? CardLayoutConstants.contentSpacing : CardLayoutConstants.contentToActionsSpacing)
                 }
                 
                 // Media content - unified approach for both single and multiple photos
@@ -211,11 +211,12 @@ struct LoopCardView: View {
                             showPhotoViewer = true
                         }
                     )
+                    .padding(.bottom, CardLayoutConstants.contentToActionsSpacing)
                 }
             }
             
             // Action buttons
-            HStack(alignment: .center, spacing: 0) {
+            HStack(alignment: .center, spacing: CardLayoutConstants.actionButtonSpacing) {
                 // Like button with scale animation
                 Button(action: {
                     // Trigger animation - persists even if view re-renders
@@ -226,7 +227,7 @@ struct LoopCardView: View {
                 }) {
                     HStack(spacing: 4) {
                         Image(systemName: isLiked ? "heart.fill" : "heart")
-                            .font(.system(size: actionIconSize, weight: .medium))
+                            .font(.system(size: CardLayoutConstants.actionButtonIconSize, weight: .medium))
                             .foregroundColor(isLiked ? .red : .secondary)
                             .scaleEffect(animationState.heartScale)
                             .rotationEffect(.degrees(animationState.heartRotation))
@@ -238,7 +239,7 @@ struct LoopCardView: View {
                     }
                 }
                 .buttonStyle(.plain)
-                .frame(width: 50, alignment: .leading)
+                .frame(width: CardLayoutConstants.actionButtonWidth, alignment: .leading)
                 .contentShape(Rectangle())
                 
                 // Reply button - tapping shows detail view if onCardTap is provided
@@ -251,7 +252,7 @@ struct LoopCardView: View {
                 }) {
                     HStack(spacing: 4) {
                         Image(systemName: "bubble.left")
-                            .font(.system(size: actionIconSize, weight: .medium))
+                            .font(.system(size: CardLayoutConstants.actionButtonIconSize, weight: .medium))
                             .foregroundColor(.secondary)
                         
                         Text(loop.replyCount > 99 ? "99+" : loop.replyCount > 0 ? "\(loop.replyCount)" : "")
@@ -261,7 +262,7 @@ struct LoopCardView: View {
                     }
                 }
                 .buttonStyle(.plain)
-                .frame(width: 50, alignment: .leading)
+                .frame(width: CardLayoutConstants.actionButtonWidth, alignment: .leading)
                 .contentShape(Rectangle())
                 
                 // Share button
@@ -269,17 +270,17 @@ struct LoopCardView: View {
                     // TODO: Implement share functionality
                 }) {
                     Image(systemName: "paperplane")
-                        .font(.system(size: actionIconSize, weight: .medium))
+                        .font(.system(size: CardLayoutConstants.actionButtonIconSize, weight: .medium))
                         .foregroundColor(.secondary)
                 }
                 .buttonStyle(.plain)
-                .frame(width: 50, alignment: .leading)
+                .frame(width: CardLayoutConstants.actionButtonWidth, alignment: .leading)
                 .contentShape(Rectangle())
                 
                 // Page indicators for multi-image posts
                 if loop.media.count > 1 {
                     PageIndicator(currentPage: currentCarouselIndex, pageCount: loop.media.count)
-                        .frame(width: 50, alignment: .center)
+                        .frame(width: CardLayoutConstants.actionButtonWidth, alignment: .center)
                 }
                 
                 Spacer()
@@ -290,19 +291,20 @@ struct LoopCardView: View {
                         Button("Delete", role: .destructive, action: onDelete)
                     } label: {
                         Image(systemName: "ellipsis")
-                            .font(.system(size: 16, weight: .medium))
+                            .font(.system(size: CardLayoutConstants.actionButtonIconSize, weight: .medium))
                             .foregroundColor(.secondary)
                     }
                     .buttonStyle(.plain)
                     .contentShape(Rectangle())
                 }
             }
+            .debugFrame("LoopCard-ActionButtons", enabled: AppConstants.Debug.logFrameCoordinates)
             }
-            .padding(.leading, 10)
-            .padding(.trailing, 10)
-            .padding(.top, 8)
-            .padding(.bottom, 8)
-            .concentricCard(cornerRadius: cardCornerRadius)
+            .padding(.leading, CardLayoutConstants.horizontalPadding)
+            .padding(.trailing, CardLayoutConstants.horizontalPadding)
+            .padding(.top, CardLayoutConstants.topPadding)
+            .padding(.bottom, CardLayoutConstants.bottomPadding)
+            .concentricCard(cornerRadius: CardLayoutConstants.cornerRadius)
             
         }
     }
@@ -482,20 +484,19 @@ struct LoopMediaView: View {
     let media: [LoopMedia]
     @Binding var currentIndex: Int
     let onPhotoTap: (Int) -> Void
-    private let mediaCornerRadius: CGFloat = 12
     
     var body: some View {
         if media.count == 1, let firstMedia = media.first {
             SingleMediaView(
                 media: firstMedia,
-                cornerRadius: mediaCornerRadius,
+                cornerRadius: CardLayoutConstants.mediaCornerRadius,
                 onPhotoTap: { onPhotoTap(0) }
             )
         } else if media.count > 1 {
             // Multiple photos with same padding as single photos
             MultipleMediaView(
                 media: media,
-                cornerRadius: mediaCornerRadius,
+                cornerRadius: CardLayoutConstants.mediaCornerRadius,
                 currentIndex: $currentIndex,
                 onPhotoTap: onPhotoTap
             )

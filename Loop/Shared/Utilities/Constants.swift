@@ -16,4 +16,9 @@ struct AppConstants {
         static let defaultDuration: Double = 0.3
         static let springDamping: Double = 0.8
     }
+    
+    struct Debug {
+        /// Enable to log frame coordinates for layout debugging
+        static let logFrameCoordinates: Bool = false
+    }
 }
