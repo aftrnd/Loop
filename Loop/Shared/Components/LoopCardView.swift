@@ -166,8 +166,9 @@ struct LoopCardView: View {
             .padding(.bottom, CardLayoutConstants.headerBottomSpacing)
             .debugFrame("LoopCard-HeaderContainer", enabled: AppConstants.Debug.logFrameCoordinates)
             
-            // Content
-            VStack(alignment: .leading, spacing: 0) {
+            // Content - identical spacing pattern to ReplyCardView
+            // Pattern: Text → 12pt → Media, then container adds 12pt → Actions
+            VStack(alignment: .leading, spacing: loop.hasMedia && !loop.content.isEmpty ? CardLayoutConstants.contentSpacing : 0) {
                 // Text content
                 if !loop.content.isEmpty {
                     let shouldTruncate = loop.content.count > maxPreviewLength && !showingFullText
@@ -198,7 +199,6 @@ struct LoopCardView: View {
                             .foregroundColor(.accentColor)
                         }
                     }
-                    .padding(.bottom, loop.hasMedia ? CardLayoutConstants.contentSpacing : CardLayoutConstants.contentToActionsSpacing)
                 }
                 
                 // Media content - unified approach for both single and multiple photos
@@ -211,9 +211,9 @@ struct LoopCardView: View {
                             showPhotoViewer = true
                         }
                     )
-                    .padding(.bottom, CardLayoutConstants.contentToActionsSpacing)
                 }
             }
+            .padding(.bottom, CardLayoutConstants.contentToActionsSpacing)
             
             // Action buttons
             HStack(alignment: .center, spacing: CardLayoutConstants.actionButtonSpacing) {
@@ -352,7 +352,7 @@ struct ReplyThreadWithLineView: View {
         if mainPostHeight > 0 {
             let lineWidth = CardLayoutConstants.conversationLineWidth
             
-            // Main avatar bottom edge
+            // Main avatar bottom edge (accounting for indent)
             let mainAvatarBottom = CardLayoutConstants.topPadding + CardLayoutConstants.avatarSize
             
             // Line starts after gap from main avatar
@@ -376,7 +376,7 @@ struct ReplyThreadWithLineView: View {
                     Color.clear.frame(height: lineStart)
                     
                     RoundedRectangle(cornerRadius: lineWidth / 2)
-                        .fill(Color(.quaternaryLabel))
+                        .fill(CardLayoutConstants.conversationLineColor)
                         .frame(width: lineWidth, height: lineHeight)
                     
                     Spacer()
@@ -395,7 +395,7 @@ struct ReplyThreadWithLineView: View {
         return VStack(spacing: 0) {
             ZStack(alignment: .topLeading) {
                 VStack(spacing: 0) {
-                    // Main post
+                    // Main post - content indented via shouldShiftContent
                     ReplyCardView(
                         reply: loop,
                         isLiked: isLiked,
@@ -424,14 +424,14 @@ struct ReplyThreadWithLineView: View {
                         }
                     )
                     
-                    // Divider - aligned with name/text
+                    // Divider - indented to align with main post's content
                     Rectangle()
-                        .fill(Color(.separator))
+                        .fill(CardLayoutConstants.dividerColor)
                         .frame(height: CardLayoutConstants.dividerHeight)
-                        .padding(.leading, CardLayoutConstants.horizontalPadding + CardLayoutConstants.avatarSize + CardLayoutConstants.avatarSpacing)
+                        .padding(.leading, CardLayoutConstants.horizontalPadding + CardLayoutConstants.contentShift)
                         .padding(.trailing, CardLayoutConstants.horizontalPadding)
                     
-                    // Reply preview
+                    // Reply preview - normal left alignment (no content shift)
                     ForEach(Array(previewReplies.enumerated()), id: \.element.id) { index, reply in
                         ReplyCardView(
                             reply: reply,
@@ -439,7 +439,7 @@ struct ReplyThreadWithLineView: View {
                             indentLevel: 1,
                             nestedReplyCount: 0,
                             isExpanded: false,
-                            isLastInThread: false,
+                            isLastInThread: true, // Set to true so content doesn't shift
                             onLike: { onCardTap?() },
                             onReply: onCardTap,
                             onToggleExpanded: nil,
@@ -514,24 +514,26 @@ struct SingleMediaView: View {
         case .image:
             let displayMode = determineDisplayMode(media: media)
             
-            CachedAsyncImage(url: URL(string: media.url)) { image in
-                image
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: displayMode.height)
-                    .clipped()
-            } placeholder: {
-                RoundedRectangle(cornerRadius: cornerRadius)
-                    .fill(Color.secondary.opacity(0.2))
-                    .frame(height: displayMode.height)
-                    .overlay(
-                        ProgressView()
-                            .scaleEffect(1.0)
-                    )
+            GeometryReader { geometry in
+                CachedAsyncImage(url: URL(string: media.url)) { image in
+                    image
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: geometry.size.width, height: displayMode.height)
+                        .clipped()
+                } placeholder: {
+                    RoundedRectangle(cornerRadius: cornerRadius)
+                        .fill(Color.secondary.opacity(0.2))
+                        .frame(width: geometry.size.width, height: displayMode.height)
+                        .overlay(
+                            ProgressView()
+                                .scaleEffect(1.0)
+                        )
+                }
+                .frame(width: geometry.size.width, height: displayMode.height)
+                .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
             }
             .frame(height: displayMode.height)
-            .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
             .onTapGesture {
                 onPhotoTap()
             }
@@ -559,7 +561,7 @@ struct SingleMediaView: View {
     
     private func determineDisplayMode(media: LoopMedia) -> ImageDisplayMode {
         guard let width = media.width, let height = media.height, height > 0 else {
-            // Default to square if no dimensions
+            // Default to square if no dimensions - use .fill to crop
             return ImageDisplayMode(height: 300, contentMode: .fill)
         }
         
@@ -573,8 +575,10 @@ struct SingleMediaView: View {
         // Clamp height to reasonable bounds for UI
         let minHeight: CGFloat = 150
         let maxHeight: CGFloat = 500
-        let clampedHeight = max(minHeight, min(maxHeight, proportionalHeight))
         
+        // Photo height determines post height, always crop sides to fit width
+        // Apply same logic for all aspect ratios - no special casing
+        let clampedHeight = max(minHeight, min(maxHeight, proportionalHeight))
         return ImageDisplayMode(height: clampedHeight, contentMode: .fill)
     }
 }
@@ -599,7 +603,7 @@ struct MultipleMediaView: View {
     
     private func determineDisplayMode(media: LoopMedia) -> ImageDisplayMode {
         guard let width = media.width, let height = media.height, height > 0 else {
-            // Default to square if no dimensions
+            // Default to square if no dimensions - use .fill to crop
             return ImageDisplayMode(height: 300, contentMode: .fill)
         }
         
@@ -613,38 +617,39 @@ struct MultipleMediaView: View {
         // Clamp height to reasonable bounds for UI
         let minHeight: CGFloat = 150
         let maxHeight: CGFloat = 500
-        let clampedHeight = max(minHeight, min(maxHeight, proportionalHeight))
         
+        // Photo height determines post height, always crop sides to fit width
+        // Apply same logic for all aspect ratios - no special casing
+        let clampedHeight = max(minHeight, min(maxHeight, proportionalHeight))
         return ImageDisplayMode(height: clampedHeight, contentMode: .fill)
     }
     
     var body: some View {
-        VStack(spacing: 0) {
-            // Image carousel
-            GeometryReader { geometry in
-                ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(spacing: 0) {
-                        ForEach(Array(media.enumerated()), id: \.offset) { index, mediaItem in
-                            CarouselPhotoView(
-                                media: mediaItem,
-                                cornerRadius: cornerRadius,
-                                height: carouselHeight,
-                                onPhotoTap: { onPhotoTap(index) }
-                            )
-                            .frame(width: geometry.size.width)
-                            .containerRelativeFrame(.horizontal)
-                        }
+        GeometryReader { geometry in
+            let photoWidth = geometry.size.width
+            
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: CardLayoutConstants.photoCarouselSpacing) {
+                    ForEach(Array(media.enumerated()), id: \.offset) { index, mediaItem in
+                        CarouselPhotoView(
+                            media: mediaItem,
+                            cornerRadius: cornerRadius,
+                            height: carouselHeight,
+                            onPhotoTap: { onPhotoTap(index) }
+                        )
+                        .frame(width: photoWidth)
                     }
-                    .scrollTargetLayout()
                 }
-                .scrollTargetBehavior(.paging)
-                .scrollPosition(id: $scrollIndex)
+                .scrollTargetLayout()
             }
-            .frame(height: carouselHeight)
-            .onChange(of: scrollIndex) { _, newValue in
-                if let newValue = newValue {
-                    currentIndex = newValue
-                }
+            .scrollTargetBehavior(.viewAligned)
+            .scrollPosition(id: $scrollIndex)
+        }
+        .frame(height: carouselHeight)
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+        .onChange(of: scrollIndex) { _, newValue in
+            if let newValue = newValue {
+                currentIndex = newValue
             }
         }
     }
@@ -659,25 +664,21 @@ struct CarouselPhotoView: View {
     var body: some View {
         switch media.type {
         case .image:
-            let displayMode = determineDisplayMode(media: media)
-            
             CachedAsyncImage(url: URL(string: media.url)) { image in
                 image
                     .resizable()
                     .aspectRatio(contentMode: .fill)
-                    .frame(maxWidth: .infinity, maxHeight: displayMode.height)
-                    .frame(height: displayMode.height)
-                    .clipped()
             } placeholder: {
                 RoundedRectangle(cornerRadius: cornerRadius)
                     .fill(Color.secondary.opacity(0.2))
-                    .frame(height: displayMode.height)
+                    .frame(height: height)
                     .overlay(
                         ProgressView()
                             .scaleEffect(1.0)
                     )
             }
-            .frame(height: displayMode.height)
+            .frame(height: height)
+            .clipped()
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
             .onTapGesture {
                 onPhotoTap()
@@ -702,27 +703,6 @@ struct CarouselPhotoView: View {
         case .text:
             EmptyView()
         }
-    }
-    
-    private func determineDisplayMode(media: LoopMedia) -> ImageDisplayMode {
-        guard let width = media.width, let height = media.height, height > 0 else {
-            // Default to square if no dimensions
-            return ImageDisplayMode(height: 300, contentMode: .fill)
-        }
-        
-        let aspectRatio = width / height
-        
-        // Calculate height based on aspect ratio to show proper proportions
-        // Use a base width of ~350 (approximate card width minus padding) to calculate proportional height
-        let baseWidth: CGFloat = 350
-        let proportionalHeight = baseWidth / aspectRatio
-        
-        // Clamp height to reasonable bounds for UI
-        let minHeight: CGFloat = 150
-        let maxHeight: CGFloat = 500
-        let clampedHeight = max(minHeight, min(maxHeight, proportionalHeight))
-        
-        return ImageDisplayMode(height: clampedHeight, contentMode: .fill)
     }
 }
 

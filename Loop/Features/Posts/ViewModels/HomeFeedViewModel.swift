@@ -221,11 +221,13 @@ class HomeFeedViewModel: ObservableObject {
                 // Filter to only show replies from:
                 // 1. Users you're following, OR
                 // 2. Yourself (even though you don't follow yourself)
+                // 3. MUST be a top-level reply (not a reply to a comment)
                 let relevantReplies = replies.filter { reply in
                     let isFollowing = followingIds.contains(reply.authorId)
                     let isYou = reply.authorId == currentUserId
-                    print("   Checking reply from \(reply.authorDisplayName ?? "unknown"): isFollowing=\(isFollowing), isYou=\(isYou)")
-                    return isFollowing || isYou
+                    let isTopLevel = reply.replyToReplyId == nil
+                    print("   Checking reply from \(reply.authorDisplayName ?? "unknown"): isFollowing=\(isFollowing), isYou=\(isYou), isTopLevel=\(isTopLevel)")
+                    return (isFollowing || isYou) && isTopLevel
                 }
                 
                 print("🔍 DEBUG: Found \(relevantReplies.count) relevant replies for loop \(loop.id.prefix(8))")
@@ -371,11 +373,13 @@ class HomeFeedViewModel: ObservableObject {
             // Filter to only show replies from:
             // 1. Users you're following, OR
             // 2. Yourself (even though you don't follow yourself)
+            // 3. MUST be a top-level reply (not a reply to a comment)
             let relevantReplies = replies.filter { reply in
                 let isFollowing = followingIds.contains(reply.authorId)
                 let isYou = reply.authorId == currentUserId
-                print("🔍 DEBUG: Reply from \(reply.authorDisplayName ?? "unknown") - isFollowing: \(isFollowing), isYou: \(isYou)")
-                return isFollowing || isYou
+                let isTopLevel = reply.replyToReplyId == nil
+                print("🔍 DEBUG: Reply from \(reply.authorDisplayName ?? "unknown") - isFollowing: \(isFollowing), isYou: \(isYou), isTopLevel: \(isTopLevel)")
+                return (isFollowing || isYou) && isTopLevel
             }
             
             print("🔍 DEBUG: Found \(relevantReplies.count) relevant replies")

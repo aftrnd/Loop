@@ -78,9 +78,9 @@ struct LoopDetailView: View {
                     
                     // Divider above replies section
                     Rectangle()
-                        .fill(Color(.separator))
+                        .fill(CardLayoutConstants.dividerColor)
                         .frame(maxWidth: .infinity)
-                        .frame(height: 1.15)
+                        .frame(height: CardLayoutConstants.dividerHeight)
                         .padding(.top, 3)
                     
                     // Replies section
@@ -153,9 +153,9 @@ struct LoopDetailView: View {
                                         if lineHeight > 0 {
                                             let lineStartY = CardLayoutConstants.topPadding + CardLayoutConstants.avatarSize + CardLayoutConstants.avatarLineGap
                                             
-                                            RoundedRectangle(cornerRadius: CardLayoutConstants.conversationLineWidth / 2)
-                                                .fill(Color(.quaternaryLabel))
-                                                .frame(width: CardLayoutConstants.conversationLineWidth, height: lineHeight)
+                                        RoundedRectangle(cornerRadius: CardLayoutConstants.conversationLineWidth / 2)
+                                            .fill(CardLayoutConstants.conversationLineColor)
+                                            .frame(width: CardLayoutConstants.conversationLineWidth, height: lineHeight)
                                                 .offset(x: CardLayoutConstants.avatarSize / 2 - CardLayoutConstants.conversationLineWidth / 2, y: lineStartY)
                                         }
                                     }
@@ -218,7 +218,7 @@ struct LoopDetailView: View {
                                         if threadedReply.isExpanded {
                                             // Divider after parent reply when expanded (aligned with name/text)
                                             Rectangle()
-                                                .fill(Color(.separator))
+                                                .fill(CardLayoutConstants.dividerColor)
                                                 .frame(maxWidth: .infinity)
                                                 .frame(height: CardLayoutConstants.dividerHeight)
                                                 .padding(.leading, CardLayoutConstants.contentShift) // Avatar + spacing (replies have negative padding)
@@ -275,7 +275,7 @@ struct LoopDetailView: View {
                                                 // Divider between nested replies (aligned with name/text)
                                                 if nestedIndex < threadedReply.nestedReplies.count - 1 {
                                                     Rectangle()
-                                                        .fill(Color(.separator))
+                                                        .fill(CardLayoutConstants.dividerColor)
                                                         .frame(maxWidth: .infinity)
                                                         .frame(height: CardLayoutConstants.dividerHeight)
                                                         .padding(.leading, CardLayoutConstants.contentShift) // Avatar + spacing (replies have negative padding)
@@ -318,9 +318,9 @@ struct LoopDetailView: View {
                                 // Divider after each top-level reply
                                 if index < viewModel.threadedReplies.count - 1 {
                                     Rectangle()
-                                        .fill(Color(.separator))
+                                        .fill(CardLayoutConstants.dividerColor)
                                         .frame(maxWidth: .infinity)
-                                        .frame(height: 1.15)
+                                        .frame(height: CardLayoutConstants.dividerHeight)
                                 }
                             }
                         }

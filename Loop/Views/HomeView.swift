@@ -206,12 +206,11 @@ struct HomeView: View {
                         .padding(.bottom, index == viewModel.loops.count - 1 ? 0 : 5) // Add bottom padding except for last post
                         .overlay(alignment: .bottom) {
                             if index < viewModel.loops.count - 1 {
-                                // Align divider with text when post has replies, otherwise standard padding
-                                let hasReplies = replies != nil && !replies!.isEmpty
+                                // Bottom divider - always full width from left padding
                                 Rectangle()
-                                    .fill(Color(.separator))
+                                    .fill(CardLayoutConstants.dividerColor)
                                     .frame(height: CardLayoutConstants.dividerHeight)
-                                    .padding(.leading, hasReplies ? CardLayoutConstants.horizontalPadding + CardLayoutConstants.avatarSize + CardLayoutConstants.avatarSpacing : CardLayoutConstants.horizontalPadding)
+                                    .padding(.leading, CardLayoutConstants.horizontalPadding)
                                     .padding(.trailing, CardLayoutConstants.horizontalPadding)
                             }
                         }

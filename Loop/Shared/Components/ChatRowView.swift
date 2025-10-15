@@ -11,7 +11,7 @@ struct ChatRowView: View {
     private let dotSize: CGFloat = 8
     
     var body: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: CardLayoutConstants.avatarSpacing) { // 20pt - consistent with posts
             // Avatar with unread dot
             ZStack(alignment: .leading) {
                 // Unread indicator dot - positioned to the left of avatar
@@ -33,13 +33,13 @@ struct ChatRowView: View {
                             image
                                 .resizable()
                                 .aspectRatio(contentMode: .fill)
-                                .frame(width: 56, height: 56)
+                                .frame(width: CardLayoutConstants.avatarSize, height: CardLayoutConstants.avatarSize)
                                 .clipShape(Circle())
                         } placeholder: {
                             // Placeholder while loading
                             Circle()
                                 .fill(Color(.systemGray5))
-                                .frame(width: 56, height: 56)
+                                .frame(width: CardLayoutConstants.avatarSize, height: CardLayoutConstants.avatarSize)
                                 .overlay {
                                     ProgressView()
                                         .scaleEffect(0.7)
@@ -49,10 +49,10 @@ struct ChatRowView: View {
                         // Default avatar with initials
                         Circle()
                             .fill(Color(.systemGray5))
-                            .frame(width: 56, height: 56)
+                            .frame(width: CardLayoutConstants.avatarSize, height: CardLayoutConstants.avatarSize)
                         
                         Color.clear
-                            .frame(width: 56, height: 56)
+                            .frame(width: CardLayoutConstants.avatarSize, height: CardLayoutConstants.avatarSize)
                             .glassEffect(.regular, in: Circle())
                         
                         Text(String(chat.displayTitle.prefix(1)).uppercased())

@@ -184,8 +184,8 @@ struct ChatsListView: View {
                     .overlay(alignment: .bottom) {
                         if index < viewModel.recent.count - 1 {
                             Rectangle()
-                                .fill(Color(.separator))
-                                .frame(height: 1.15)
+                                .fill(CardLayoutConstants.dividerColor)
+                                .frame(height: CardLayoutConstants.dividerHeight)
                                 .padding(.leading, 82)
                                 .padding(.trailing, 10)
                         }

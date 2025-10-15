@@ -59,11 +59,14 @@ enum CardLayoutConstants {
     
     // MARK: - Dividers & Lines
     static let dividerHeight: CGFloat = 1.15
+    static let dividerColor: Color = Color(.separator)
     static let conversationLineWidth: CGFloat = 2.5
+    static let conversationLineColor: Color = Color(.separator)
     static let avatarLineGap: CGFloat = 10 // Gap between avatar edge and conversation line
     
     // MARK: - Media
     static let mediaCornerRadius: CGFloat = 12
+    static let photoCarouselSpacing: CGFloat = 10 // Spacing between photos in multi-photo carousels
     
     // MARK: - Computed Values (DO NOT MODIFY - Derived from base values)
     /// Total shift for content when aligning with name
@@ -134,13 +137,13 @@ struct ReplyCardView: View {
                 .padding(.bottom, CardLayoutConstants.headerBottomSpacing)
                 .debugFrame("ReplyCard-HeaderContainer", enabled: AppConstants.Debug.logFrameCoordinates)
                 
-                // Content - text shifts, media stays full width
-                VStack(alignment: .leading, spacing: 0) {
+                // Content - text and media with identical spacing to LoopCardView
+                // Pattern: Text → 12pt → Media, then container adds 12pt → Actions
+                VStack(alignment: .leading, spacing: reply.hasMedia && !reply.content.isEmpty ? CardLayoutConstants.contentSpacing : 0) {
                     // Text content - shifts right when needed
                     if !reply.content.isEmpty {
                         contentView
                             .padding(.leading, shouldShiftContent ? CardLayoutConstants.contentShift : 0)
-                            .padding(.bottom, reply.hasMedia ? CardLayoutConstants.contentSpacing : CardLayoutConstants.contentToActionsSpacing)
                             .animation(.spring(response: CardLayoutConstants.contentShiftAnimationResponse, dampingFraction: CardLayoutConstants.contentShiftAnimationDamping), value: shouldShiftContent)
                     }
                     
@@ -148,10 +151,10 @@ struct ReplyCardView: View {
                     if reply.hasMedia {
                         mediaView
                             .padding(.leading, shouldShiftContent ? CardLayoutConstants.contentShift : 0)
-                            .padding(.bottom, CardLayoutConstants.contentToActionsSpacing)
                             .animation(.spring(response: CardLayoutConstants.contentShiftAnimationResponse, dampingFraction: CardLayoutConstants.contentShiftAnimationDamping), value: shouldShiftContent)
                     }
                 }
+                .padding(.bottom, CardLayoutConstants.contentToActionsSpacing)
                 
                 // Action buttons - aligned with avatar's left edge, shifts right when content does
                 actionButtonsView
@@ -242,14 +245,11 @@ struct ReplyCardView: View {
     }
     
     private var mediaView: some View {
-        GeometryReader { geometry in
-            let availableWidth = geometry.size.width
-            
+        Group {
             if reply.media.count == 1, let firstMedia = reply.media.first {
                 // Single image - tappable
                 SingleReplyMediaView(
                     media: firstMedia,
-                    availableWidth: availableWidth,
                     onPhotoTap: {
                         selectedPhotoIndex = 0
                         showPhotoViewer = true
@@ -259,7 +259,6 @@ struct ReplyCardView: View {
                 // Multiple images - swipeable carousel
                 MultipleReplyMediaView(
                     media: reply.media,
-                    availableWidth: availableWidth,
                     currentIndex: $currentMediaIndex,
                     onPhotoTap: { index in
                         selectedPhotoIndex = index
@@ -268,24 +267,6 @@ struct ReplyCardView: View {
                 )
             }
         }
-        .frame(height: calculateMediaHeight())
-    }
-    
-    private func calculateMediaHeight() -> CGFloat {
-        guard let firstMedia = reply.media.first,
-              let width = firstMedia.width,
-              let height = firstMedia.height else { return 0 }
-        
-        // Get available width - full width to right edge when content is shifted
-        let screenWidth = UIScreen.main.bounds.width
-        let cardPadding = CardLayoutConstants.horizontalPadding * 2
-        let availableWidth = shouldShiftContent ? 
-            screenWidth - cardPadding - CardLayoutConstants.contentShift : 
-            screenWidth - cardPadding
-        
-        // Maintain aspect ratio
-        let aspectRatio = CGFloat(width) / CGFloat(height)
-        return availableWidth / aspectRatio
     }
     
     private var actionButtonsView: some View {
@@ -388,29 +369,40 @@ struct ReplyCardView: View {
 
 struct SingleReplyMediaView: View {
     let media: LoopMedia
-    let availableWidth: CGFloat
     let onPhotoTap: () -> Void
     
     var body: some View {
         if let width = media.width, let height = media.height, height > 0 {
             let aspectRatio = CGFloat(width) / CGFloat(height)
-            let mediaHeight = availableWidth / aspectRatio
+            // Calculate proportional height like regular media views
+            let baseWidth: CGFloat = 350
+            let proportionalHeight = baseWidth / aspectRatio
+            let minHeight: CGFloat = 150
+            let maxHeight: CGFloat = 500
             
-            CachedAsyncImage(url: URL(string: media.url)) { image in
-                image
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .frame(width: availableWidth, height: mediaHeight)
-                    .clipShape(RoundedRectangle(cornerRadius: CardLayoutConstants.mediaCornerRadius))
-            } placeholder: {
-                RoundedRectangle(cornerRadius: CardLayoutConstants.mediaCornerRadius)
-                    .fill(Color(.systemGray5))
-                    .frame(width: availableWidth, height: mediaHeight)
-                    .overlay(
-                        ProgressView()
-                            .scaleEffect(1.0)
-                    )
+            // Photo height determines post height, always crop sides to fit width
+            let mediaHeight: CGFloat = max(minHeight, min(maxHeight, proportionalHeight))
+            
+            GeometryReader { geometry in
+                CachedAsyncImage(url: URL(string: media.url)) { image in
+                    image
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: geometry.size.width, height: mediaHeight)
+                        .clipped()
+                } placeholder: {
+                    RoundedRectangle(cornerRadius: CardLayoutConstants.mediaCornerRadius)
+                        .fill(Color(.systemGray5))
+                        .frame(width: geometry.size.width, height: mediaHeight)
+                        .overlay(
+                            ProgressView()
+                                .scaleEffect(1.0)
+                        )
+                }
+                .frame(width: geometry.size.width, height: mediaHeight)
+                .clipShape(RoundedRectangle(cornerRadius: CardLayoutConstants.mediaCornerRadius))
             }
+            .frame(height: mediaHeight)
             .onTapGesture {
                 onPhotoTap()
             }
@@ -420,7 +412,6 @@ struct SingleReplyMediaView: View {
 
 struct MultipleReplyMediaView: View {
     let media: [LoopMedia]
-    let availableWidth: CGFloat
     @Binding var currentIndex: Int
     let onPhotoTap: (Int) -> Void
     @State private var scrollIndex: Int? = 0
@@ -429,31 +420,41 @@ struct MultipleReplyMediaView: View {
         guard let firstMedia = media.first,
               let width = firstMedia.width,
               let height = firstMedia.height,
-              height > 0 else { return 200 }
+              height > 0 else { return 300 }
         
         let aspectRatio = CGFloat(width) / CGFloat(height)
-        return availableWidth / aspectRatio
+        // Calculate proportional height like regular media views
+        let baseWidth: CGFloat = 350
+        let proportionalHeight = baseWidth / aspectRatio
+        let minHeight: CGFloat = 150
+        let maxHeight: CGFloat = 500
+        
+        // Photo height determines post height, always crop sides to fit width
+        return max(minHeight, min(maxHeight, proportionalHeight))
     }
     
     var body: some View {
         GeometryReader { geometry in
+            let photoWidth = geometry.size.width
+            
             ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: 0) {
+                LazyHStack(spacing: CardLayoutConstants.photoCarouselSpacing) {
                     ForEach(Array(media.enumerated()), id: \.offset) { index, mediaItem in
                         ReplyCarouselPhotoView(
                             media: mediaItem,
                             height: carouselHeight,
                             onPhotoTap: { onPhotoTap(index) }
                         )
-                        .frame(width: geometry.size.width)
-                        .containerRelativeFrame(.horizontal)
+                        .frame(width: photoWidth)
                     }
                 }
                 .scrollTargetLayout()
             }
-            .scrollTargetBehavior(.paging)
+            .scrollTargetBehavior(.viewAligned)
             .scrollPosition(id: $scrollIndex)
         }
+        .frame(height: carouselHeight)
+        .clipShape(RoundedRectangle(cornerRadius: CardLayoutConstants.mediaCornerRadius))
         .onChange(of: scrollIndex) { _, newValue in
             if let newValue = newValue {
                 currentIndex = newValue
@@ -472,8 +473,6 @@ struct ReplyCarouselPhotoView: View {
             image
                 .resizable()
                 .aspectRatio(contentMode: .fill)
-                .frame(height: height)
-                .clipShape(RoundedRectangle(cornerRadius: CardLayoutConstants.mediaCornerRadius))
         } placeholder: {
             RoundedRectangle(cornerRadius: CardLayoutConstants.mediaCornerRadius)
                 .fill(Color(.systemGray5))
@@ -483,6 +482,9 @@ struct ReplyCarouselPhotoView: View {
                         .scaleEffect(1.0)
                 )
         }
+        .frame(height: height)
+        .clipped()
+        .clipShape(RoundedRectangle(cornerRadius: CardLayoutConstants.mediaCornerRadius))
         .onTapGesture {
             onPhotoTap()
         }
