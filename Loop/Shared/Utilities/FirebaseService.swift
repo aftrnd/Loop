@@ -1154,14 +1154,36 @@ class FirebaseService {
             throw NSError(domain: "FirebaseService", code: 3, userInfo: [NSLocalizedDescriptionKey: "Unauthorized to delete this loop"])
         }
         
-        // Delete all replies to this loop
-        let repliesSnapshot = try await db.collection("loops")
+        // Delete all direct replies to this loop (where parentLoopId == loopId)
+        let directRepliesSnapshot = try await db.collection("loops")
             .whereField("parentLoopId", isEqualTo: loopId)
             .getDocuments()
         
+        // Delete all nested replies to this loop (where replyToReplyId == loopId)
+        // These are replies to this comment (not to the original post)
+        let nestedRepliesSnapshot = try await db.collection("loops")
+            .whereField("replyToReplyId", isEqualTo: loopId)
+            .getDocuments()
+        
         let batch = db.batch()
-        for replyDoc in repliesSnapshot.documents {
+        
+        // Delete all direct replies
+        for replyDoc in directRepliesSnapshot.documents {
             batch.deleteDocument(replyDoc.reference)
+        }
+        
+        // Delete all nested replies (replies to this comment)
+        for nestedReplyDoc in nestedRepliesSnapshot.documents {
+            batch.deleteDocument(nestedReplyDoc.reference)
+            
+            // Also remove from parent's replies array if they're tracked there
+            let nestedData = nestedReplyDoc.data()
+            if let nestedParentLoopId = nestedData["parentLoopId"] as? String {
+                let parentLoopRef = db.collection("loops").document(nestedParentLoopId)
+                batch.updateData([
+                    "replies": FieldValue.arrayRemove([nestedReplyDoc.documentID])
+                ], forDocument: parentLoopRef)
+            }
         }
         
         // Delete the loop itself
@@ -1176,7 +1198,9 @@ class FirebaseService {
         }
         
         try await batch.commit()
-        print("✅ Successfully deleted loop: \(loopId)")
+        
+        let totalDeleted = directRepliesSnapshot.documents.count + nestedRepliesSnapshot.documents.count + 1
+        print("✅ Successfully deleted loop: \(loopId) and \(totalDeleted - 1) nested replies")
     }
     
     func getLoop(withId loopId: String) async throws -> Loop? {

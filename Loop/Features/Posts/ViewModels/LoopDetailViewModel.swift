@@ -448,14 +448,23 @@ class LoopDetailViewModel: ObservableObject {
             return
         }
         
-        // OPTIMISTIC: Remove reply and update reply count immediately
+        // OPTIMISTIC: Remove reply and all its nested replies, update reply count immediately
         guard let index = replies.firstIndex(where: { $0.id == targetLoop.id }) else { return }
         let deletedReply = replies[index]
         
-        // Update loop's reply count optimistically
+        // Find all nested replies to this comment (replies where replyToReplyId == targetLoop.id)
+        let nestedRepliesToDelete = replies.filter { $0.replyToReplyId == targetLoop.id }
+        let deletedNestedReplies = nestedRepliesToDelete
+        
+        // Update loop's reply count optimistically - remove this reply AND all nested replies
         var updatedLoop = loop
         var newReplies = updatedLoop.replies
         newReplies.removeAll { $0 == targetLoop.id }
+        // Also remove all nested replies from the count
+        for nestedReply in nestedRepliesToDelete {
+            newReplies.removeAll { $0 == nestedReply.id }
+        }
+        
         updatedLoop = Loop(
             id: updatedLoop.id,
             authorId: updatedLoop.authorId,
@@ -478,7 +487,12 @@ class LoopDetailViewModel: ObservableObject {
         transaction.disablesAnimations = true
         withTransaction(transaction) {
             loop = updatedLoop
+            // Remove the deleted reply
             replies.remove(at: index)
+            // Remove all nested replies
+            replies.removeAll { nestedReply in
+                nestedRepliesToDelete.contains { $0.id == nestedReply.id }
+            }
             organizeThreadedReplies()
         }
         
@@ -487,10 +501,15 @@ class LoopDetailViewModel: ObservableObject {
             // Notify parent that replies changed
             onRepliesChanged?()
         } catch {
-            // REVERT: Restore reply and count on error
+            // REVERT: Restore reply, nested replies, and count on error
             var revertedLoop = loop
             var revertedReplies = revertedLoop.replies
             revertedReplies.append(targetLoop.id)
+            // Restore nested replies to the count
+            for nestedReply in deletedNestedReplies {
+                revertedReplies.append(nestedReply.id)
+            }
+            
             revertedLoop = Loop(
                 id: revertedLoop.id,
                 authorId: revertedLoop.authorId,
@@ -514,10 +533,12 @@ class LoopDetailViewModel: ObservableObject {
             withTransaction(transaction) {
                 loop = revertedLoop
                 replies.insert(deletedReply, at: min(index, replies.count))
+                // Restore nested replies
+                replies.append(contentsOf: deletedNestedReplies)
                 organizeThreadedReplies()
             }
             
-            errorMessage = "Couldn't delete reply. Please try again."
+            errorMessage = "Couldn't delete comment. Please try again."
         }
     }
     

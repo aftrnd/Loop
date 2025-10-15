@@ -43,7 +43,10 @@ struct LoopDetailView: View {
                     .padding(.top, 10)
                     
                     // Divider above replies section
-                    Divider()
+                    Rectangle()
+                        .fill(Color(.separator))
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 1.15)
                         .padding(.top, 3)
                     
                     // Replies section
@@ -52,7 +55,7 @@ struct LoopDetailView: View {
                         VStack(spacing: 16) {
                             ProgressView()
                                 .scaleEffect(1.2)
-                            Text("Loading replies...")
+                            Text("Loading comments...")
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
                         }
@@ -65,11 +68,11 @@ struct LoopDetailView: View {
                                 .foregroundColor(.secondary)
                             
                             VStack(spacing: 8) {
-                                Text("No replies yet")
+                                Text("No Comments")
                                     .font(.headline)
                                     .fontWeight(.semibold)
                                 
-                                Text("Be the first to reply!")
+                                Text("Be the first to comment!")
                                     .font(.subheadline)
                                     .foregroundColor(.secondary)
                             }
@@ -77,20 +80,20 @@ struct LoopDetailView: View {
                             Button(action: {
                                 viewModel.showReplyCompose()
                             }) {
-                                Text("Add Reply")
+                                Text("Add Comment")
                                     .fontWeight(.semibold)
                                     .padding(.horizontal, 20)
                                     .padding(.vertical, 10)
-                                    .background(Color.accentColor)
-                                    .foregroundColor(.white)
+                                    .background(Color.primary)
+                                    .foregroundColor(Color(.systemBackground))
                                     .cornerRadius(20)
                             }
                         }
                         .padding(.vertical, 40)
                     } else {
-                        // Replies header
+                        // Comments header
                         HStack {
-                            Text("Replies")
+                            Text("Comments")
                                 .font(.headline)
                                 .fontWeight(.semibold)
                             
@@ -102,7 +105,7 @@ struct LoopDetailView: View {
                                 .monospacedDigit()
                         }
                         .padding(.top, 20)
-                        .padding(.bottom, 12)
+                        .padding(.bottom, 8)
                         
                         // Replies list - threaded structure with collapsible nested replies
                         LazyVStack(spacing: 0) {
@@ -110,14 +113,42 @@ struct LoopDetailView: View {
                                 ZStack(alignment: .topLeading) {
                                     // Connecting line overlay (only when expanded)
                                     if threadedReply.isExpanded && !threadedReply.nestedReplies.isEmpty {
-                                        // Calculate line height based on number of nested replies
-                                        let nestedRepliesHeight = CGFloat(threadedReply.nestedReplies.count) * 100 // Approximate height per reply
-                                        let lineGap: CGFloat = 10 // Gap between line and avatars
+                                        // Calculate line positioning to connect avatars with proper gaps
+                                        // Avatar structure: 12pt padding + 56px avatar = avatar bottom at 68pt
+                                        let avatarSize: CGFloat = 56
+                                        let cardTopPadding: CGFloat = 12
+                                        let lineGap: CGFloat = 10 // Gap between line and avatars at both ends
+                                        
+                                        // Line starts below parent avatar + gap
+                                        let lineStartY = cardTopPadding + avatarSize + lineGap // 12 + 56 + 10 = 78
+                                        
+                                        // Estimate card heights more accurately
+                                        // Structure of ReplyCardView:
+                                        // - 12pt top padding
+                                        // - 56px avatar (in header with content beside it)
+                                        // - 12pt spacing (between header and content)
+                                        // - Content (variable, estimated ~40pt for 2 lines)
+                                        // - Action buttons (~30pt)
+                                        // - 12pt bottom padding
+                                        // Total minimum: ~150pt per card
+                                        let estimatedCardHeight: CGFloat = 145
+                                        
+                                        // Calculate where last nested avatar's top is:
+                                        // 1. Parent card takes up estimatedCardHeight
+                                        // 2. Then all nested replies except last: (count - 1) * estimatedCardHeight
+                                        // 3. Then last reply's top padding to get to its avatar top
+                                        let parentCardHeight = estimatedCardHeight
+                                        let nestedRepliesBeforeLast = CGFloat(threadedReply.nestedReplies.count - 1) * estimatedCardHeight
+                                        let lastAvatarTop = parentCardHeight + nestedRepliesBeforeLast + cardTopPadding
+                                        
+                                        // Line ends before last nested avatar - gap
+                                        let lineEndY = lastAvatarTop - lineGap
+                                        let lineHeight = max(10, lineEndY - lineStartY) // Minimum 10pt line
+                                        
                                         Rectangle()
-                                            .fill(Color.secondary.opacity(0.3))
-                                            .frame(width: 2)
-                                            .offset(x: 28, y: 68 + lineGap) // Centered on 56px avatar (56/2 = 28), with gap below parent avatar
-                                            .frame(height: nestedRepliesHeight - lineGap) // End with gap before last nested avatar
+                                            .fill(Color.primary.opacity(0.15))
+                                            .frame(width: 2, height: lineHeight)
+                                            .offset(x: 28, y: lineStartY) // x: centered on 56px avatar (28), y: start position
                                     }
                                     
                                     VStack(spacing: 0) {
@@ -128,6 +159,7 @@ struct LoopDetailView: View {
                                             indentLevel: 0,
                                             nestedReplyCount: threadedReply.nestedReplies.count,
                                             isExpanded: threadedReply.isExpanded,
+                                            isLastInThread: false, // Top-level comments are never "last in thread"
                                             onLike: {
                                                 let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
                                                 impactFeedback.impactOccurred()
@@ -137,6 +169,7 @@ struct LoopDetailView: View {
                                                 }
                                             },
                                             onReply: {
+                                                // Always reply to the top-level comment, adding to nested list
                                                 let impactFeedback = UIImpactFeedbackGenerator(style: .light)
                                                 impactFeedback.impactOccurred()
                                                 
@@ -162,6 +195,13 @@ struct LoopDetailView: View {
                                         
                                         // Show nested replies if expanded
                                         if threadedReply.isExpanded {
+                                            // Divider after parent reply when expanded (shifted right to align with content)
+                                            Rectangle()
+                                                .fill(Color(.separator))
+                                                .frame(maxWidth: .infinity)
+                                                .frame(height: 1.15)
+                                                .padding(.leading, 68) // Align with shifted content (56px avatar + 12px spacing)
+                                            
                                             ForEach(Array(threadedReply.nestedReplies.enumerated()), id: \.element.id) { nestedIndex, nestedReply in
                                                 ReplyCardView(
                                                     reply: nestedReply,
@@ -169,6 +209,7 @@ struct LoopDetailView: View {
                                                     indentLevel: 1,
                                                     nestedReplyCount: 0,
                                                     isExpanded: false,
+                                                    isLastInThread: nestedIndex == threadedReply.nestedReplies.count - 1, // Check if this is the last nested reply
                                                     onLike: {
                                                         let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
                                                         impactFeedback.impactOccurred()
@@ -177,12 +218,13 @@ struct LoopDetailView: View {
                                                             await viewModel.toggleLike(for: nestedReply)
                                                         }
                                                     },
-                                                    onReply: {
+                                                    onReply: (nestedIndex == threadedReply.nestedReplies.count - 1) ? {
+                                                        // Only last nested reply can be replied to
                                                         let impactFeedback = UIImpactFeedbackGenerator(style: .light)
                                                         impactFeedback.impactOccurred()
                                                         
-                                                        viewModel.replyToReply(nestedReply)
-                                                    },
+                                                        viewModel.replyToReply(threadedReply.reply) // Reply to parent comment
+                                                    } : nil,
                                                     onToggleExpanded: nil,
                                                     onDelete: viewModel.canDeleteLoop(nestedReply) ? {
                                                         let impactFeedback = UINotificationFeedbackGenerator()
@@ -197,9 +239,13 @@ struct LoopDetailView: View {
                                                     }
                                                 )
                                                 
+                                                // Divider between nested replies (shifted right to align with content)
                                                 if nestedIndex < threadedReply.nestedReplies.count - 1 {
-                                                    Divider()
-                                                        .padding(.horizontal, 12)
+                                                    Rectangle()
+                                                        .fill(Color(.separator))
+                                                        .frame(maxWidth: .infinity)
+                                                        .frame(height: 1.15)
+                                                        .padding(.leading, 68) // Align with shifted content (56px avatar + 12px spacing)
                                                 }
                                             }
                                             
@@ -238,7 +284,10 @@ struct LoopDetailView: View {
                                 
                                 // Divider after each top-level reply
                                 if index < viewModel.threadedReplies.count - 1 {
-                                    Divider()
+                                    Rectangle()
+                                        .fill(Color(.separator))
+                                        .frame(maxWidth: .infinity)
+                                        .frame(height: 1.15)
                                 }
                             }
                         }
@@ -248,7 +297,7 @@ struct LoopDetailView: View {
                 .padding(.horizontal, 20) // Doubled padding for more breathing room
             }
             .background(Color(.systemBackground))
-            .navigationTitle("Reply")
+            .navigationTitle("Comments")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {

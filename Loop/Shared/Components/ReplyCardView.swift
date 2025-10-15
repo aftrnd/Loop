@@ -6,6 +6,7 @@ struct ReplyCardView: View {
     let indentLevel: Int // 0 = top-level reply, 1+ = nested
     let nestedReplyCount: Int // Number of nested replies
     let isExpanded: Bool // Whether nested replies are shown
+    let isLastInThread: Bool // Whether this is the last reply in a nested thread
     let onLike: () -> Void
     let onReply: (() -> Void)? // Reply to this reply
     let onToggleExpanded: (() -> Void)? // Toggle nested replies visibility
@@ -20,6 +21,15 @@ struct ReplyCardView: View {
     // Clean, subtle indent for nested replies (like Reddit/Twitter)
     private var totalIndent: CGFloat {
         CGFloat(indentLevel) * 40 // 40px per nesting level
+    }
+    
+    // Determines if content should shift right (to align with name instead of avatar)
+    private var shouldShiftContent: Bool {
+        // Shift content for:
+        // 1. Top-level replies that are expanded with nested replies
+        // 2. Nested replies that are NOT the last one (so line can continue down)
+        return (indentLevel == 0 && isExpanded && nestedReplyCount > 0) ||
+               (indentLevel == 1 && !isLastInThread)
     }
     
     var body: some View {
@@ -72,15 +82,17 @@ struct ReplyCardView: View {
                     }
                 }
                 
-                // Content - aligned with avatar's left edge, shifts right to align with name when expanded
+                // Content - aligned with avatar's left edge, shifts right to align with name when:
+                // - Top-level reply that's expanded with nested replies, OR
+                // - Nested reply that's NOT the last one in the thread
                 if !reply.content.isEmpty {
                     contentView
-                        .padding(.leading, indentLevel == 0 && isExpanded && nestedReplyCount > 0 ? 68 : 0) // 56px avatar + 12px spacing
+                        .padding(.leading, shouldShiftContent ? 68 : 0) // 56px avatar + 12px spacing
                 }
                 
-                // Action buttons - aligned with avatar's left edge, shifts right to align with name when expanded
+                // Action buttons - aligned with avatar's left edge, shifts right when content does
                 actionButtonsView
-                    .padding(.leading, indentLevel == 0 && isExpanded && nestedReplyCount > 0 ? 68 : 0) // 56px avatar + 12px spacing
+                    .padding(.leading, shouldShiftContent ? 68 : 0) // 56px avatar + 12px spacing
             }
             .padding(.vertical, 12)
             
@@ -138,6 +150,14 @@ struct ReplyCardView: View {
                             .font(.headline)
                             .fontWeight(.semibold)
                     }
+            }
+        }
+        .background {
+            // Add mask/border for middle nested replies to create spacing from the line
+            if indentLevel == 1 && !isLastInThread {
+                Circle()
+                    .fill(Color(.systemBackground))
+                    .frame(width: 76, height: 76) // 56px avatar + 20px padding (10px on each side)
             }
         }
         .onTapGesture {
@@ -249,6 +269,7 @@ struct ReplyCardView: View {
                 indentLevel: 0,
                 nestedReplyCount: 2,
                 isExpanded: false,
+                isLastInThread: false,
                 onLike: {},
                 onReply: {},
                 onToggleExpanded: {},
@@ -274,6 +295,7 @@ struct ReplyCardView: View {
                 indentLevel: 1,
                 nestedReplyCount: 0,
                 isExpanded: false,
+                isLastInThread: true,
                 onLike: {},
                 onReply: {},
                 onToggleExpanded: nil,
@@ -299,6 +321,7 @@ struct ReplyCardView: View {
                 indentLevel: 0,
                 nestedReplyCount: 0,
                 isExpanded: false,
+                isLastInThread: false,
                 onLike: {},
                 onReply: {},
                 onToggleExpanded: nil,
