@@ -4,9 +4,43 @@ struct LoopDetailView: View {
     @StateObject private var viewModel: LoopDetailViewModel
     @Environment(\.dismiss) private var dismiss
     @State private var profileUserToShow: ProfileUser?
+    @State private var replyHeights: [String: CGFloat] = [:] // Store actual heights by reply ID
     
     init(loop: Loop, onRepliesChanged: (() -> Void)? = nil) {
         _viewModel = StateObject(wrappedValue: LoopDetailViewModel(loop: loop, onRepliesChanged: onRepliesChanged))
+    }
+    
+    // Helper function to calculate conversation line height
+    private func calculateLineHeight(for threadedReply: ThreadedReply) -> CGFloat {
+        guard let parentHeight = replyHeights[threadedReply.reply.id], parentHeight > 0 else {
+            return 0
+        }
+        
+        // Line starts below parent avatar + gap
+        let lineStartY = CardLayoutConstants.topPadding + CardLayoutConstants.avatarSize + CardLayoutConstants.avatarLineGap
+        
+        // Calculate where last nested avatar's top is using actual measurements
+        // 1. Parent card actual height
+        let parentCardHeight = parentHeight
+        // 2. Divider after parent
+        let dividerHeight = CardLayoutConstants.dividerHeight
+        // 3. Sum of all nested reply heights except the last
+        var nestedHeightsBeforeLast: CGFloat = 0
+        for i in 0..<(threadedReply.nestedReplies.count - 1) {
+            let nestedReply = threadedReply.nestedReplies[i]
+            nestedHeightsBeforeLast += replyHeights[nestedReply.id] ?? 145
+            // Add divider height between nested replies
+            if i < threadedReply.nestedReplies.count - 2 {
+                nestedHeightsBeforeLast += CardLayoutConstants.dividerHeight
+            }
+        }
+        
+        // 4. Last reply's top padding to get to its avatar top
+        let lastAvatarTop = parentCardHeight + dividerHeight + nestedHeightsBeforeLast + CardLayoutConstants.topPadding
+        
+        // Line ends before last nested avatar - gap
+        let lineEndY = lastAvatarTop - CardLayoutConstants.avatarLineGap
+        return max(10, lineEndY - lineStartY)
     }
     
     var body: some View {
@@ -114,36 +148,16 @@ struct LoopDetailView: View {
                                 ZStack(alignment: .topLeading) {
                                     // Connecting line overlay (only when expanded)
                                     if threadedReply.isExpanded && !threadedReply.nestedReplies.isEmpty {
-                                        // Line starts below parent avatar + gap
-                                        let lineStartY = CardLayoutConstants.topPadding + CardLayoutConstants.avatarSize + CardLayoutConstants.avatarLineGap
+                                        let lineHeight = calculateLineHeight(for: threadedReply)
                                         
-                                        // Estimate card heights more accurately
-                                        // Structure of ReplyCardView:
-                                        // - 12pt top padding
-                                        // - 56px avatar (in header with content beside it)
-                                        // - 12pt spacing (between header and content)
-                                        // - Content (variable, estimated ~40pt for 2 lines)
-                                        // - Action buttons (~30pt)
-                                        // - 12pt bottom padding
-                                        // Total minimum: ~150pt per card
-                                        let estimatedCardHeight: CGFloat = 145
-                                        
-                                        // Calculate where last nested avatar's top is:
-                                        // 1. Parent card takes up estimatedCardHeight
-                                        // 2. Then all nested replies except last: (count - 1) * estimatedCardHeight
-                                        // 3. Then last reply's top padding to get to its avatar top
-                                        let parentCardHeight = estimatedCardHeight
-                                        let nestedRepliesBeforeLast = CGFloat(threadedReply.nestedReplies.count - 1) * estimatedCardHeight
-                                        let lastAvatarTop = parentCardHeight + nestedRepliesBeforeLast + CardLayoutConstants.topPadding
-                                        
-                                        // Line ends before last nested avatar - gap
-                                        let lineEndY = lastAvatarTop - CardLayoutConstants.avatarLineGap
-                                        let lineHeight = max(10, lineEndY - lineStartY) // Minimum 10pt line
-                                        
-                                        RoundedRectangle(cornerRadius: CardLayoutConstants.conversationLineWidth / 2)
-                                            .fill(Color(.quaternaryLabel))
-                                            .frame(width: CardLayoutConstants.conversationLineWidth, height: lineHeight)
-                                            .offset(x: CardLayoutConstants.avatarSize / 2 - CardLayoutConstants.conversationLineWidth / 2, y: lineStartY) // Replies have negative padding, so no need to add horizontal padding
+                                        if lineHeight > 0 {
+                                            let lineStartY = CardLayoutConstants.topPadding + CardLayoutConstants.avatarSize + CardLayoutConstants.avatarLineGap
+                                            
+                                            RoundedRectangle(cornerRadius: CardLayoutConstants.conversationLineWidth / 2)
+                                                .fill(Color(.quaternaryLabel))
+                                                .frame(width: CardLayoutConstants.conversationLineWidth, height: lineHeight)
+                                                .offset(x: CardLayoutConstants.avatarSize / 2 - CardLayoutConstants.conversationLineWidth / 2, y: lineStartY)
+                                        }
                                     }
                                     
                                     VStack(spacing: 0) {
@@ -188,6 +202,17 @@ struct LoopDetailView: View {
                                             }
                                         )
                                         .padding(.horizontal, -CardLayoutConstants.horizontalPadding) // Cancel internal padding to match main post
+                                        .overlay(
+                                            GeometryReader { geo in
+                                                Color.clear
+                                                    .onAppear {
+                                                        replyHeights[threadedReply.reply.id] = geo.size.height
+                                                    }
+                                                    .onChange(of: geo.size.height) { newHeight in
+                                                        replyHeights[threadedReply.reply.id] = newHeight
+                                                    }
+                                            }
+                                        )
                                         
                                         // Show nested replies if expanded
                                         if threadedReply.isExpanded {
@@ -235,6 +260,17 @@ struct LoopDetailView: View {
                                                     }
                                                 )
                                                 .padding(.horizontal, -CardLayoutConstants.horizontalPadding) // Cancel internal padding to match main post
+                                                .overlay(
+                                                    GeometryReader { geo in
+                                                        Color.clear
+                                                            .onAppear {
+                                                                replyHeights[nestedReply.id] = geo.size.height
+                                                            }
+                                                            .onChange(of: geo.size.height) { newHeight in
+                                                                replyHeights[nestedReply.id] = newHeight
+                                                            }
+                                                    }
+                                                )
                                                 
                                                 // Divider between nested replies (aligned with name/text)
                                                 if nestedIndex < threadedReply.nestedReplies.count - 1 {
