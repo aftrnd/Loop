@@ -330,7 +330,6 @@ struct ReplyPreviewRow: View {
     let totalReplyCount: Int
     
     @State private var arrowProgress: CGFloat = 0.0
-    @State private var hasTriggered = false
     
     var body: some View {
         VStack(spacing: 0) {
@@ -413,48 +412,33 @@ struct ReplyPreviewRow: View {
         .background(
             GeometryReader { geometry in
                 Color.clear
-                    .preference(
-                        key: ViewPositionKey.self,
-                        value: geometry.frame(in: .global).midY
-                    )
+                    .onAppear {
+                        // Check visibility on appear
+                        checkVisibility(geometry: geometry)
+                    }
+                    .onChange(of: geometry.frame(in: .global).minY) { _, _ in
+                        // Check visibility on scroll
+                        checkVisibility(geometry: geometry)
+                    }
             }
         )
-        .onPreferenceChange(ViewPositionKey.self) { viewMidY in
-            // Animate when view enters middle 1/3 of screen
-            let screenHeight = UIScreen.main.bounds.height
-            let middleThirdStart = screenHeight / 3
-            let middleThirdEnd = (screenHeight / 3) * 2
-            
-            if viewMidY >= middleThirdStart && viewMidY <= middleThirdEnd {
-                // Animate if not already triggered
-                if !hasTriggered {
-                    hasTriggered = true
-                    withAnimation(.spring(duration: 0.5, bounce: 0.3)) {
-                        arrowProgress = 1.0
-                    }
-                }
-            } else if viewMidY < middleThirdStart - 100 || viewMidY > middleThirdEnd + 100 {
-                // Reset when far from middle third (with buffer) so it can animate again
-                if hasTriggered {
-                    hasTriggered = false
-                    arrowProgress = 0.0
-                }
+    }
+    
+    private func checkVisibility(geometry: GeometryProxy) {
+        let frame = geometry.frame(in: .global)
+        let screenHeight = UIScreen.main.bounds.height
+        
+        // Check if view is actually visible on screen
+        let isVisible = frame.maxY > 0 && frame.minY < screenHeight
+        
+        // Trigger animation when view becomes visible
+        if isVisible && arrowProgress == 0 {
+            withAnimation(.spring(duration: 0.5, bounce: 0.3)) {
+                arrowProgress = 1.0
             }
         }
-        .onAppear {
-            // Trigger animation immediately if already in view
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                if !hasTriggered {
-                    hasTriggered = true
-                    withAnimation(.spring(duration: 0.5, bounce: 0.3)) {
-                        arrowProgress = 1.0
-                    }
-                }
-            }
-        }
-        .onDisappear {
-            // Reset when view disappears
-            hasTriggered = false
+        // Reset when view goes off screen
+        else if !isVisible && arrowProgress == 1.0 {
             arrowProgress = 0.0
         }
     }

@@ -72,7 +72,7 @@ struct ReplyCardView: View {
                             
                             HStack(spacing: 4) {
                                 Text(reply.timeAgoString)
-                                    .font(.caption)
+                                    .font(.subheadline)
                                     .monospacedDigit()
                                     .foregroundColor(.secondary)
                                     .lineLimit(1)

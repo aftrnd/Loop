@@ -94,13 +94,14 @@ struct LoopDetailView: View {
                         // Comments header
                         HStack {
                             Text("Comments")
-                                .font(.headline)
-                                .fontWeight(.semibold)
+                                .font(.title2)
+                                .fontWeight(.bold)
                             
                             Spacer()
                             
                             Text("\(viewModel.replies.count)")
                                 .font(.subheadline)
+                                .fontWeight(.semibold)
                                 .foregroundColor(.secondary)
                                 .monospacedDigit()
                         }
