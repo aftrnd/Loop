@@ -1,5 +1,30 @@
 import SwiftUI
 
+// MARK: - View Extensions
+extension View {
+    @ViewBuilder
+    func `if`<Transform: View>(_ condition: Bool, transform: (Self) -> Transform) -> some View {
+        if condition {
+            transform(self)
+        } else {
+            self
+        }
+    }
+}
+
+// MARK: - Shared Layout Constants
+enum CardLayoutConstants {
+    static let horizontalPadding: CGFloat = 10
+    static let topPadding: CGFloat = 8
+    static let bottomPadding: CGFloat = 8
+    static let avatarSize: CGFloat = 56
+    static let avatarSpacing: CGFloat = 12
+    static let avatarLineGap: CGFloat = 10
+    static let dividerHeight: CGFloat = 1.15
+    static let cornerRadius: CGFloat = 16
+    static let contentShift: CGFloat = 68 // avatarSize (56) + avatarSpacing (12)
+}
+
 struct ReplyCardView: View {
     let reply: Loop
     let isLiked: Bool
@@ -12,6 +37,8 @@ struct ReplyCardView: View {
     let onToggleExpanded: (() -> Void)? // Toggle nested replies visibility
     let onDelete: (() -> Void)?
     let onAvatarTap: (() -> Void)?
+    var showAsMainPost: Bool = false // Show comment/share buttons instead of reply button
+    var applyInternalPadding: Bool = true // Whether to apply internal padding (false when in thread container)
     
     @State private var showingFullText = false
     
@@ -34,12 +61,12 @@ struct ReplyCardView: View {
     
     var body: some View {
         VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: CardLayoutConstants.avatarSpacing) {
                 // Header row: Avatar + Name/Badge/Time
-                HStack(alignment: .top, spacing: 12) {
+                HStack(alignment: .center, spacing: CardLayoutConstants.avatarSpacing) {
                     // Avatar
                     avatarView
-                        .frame(width: 56)
+                        .frame(width: CardLayoutConstants.avatarSize)
                     
                     // Name, badge, username, and time
                     VStack(alignment: .leading, spacing: 4) {
@@ -87,14 +114,22 @@ struct ReplyCardView: View {
                 // - Nested reply that's NOT the last one in the thread
                 if !reply.content.isEmpty {
                     contentView
-                        .padding(.leading, shouldShiftContent ? 68 : 0) // 56px avatar + 12px spacing
+                        .padding(.leading, shouldShiftContent ? CardLayoutConstants.contentShift : 0)
+                        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: shouldShiftContent)
                 }
                 
                 // Action buttons - aligned with avatar's left edge, shifts right when content does
                 actionButtonsView
-                    .padding(.leading, shouldShiftContent ? 68 : 0) // 56px avatar + 12px spacing
+                    .padding(.leading, shouldShiftContent ? CardLayoutConstants.contentShift : 0)
+                    .animation(.spring(response: 0.3, dampingFraction: 0.8), value: shouldShiftContent)
             }
-            .padding(.vertical, 12)
+            .if(applyInternalPadding) { view in
+                view
+                    .padding(.leading, CardLayoutConstants.horizontalPadding)
+                    .padding(.trailing, CardLayoutConstants.horizontalPadding)
+                    .padding(.top, CardLayoutConstants.topPadding)
+                    .padding(.bottom, CardLayoutConstants.bottomPadding)
+            }
             
             // Show/Hide nested replies button - shows at top when collapsed
             if indentLevel == 0 && nestedReplyCount > 0, let onToggleExpanded = onToggleExpanded, !isExpanded {
@@ -134,17 +169,17 @@ struct ReplyCardView: View {
                     image
                         .resizable()
                         .aspectRatio(contentMode: .fill)
-                        .frame(width: 56, height: 56)
+                        .frame(width: CardLayoutConstants.avatarSize, height: CardLayoutConstants.avatarSize)
                         .clipShape(Circle())
                 } placeholder: {
                     Circle()
                         .fill(Color(.systemGray5))
-                        .frame(width: 56, height: 56)
+                        .frame(width: CardLayoutConstants.avatarSize, height: CardLayoutConstants.avatarSize)
                 }
             } else {
                 Circle()
                     .fill(Color(.systemGray5))
-                    .frame(width: 56, height: 56)
+                    .frame(width: CardLayoutConstants.avatarSize, height: CardLayoutConstants.avatarSize)
                     .overlay {
                         Text(String((reply.displayAuthorName ?? "?").prefix(1)).uppercased())
                             .font(.headline)
@@ -157,7 +192,7 @@ struct ReplyCardView: View {
             if indentLevel == 1 && !isLastInThread {
                 Circle()
                     .fill(Color(.systemBackground))
-                    .frame(width: 76, height: 76) // 56px avatar + 20px padding (10px on each side)
+                    .frame(width: CardLayoutConstants.avatarSize + 20, height: CardLayoutConstants.avatarSize + 20)
             }
         }
         .onTapGesture {
@@ -221,16 +256,50 @@ struct ReplyCardView: View {
             .frame(width: 50, alignment: .leading)
             .contentShape(Rectangle())
             
-            // Reply button (if provided)
-            if let onReply = onReply {
-                Button(action: onReply) {
-                    Image(systemName: "arrow.turn.up.left")
+            // Show different buttons based on context
+            if showAsMainPost {
+                // Comment button (for main posts with reply previews)
+                if let onReply = onReply {
+                    Button(action: onReply) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "bubble.left")
+                                .font(.system(size: 18, weight: .medium))
+                                .foregroundColor(.secondary)
+                            
+                            Text(reply.replyCount > 99 ? "99+" : reply.replyCount > 0 ? "\(reply.replyCount)" : "")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .monospacedDigit()
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .frame(width: 50, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                
+                // Share button
+                Button(action: {
+                    // TODO: Implement share functionality
+                }) {
+                    Image(systemName: "paperplane")
                         .font(.system(size: 18, weight: .medium))
                         .foregroundColor(.secondary)
                 }
                 .buttonStyle(.plain)
                 .frame(width: 50, alignment: .leading)
                 .contentShape(Rectangle())
+            } else {
+                // Reply button (for actual replies)
+                if let onReply = onReply {
+                    Button(action: onReply) {
+                        Image(systemName: "arrow.turn.up.left")
+                            .font(.system(size: 18, weight: .medium))
+                            .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .frame(width: 50, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
             }
             
             Spacer()

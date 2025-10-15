@@ -145,6 +145,9 @@ struct HomeView: View {
                     .listRowBackground(Color.clear)
                 } else {
                     ForEach(Array(viewModel.loops.enumerated()), id: \.element.id) { index, loop in
+                        let replies = viewModel.replyPreviews[loop.id]
+                        let _ = print("🏠 DEBUG HomeView: Loop \(loop.id.prefix(8)) - replyPreviews has \(replies?.count ?? 0) replies")
+                        
                         LoopCardView(
                             loop: loop,
                             isLiked: viewModel.isLikedByCurrentUser(loop),
@@ -185,7 +188,7 @@ struct HomeView: View {
                                 
                                 loopToShowDetail = loop
                             } : nil,
-                            replyPreviews: viewModel.replyPreviews[loop.id]
+                            replyPreviews: replies
                         )
                         .padding(.top, index == 0 ? 0 : 5) // Add top padding except for first post
                         .padding(.bottom, index == viewModel.loops.count - 1 ? 0 : 5) // Add bottom padding except for last post
@@ -193,8 +196,8 @@ struct HomeView: View {
                             if index < viewModel.loops.count - 1 {
                                 Rectangle()
                                     .fill(Color(.separator))
-                                    .frame(height: 1.15)
-                                    .padding(.horizontal, 10)
+                                    .frame(height: CardLayoutConstants.dividerHeight)
+                                    .padding(.horizontal, CardLayoutConstants.horizontalPadding)
                             }
                         }
                         .listRowSeparator(.hidden)

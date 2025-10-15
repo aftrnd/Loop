@@ -107,33 +107,34 @@ struct LoopCardView: View {
     
     var body: some View {
         VStack(spacing: 0) {
-            cardContent
-                .zIndex(0)
-                .overlay(alignment: .bottomLeading) {
-                    // Particle layer - renders above card content AND subsequent cards
-                    GeometryReader { geo in
-                        HeartParticleAnimationView(
-                            iconSize: actionIconSize,
-                            triggerID: animationState.particleTriggerID
-                        )
-                        .frame(width: 200, height: 200) // Large enough for particles to fly
-                        .position(x: 25, y: geo.size.height - 30) // Position at heart button
-                        .allowsHitTesting(false)
-                    }
-                    .zIndex(Double(1000 - cardIndex)) // Higher z-index for earlier posts
-                }
-                .fullScreenCover(isPresented: $showPhotoViewer) {
-                    FullScreenPhotoViewer(
-                        allMedia: loop.media,
-                        startingIndex: selectedPhotoIndex,
-                        isPresented: $showPhotoViewer
-                    )
-                    .presentationBackground(.clear)
-                }
-            
-            // Reply previews section
+            // When there are reply previews, use ReplyCardView layout for consistency
             if let replies = replyPreviews, !replies.isEmpty {
-                replyPreviewsSection(replies: replies)
+                replyThreadView(replies: replies)
+            } else {
+                // Standard card view when no reply previews
+                cardContent
+                    .zIndex(0)
+                    .overlay(alignment: .bottomLeading) {
+                        // Particle layer - renders above card content AND subsequent cards
+                        GeometryReader { geo in
+                            HeartParticleAnimationView(
+                                iconSize: actionIconSize,
+                                triggerID: animationState.particleTriggerID
+                            )
+                            .frame(width: 200, height: 200) // Large enough for particles to fly
+                            .position(x: 25, y: geo.size.height - 30) // Position at heart button
+                            .allowsHitTesting(false)
+                        }
+                        .zIndex(Double(1000 - cardIndex)) // Higher z-index for earlier posts
+                    }
+                    .fullScreenCover(isPresented: $showPhotoViewer) {
+                        FullScreenPhotoViewer(
+                            allMedia: loop.media,
+                            startingIndex: selectedPhotoIndex,
+                            isPresented: $showPhotoViewer
+                        )
+                        .presentationBackground(.clear)
+                    }
             }
         }
         .id(loop.id) // Stable identity prevents view recreation during updates
@@ -214,7 +215,7 @@ struct LoopCardView: View {
             }
             
             // Action buttons
-            HStack(spacing: 0) {
+            HStack(alignment: .center, spacing: 0) {
                 // Like button with scale animation
                 Button(action: {
                     // Trigger animation - persists even if view re-renders
@@ -278,7 +279,7 @@ struct LoopCardView: View {
                 // Page indicators for multi-image posts
                 if loop.media.count > 1 {
                     PageIndicator(currentPage: currentCarouselIndex, pageCount: loop.media.count)
-                        .frame(width: 50, alignment: .leading)
+                        .frame(width: 50, alignment: .center)
                 }
                 
                 Spacer()
@@ -307,151 +308,182 @@ struct LoopCardView: View {
     }
     
     @ViewBuilder
-    private func replyPreviewsSection(replies: [Loop]) -> some View {
-        VStack(spacing: 0) {
-            // Show only the most recent reply from someone you follow (max 1)
-            let previewReplies = Array(replies.prefix(maxReplyPreviews))
-            
-            ForEach(Array(previewReplies.enumerated()), id: \.element.id) { index, reply in
-                ReplyPreviewRow(
-                    reply: reply,
-                    heartIconYPosition: 8 + 10 + 18/2, // padding.top + button padding.vertical + half icon size
-                    totalReplyCount: loop.replyCount
-                )
-            }
-        }
-        .background(Color(.systemBackground)) // Use primary background color
-    }
-}
-
-struct ReplyPreviewRow: View {
-    let reply: Loop
-    let heartIconYPosition: CGFloat
-    let totalReplyCount: Int
-    
-    @State private var arrowProgress: CGFloat = 0.0
-    
-    var body: some View {
-        VStack(spacing: 0) {
-            // Reply content
-            HStack(alignment: .center, spacing: 0) {
-                // Left padding to match home page (10)
-                Spacer()
-                    .frame(width: 10)
-                
-                // Arrow icon - horizontally centered with simple scale and fade
-                Image(systemName: "arrow.turn.down.right")
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundColor(.secondary)
-                    .frame(width: 28, height: 24)
-                    .scaleEffect(arrowProgress)
-                    .opacity(arrowProgress)
-                    .padding(.trailing, 8)
-                
-                // Avatar - horizontally centered
-                Group {
-                    if let avatarURLString = reply.authorAvatarURL, let avatarURL = URL(string: avatarURLString) {
-                        CachedAsyncImage(url: avatarURL) { image in
-                            image
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                                .frame(width: 24, height: 24)
-                                .clipShape(Circle())
-                        } placeholder: {
-                            Circle()
-                                .fill(Color(.systemGray5))
-                                .frame(width: 24, height: 24)
-                        }
-                    } else {
-                        Circle()
-                            .fill(Color(.systemGray5))
-                            .frame(width: 24, height: 24)
-                            .overlay {
-                                Text(String((reply.authorDisplayName ?? "?").prefix(1)).uppercased())
-                                    .font(.caption2)
-                                    .fontWeight(.semibold)
-                            }
-                    }
-                }
-                .padding(.trailing, 8)
-                
-                // Content - horizontally centered while keeping internal vertical spacing
-                VStack(alignment: .leading, spacing: 2) {
-                    // Author name with badge
-                    HStack(spacing: 3) {
-                        Text(reply.displayAuthorName)
-                            .font(.caption)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.primary)
-                        
-                        // Badge if user has one
-                        if let badgeType = reply.authorBadgeType {
-                            Image(systemName: badgeType.iconName)
-                                .font(.system(size: 10))
-                                .foregroundColor(badgeType.color)
-                        }
-                    }
-                    
-                    // Reply content preview (truncated)
-                    Text(reply.content)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .lineLimit(2)
-                }
-                .frame(maxHeight: .infinity, alignment: .center) // Center the VStack vertically
-                
-                Spacer()
-                
-                // Right padding to match home page (10)
-                Spacer()
-                    .frame(width: 10)
-            }
-            .padding(.top, 0) // No top padding on outside
-            .padding(.bottom, 10) // Only bottom padding
-        }
-        .background(
-            GeometryReader { geometry in
-                Color.clear
-                    .onAppear {
-                        // Check visibility on appear
-                        checkVisibility(geometry: geometry)
-                    }
-                    .onChange(of: geometry.frame(in: .global).minY) { _, _ in
-                        // Check visibility on scroll
-                        checkVisibility(geometry: geometry)
-                    }
-            }
+    private func replyThreadView(replies: [Loop]) -> some View {
+        ReplyThreadWithLineView(
+            loop: loop,
+            replies: replies,
+            isLiked: isLiked,
+            onLike: onLike,
+            onReply: onCardTap,
+            onDelete: onDelete,
+            onAvatarTap: onAvatarTap,
+            onCardTap: onCardTap,
+            showPhotoViewer: $showPhotoViewer,
+            selectedPhotoIndex: $selectedPhotoIndex
         )
     }
+}
+
+// MARK: - Reply Thread With Dynamic Line
+struct ReplyThreadWithLineView: View {
+    let loop: Loop
+    let replies: [Loop]
+    let isLiked: Bool
+    let onLike: () -> Void
+    let onReply: (() -> Void)?
+    let onDelete: (() -> Void)?
+    let onAvatarTap: (() -> Void)?
+    let onCardTap: (() -> Void)?
+    @Binding var showPhotoViewer: Bool
+    @Binding var selectedPhotoIndex: Int
     
-    private func checkVisibility(geometry: GeometryProxy) {
-        let frame = geometry.frame(in: .global)
-        let screenHeight = UIScreen.main.bounds.height
+    @State private var mainPostHeight: CGFloat = 0
+    @State private var replyHeight: CGFloat = 0
+    
+    private let maxReplyPreviews = 1
+    
+    // MARK: - Computed Properties
+    
+    /// Perfectly calculated connecting line between avatars with even spacing
+    @ViewBuilder
+    private var connectingLine: some View {
+        let _ = print("🟡 connectingLine called, mainPostHeight=\(mainPostHeight)")
         
-        // Check if view is actually visible on screen
-        let isVisible = frame.maxY > 0 && frame.minY < screenHeight
-        
-        // Trigger animation when view becomes visible
-        if isVisible && arrowProgress == 0 {
-            withAnimation(.spring(duration: 0.5, bounce: 0.3)) {
-                arrowProgress = 1.0
+        if mainPostHeight > 0 {
+            let lineWidth: CGFloat = 4
+            
+            // Main avatar bottom edge
+            let mainAvatarBottom = CardLayoutConstants.topPadding + CardLayoutConstants.avatarSize
+            
+            // Line starts after gap from main avatar
+            let lineStart = mainAvatarBottom + CardLayoutConstants.avatarLineGap
+            
+            // Reply avatar top edge (after main post, divider, and reply padding)
+            let replyAvatarTop = mainPostHeight + CardLayoutConstants.dividerHeight + CardLayoutConstants.topPadding
+            
+            // Line ends before gap to reply avatar
+            let lineEnd = replyAvatarTop - CardLayoutConstants.avatarLineGap
+            
+            // Calculate line height
+            let lineHeight = max(0, lineEnd - lineStart)
+            
+            // Debug logging
+            let _ = print("🔵 LINE RENDERING: mainPostHeight=\(mainPostHeight), lineStart=\(lineStart), replyAvatarTop=\(replyAvatarTop), lineEnd=\(lineEnd), lineHeight=\(lineHeight), lineX=\(CardLayoutConstants.horizontalPadding + CardLayoutConstants.avatarSize / 2 - 2)")
+            
+            // Horizontal position: center of avatar
+            let avatarCenter = CardLayoutConstants.avatarSize / 2
+            let lineX = CardLayoutConstants.horizontalPadding + avatarCenter - (lineWidth / 2)
+            
+            HStack(spacing: 0) {
+                VStack(spacing: 0) {
+                    Color.clear.frame(height: lineStart)
+                    
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(Color(.systemGray3))
+                        .frame(width: lineWidth, height: lineHeight)
+                    
+                    Spacer()
+                }
+                .frame(width: lineWidth)
+                .offset(x: lineX)
+                
+                Spacer()
             }
+        } else {
+            let _ = print("🔴 LINE NOT RENDERING: mainPostHeight is 0")
         }
-        // Reset when view goes off screen
-        else if !isVisible && arrowProgress == 1.0 {
-            arrowProgress = 0.0
+    }
+    
+    var body: some View {
+        let previewReplies = Array(replies.prefix(maxReplyPreviews))
+        
+        return VStack(spacing: 0) {
+            ZStack(alignment: .topLeading) {
+                VStack(spacing: 0) {
+                    // Main post
+                    ReplyCardView(
+                        reply: loop,
+                        isLiked: isLiked,
+                        indentLevel: 0,
+                        nestedReplyCount: previewReplies.count,
+                        isExpanded: true,
+                        isLastInThread: false,
+                        onLike: onLike,
+                        onReply: onCardTap,
+                        onToggleExpanded: nil,
+                        onDelete: onDelete,
+                        onAvatarTap: onAvatarTap,
+                        showAsMainPost: true
+                    )
+                    .overlay(
+                        GeometryReader { geo in
+                            Color.clear
+                                .onAppear {
+                                    print("🟢 MAIN POST HEIGHT MEASURED: \(geo.size.height)")
+                                    mainPostHeight = geo.size.height
+                                }
+                                .onChange(of: geo.size.height) { newHeight in
+                                    print("🟢 MAIN POST HEIGHT CHANGED: \(newHeight)")
+                                    mainPostHeight = newHeight
+                                }
+                        }
+                    )
+                    
+                    // Divider - with same horizontal padding as cards
+                    Rectangle()
+                        .fill(Color(.separator))
+                        .frame(height: CardLayoutConstants.dividerHeight)
+                        .padding(.horizontal, CardLayoutConstants.horizontalPadding)
+                        .padding(.leading, CardLayoutConstants.avatarSize + CardLayoutConstants.avatarSpacing)
+                    
+                    // Reply preview
+                    ForEach(Array(previewReplies.enumerated()), id: \.element.id) { index, reply in
+                        ReplyCardView(
+                            reply: reply,
+                            isLiked: false,
+                            indentLevel: 1,
+                            nestedReplyCount: 0,
+                            isExpanded: false,
+                            isLastInThread: false,
+                            onLike: { onCardTap?() },
+                            onReply: onCardTap,
+                            onToggleExpanded: nil,
+                            onDelete: nil,
+                            onAvatarTap: onCardTap
+                        )
+                    }
+                }
+                
+                // Connecting line with perfect spacing
+                connectingLine
+            }
+            .concentricCard(cornerRadius: CardLayoutConstants.cornerRadius)
+            .fullScreenCover(isPresented: $showPhotoViewer) {
+                FullScreenPhotoViewer(
+                    allMedia: loop.media,
+                    startingIndex: selectedPhotoIndex,
+                    isPresented: $showPhotoViewer
+                )
+                .presentationBackground(.clear)
+            }
         }
     }
 }
 
-// MARK: - View Position Preference Key
-struct ViewPositionKey: PreferenceKey {
+// MARK: - Preference Keys
+struct MainPostHeightKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = nextValue()
     }
 }
 
+struct ReplyHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
 
 struct LoopMediaView: View {
     let media: [LoopMedia]

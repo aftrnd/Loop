@@ -187,49 +187,68 @@ class HomeFeedViewModel: ObservableObject {
     }
     
     private func fetchReplyPreviewsForLoops(_ loops: [Loop]) async {
-        guard let currentUserId = Auth.auth().currentUser?.uid else { return }
+        guard let currentUserId = Auth.auth().currentUser?.uid else { 
+            print("❌ DEBUG: No current user ID, can't fetch reply previews")
+            return 
+        }
         
         // Get current user's following list
         let currentUser = try? await FirebaseService.shared.getUser(withId: currentUserId)
         let followingIds = currentUser?.following ?? []
         
+        print("👥 DEBUG: Current user is following \(followingIds.count) users: \(followingIds)")
+        
         for loop in loops {
             // Only fetch if loop has replies
             guard loop.replyCount > 0 else {
-                print("🔍 DEBUG: Loop \(loop.id) has no replies, skipping")
+                print("🔍 DEBUG: Loop \(loop.id.prefix(8)) has no replies (replyCount: \(loop.replyCount)), skipping")
                 continue
             }
+            
+            print("🔍 DEBUG: Loop \(loop.id.prefix(8)) has \(loop.replyCount) replies, fetching...")
             
             do {
                 // Fetch replies (already sorted newest first from Firestore)
                 let replies = try await FirebaseService.shared.getReplies(for: loop.id)
                 
-                print("🔍 DEBUG: Fetched \(replies.count) total replies for loop \(loop.id)")
+                print("🔍 DEBUG: Fetched \(replies.count) total replies for loop \(loop.id.prefix(8))")
+                
+                // Log each reply author
+                for (index, reply) in replies.enumerated() {
+                    print("   Reply \(index + 1): from \(reply.authorDisplayName ?? "unknown") (ID: \(reply.authorId.prefix(8)))")
+                }
                 
                 // Filter to only show replies from:
                 // 1. Users you're following, OR
                 // 2. Yourself (even though you don't follow yourself)
                 let relevantReplies = replies.filter { reply in
-                    followingIds.contains(reply.authorId) || reply.authorId == currentUserId
+                    let isFollowing = followingIds.contains(reply.authorId)
+                    let isYou = reply.authorId == currentUserId
+                    print("   Checking reply from \(reply.authorDisplayName ?? "unknown"): isFollowing=\(isFollowing), isYou=\(isYou)")
+                    return isFollowing || isYou
                 }
                 
-                print("🔍 DEBUG: Found \(relevantReplies.count) relevant replies for loop \(loop.id)")
+                print("🔍 DEBUG: Found \(relevantReplies.count) relevant replies for loop \(loop.id.prefix(8))")
                 
                 // Only show the most recent relevant reply (max 1)
                 if let mostRecentRelevantReply = relevantReplies.first {
-                    print("✅ DEBUG: Showing reply preview from \(mostRecentRelevantReply.authorDisplayName ?? "unknown") for loop \(loop.id)")
+                    print("✅ DEBUG: Showing reply preview from \(mostRecentRelevantReply.displayAuthorName) for loop \(loop.id.prefix(8))")
+                    print("✅ DEBUG: Reply content: \(mostRecentRelevantReply.content.prefix(50))...")
                     var transaction = Transaction()
                     transaction.disablesAnimations = true
                     withTransaction(transaction) {
                         replyPreviews[loop.id] = [mostRecentRelevantReply]
+                        print("✅ DEBUG: Updated replyPreviews dict, now has \(replyPreviews.count) entries")
                     }
                 } else {
-                    print("❌ DEBUG: No relevant replies to show for loop \(loop.id)")
+                    print("❌ DEBUG: No relevant replies to show for loop \(loop.id.prefix(8))")
                 }
             } catch {
-                print("❌ Error fetching reply previews for loop \(loop.id): \(error)")
+                print("❌ Error fetching reply previews for loop \(loop.id.prefix(8)): \(error)")
             }
         }
+        
+        print("📊 DEBUG: Final replyPreviews dictionary has \(replyPreviews.count) entries")
     }
     
     private func parseLoopFromDocument(_ doc: QueryDocumentSnapshot) async -> Loop? {
