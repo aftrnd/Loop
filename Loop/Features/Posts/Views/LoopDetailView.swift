@@ -48,10 +48,9 @@ struct LoopDetailView: View {
             ScrollView {
                 VStack(spacing: 0) {
                     // Main loop (the one being replied to)
-                    LoopCardView(
+                    PostCard(
                         loop: viewModel.loop,
                         isLiked: viewModel.isLikedByCurrentUser(viewModel.loop),
-                        cardIndex: 0,
                         onLike: {
                             let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
                             impactFeedback.impactOccurred()
@@ -60,27 +59,22 @@ struct LoopDetailView: View {
                                 await viewModel.toggleLike(for: viewModel.loop)
                             }
                         },
-                        onReply: {
+                        onComment: {
                             let impactFeedback = UIImpactFeedbackGenerator(style: .light)
                             impactFeedback.impactOccurred()
                             
                             viewModel.showReplyCompose()
                         },
+                        onShare: nil,
                         onDelete: nil, // Can't delete main loop from detail view
                         onAvatarTap: {
                             profileUserToShow = ProfileUser(userId: viewModel.loop.authorId)
-                        },
-                        onCardTap: nil, // Already in detail view, no need to navigate
-                        replyPreviews: nil // Don't show reply previews in detail view
+                        }
                     )
-                    .padding(.horizontal, -10) // Cancel out LoopCardView's internal 10pt padding to match page padding
                     .padding(.top, 10)
                     
                     // Divider above replies section
-                    Rectangle()
-                        .fill(CardLayoutConstants.dividerColor)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: CardLayoutConstants.dividerHeight)
+                    PostDivider()
                         .padding(.top, 3)
                     
                     // Replies section
@@ -327,7 +321,7 @@ struct LoopDetailView: View {
                         .padding(.bottom, 20)
                     }
                 }
-                .padding(.horizontal, 20) // Doubled padding for more breathing room
+                .padding(.horizontal, 10) // Foundation padding - matches home/messages listRowInsets
             }
             .background(Color(.systemBackground))
             .navigationTitle("Comments")

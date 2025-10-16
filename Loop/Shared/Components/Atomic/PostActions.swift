@@ -21,6 +21,9 @@ struct PostActions: View {
     // Menu action
     let onDelete: (() -> Void)?
     
+    // Style
+    let isReplyPreview: Bool // If true, shows arrow icon instead of bubble
+    
     // Debug overlay
     let showDebugOverlay: Bool
     
@@ -35,6 +38,7 @@ struct PostActions: View {
         onComment: (() -> Void)?,
         onShare: (() -> Void)? = nil,
         onDelete: (() -> Void)? = nil,
+        isReplyPreview: Bool = false,
         showDebugOverlay: Bool = false
     ) {
         self.isLiked = isLiked
@@ -44,6 +48,7 @@ struct PostActions: View {
         self.onComment = onComment
         self.onShare = onShare
         self.onDelete = onDelete
+        self.isReplyPreview = isReplyPreview
         self.showDebugOverlay = showDebugOverlay
     }
     
@@ -140,7 +145,7 @@ struct PostActions: View {
             action()
         }) {
             HStack(spacing: 4) {
-                Image(systemName: "bubble.left")
+                Image(systemName: isReplyPreview ? "arrowshape.turn.up.left" : "bubble.left")
                     .font(.system(size: CardLayoutConstants.actionButtonIconSize, weight: .medium))
                     .foregroundColor(.secondary)
                 

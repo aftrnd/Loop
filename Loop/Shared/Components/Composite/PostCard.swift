@@ -267,6 +267,7 @@ struct PostCard: View {
                 onDelete: self.onReplyDelete != nil ? {
                     self.onReplyDelete?(reply)
                 } : nil,
+                isReplyPreview: true, // Show arrow icon for reply previews
                 showDebugOverlay: showDebugOverlays
             )
         }
