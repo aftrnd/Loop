@@ -225,46 +225,47 @@ struct PostCard: View {
     }
     
     private func replyPreviewView(reply: Loop) -> some View {
-        Button(action: {
-            onReplyPreviewTap?()
-        }) {
-            VStack(spacing: 0) {
-                PostHeader(
-                    avatarURL: reply.authorAvatarURL,
-                    displayName: reply.displayAuthorName,
-                    username: reply.authorUsername,
-                    badgeType: reply.authorBadgeType,
-                    timestamp: reply.timeAgoString,
-                    onAvatarTap: onReplyPreviewTap,
-                    showDebugOverlay: showDebugOverlays
-                )
-                
-                if !reply.content.isEmpty {
-                    (showDebugOverlays ? Color.purple.opacity(0.05) : Color.clear) // Debug: Spacing
-                        .frame(height: CardLayoutConstants.headerBottomSpacing)
-                    
-                    HStack {
-                        Text(reply.content)
-                            .font(.body)
-                            .foregroundColor(.secondary)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.leading)
-                            .truncationMode(.tail)
-                        Spacer()
-                    }
-                    .overlay(
-                        Group {
-                            if showDebugOverlays {
-                                Rectangle()
-                                    .stroke(Color.red, lineWidth: 1)
-                            }
-                        }
-                    )
-                }
-            }
-            // NO padding here - padding is applied to the whole card
+        VStack(spacing: 0) {
+            PostHeader(
+                avatarURL: reply.authorAvatarURL,
+                displayName: reply.displayAuthorName,
+                username: reply.authorUsername,
+                badgeType: reply.authorBadgeType,
+                timestamp: reply.timeAgoString,
+                onAvatarTap: onReplyPreviewTap,
+                showDebugOverlay: showDebugOverlays
+            )
+            .padding(.bottom, CardLayoutConstants.headerBottomSpacing)
+            .background(showDebugOverlays ? Color.purple.opacity(0.05) : Color.clear) // Debug: Bottom padding
+            
+            // Content - use PostContent component for consistent styling
+            PostContent(
+                text: reply.content,
+                media: reply.media,
+                maxPreviewLength: 280,
+                showDebugOverlay: showDebugOverlays
+            )
+            .padding(.bottom, CardLayoutConstants.contentToActionsSpacing)
+            .background(showDebugOverlays ? Color.purple.opacity(0.05) : Color.clear) // Debug: Bottom padding
+            
+            // Actions - same as main posts
+            PostActions(
+                isLiked: false, // Reply like state would need to be passed from parent
+                likeCount: reply.likeCount,
+                onLike: {
+                    // Tap anywhere on reply preview to view full thread
+                    onReplyPreviewTap?()
+                },
+                commentCount: reply.replyCount,
+                onComment: {
+                    onReplyPreviewTap?()
+                },
+                onShare: nil,
+                onDelete: nil,
+                showDebugOverlay: showDebugOverlays
+            )
         }
-        .buttonStyle(.plain)
+        // NO padding here - padding is applied to the whole card
     }
     
     @ViewBuilder
