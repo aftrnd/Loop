@@ -22,11 +22,6 @@ struct MainTabView: View {
                 HomeView()
             }
             
-            // Home2 Tab - New modular architecture
-            Tab("Home v2", systemImage: "house.fill", value: "Home2") {
-                Home2View()
-            }
-            
             // Messages Tab
             Tab("Messages", systemImage: "message", value: "Messages") {
                 ChatsListView()

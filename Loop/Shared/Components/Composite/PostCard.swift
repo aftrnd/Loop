@@ -16,6 +16,7 @@ struct PostCard: View {
     // Reply preview support (optional - defaults to nil for regular posts)
     let replyPreviews: [Loop]?
     let onReplyPreviewTap: (() -> Void)?
+    let onReplyDelete: ((Loop) -> Void)? // Delete individual replies
     
     // Debug overlays
     let showDebugOverlays: Bool
@@ -31,6 +32,7 @@ struct PostCard: View {
         onAvatarTap: (() -> Void)? = nil,
         replyPreviews: [Loop]? = nil,
         onReplyPreviewTap: (() -> Void)? = nil,
+        onReplyDelete: ((Loop) -> Void)? = nil,
         showDebugOverlays: Bool = false
     ) {
         self.loop = loop
@@ -42,6 +44,7 @@ struct PostCard: View {
         self.onAvatarTap = onAvatarTap
         self.replyPreviews = replyPreviews
         self.onReplyPreviewTap = onReplyPreviewTap
+        self.onReplyDelete = onReplyDelete
         self.showDebugOverlays = showDebugOverlays
     }
     
@@ -248,7 +251,7 @@ struct PostCard: View {
             .padding(.bottom, CardLayoutConstants.contentToActionsSpacing)
             .background(showDebugOverlays ? Color.purple.opacity(0.05) : Color.clear) // Debug: Bottom padding
             
-            // Actions - same as main posts
+            // Actions - same as main posts, show delete menu if deletable
             PostActions(
                 isLiked: false, // Reply like state would need to be passed from parent
                 likeCount: reply.likeCount,
@@ -261,7 +264,9 @@ struct PostCard: View {
                     onReplyPreviewTap?()
                 },
                 onShare: nil,
-                onDelete: nil,
+                onDelete: self.onReplyDelete != nil ? {
+                    self.onReplyDelete?(reply)
+                } : nil,
                 showDebugOverlay: showDebugOverlays
             )
         }

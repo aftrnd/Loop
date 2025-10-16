@@ -1,43 +1,61 @@
 import SwiftUI
 
+/// HomeView: Home feed using modular component architecture
+/// Built with atomic components (PostHeader, PostContent, PostActions) + composite (PostCard)
 struct HomeView: View {
     @StateObject private var viewModel = HomeFeedViewModel()
     @State private var scrollOffset: CGFloat = 0
+    @State private var contentHeight: CGFloat = 0
+    @State private var scrollViewHeight: CGFloat = 0
     @State private var profileUserToShow: ProfileUser?
-    @State private var showProfile = false
-    @State private var loopToShowDetail: Loop? // For navigation to detail view
+    @State private var loopToShowDetail: Loop?
+    
+    // Debug settings
+    @AppStorage("showLayoutDebugOverlays") private var showLayoutDebugOverlays = false
+    @AppStorage("showDebugOverlayButton") private var showDebugOverlayButton = false
     
     var body: some View {
         NavigationStack {
-            feedListView
+            feedContent
                 .background(Color(.systemBackground))
-            .navigationTitle("")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button(action: {
-                        // Haptic feedback
-                        let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
-                        impactFeedback.impactOccurred()
-                        
-                        // Open compose sheet
-                        viewModel.showCompose()
-                    }) {
-                        Image(systemName: "plus")
-                            .font(.body)
-                            .fontWeight(.medium)
+                .navigationTitle("")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button(action: {
+                            let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
+                            impactFeedback.impactOccurred()
+                            viewModel.showCompose()
+                        }) {
+                            Image(systemName: "plus")
+                                .font(.body)
+                                .fontWeight(.medium)
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
+                    
+                    ToolbarItem(placement: .principal) {
+                        Text("Loop")
+                            .font(.headline)
+                            .fontWeight(.semibold)
+                    }
+                    
+                    if showDebugOverlayButton {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button(action: {
+                                showLayoutDebugOverlays.toggle()
+                            }) {
+                                Image(systemName: showLayoutDebugOverlays ? "eye.fill" : "eye.slash.fill")
+                                    .font(.body)
+                                    .fontWeight(.medium)
+                                    .foregroundColor(showLayoutDebugOverlays ? .orange : .secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .help("Toggle layout debug overlays")
+                        }
+                    }
                 }
-                
-                ToolbarItem(placement: .principal) {
-                    Text("Loop")
-                        .font(.headline)
-                        .fontWeight(.semibold)
-                }
-                
-            }
-            .toolbarBackground(.automatic, for: .navigationBar)
+                .toolbarBackground(.automatic, for: .navigationBar)
         }
         .sheet(isPresented: $viewModel.showingCompose) {
             ComposeLoopView(
@@ -52,9 +70,6 @@ struct HomeView: View {
             .presentationBackgroundInteraction(.enabled(upThrough: .fraction(0.35)))
             .presentationContentInteraction(.scrolls)
         }
-        .sheet(isPresented: $showProfile) {
-            ProfileView()
-        }
         .sheet(item: $profileUserToShow) { profileUser in
             ProfileView(userId: profileUser.userId)
         }
@@ -62,7 +77,6 @@ struct HomeView: View {
             LoopDetailView(
                 loop: loop,
                 onRepliesChanged: {
-                    // Refresh the reply preview for this loop when replies change
                     Task {
                         await viewModel.refreshReplyPreviewForLoop(loop.id)
                     }
@@ -80,23 +94,112 @@ struct HomeView: View {
         }
     }
     
-    // MARK: - Scroll Sentinel
-    private var scrollSentinel: some View {
-        GeometryReader { geo in
-            let topMinY = geo.frame(in: .named("loopScroll")).minY
-            Color.clear
-                .onChange(of: topMinY) { _, newValue in
-                    let offset = max(0, -newValue)
-                    scrollOffset = offset
-                }
+    // MARK: - Feed Content
+    
+    private var feedContent: some View {
+        FeedListView(
+            coordinateSpaceName: "home2Feed",
+            onRefresh: {
+                await viewModel.refreshFeed()
+            },
+            scrollOffset: $scrollOffset,
+            contentHeight: $contentHeight,
+            scrollViewHeight: $scrollViewHeight
+        ) {
+            if viewModel.isLoading && viewModel.loops.isEmpty {
+                loadingView
+            } else if viewModel.loops.isEmpty {
+                emptyStateView
+            } else {
+                postsSection
+            }
         }
-        .frame(height: 0)
-        .listRowSeparator(.hidden)
-        .listRowBackground(Color.clear)
-        .listRowInsets(EdgeInsets())
+    }
+    
+    // MARK: - Posts Section
+    
+    @ViewBuilder
+    private var postsSection: some View {
+        ForEach(Array(viewModel.loops.enumerated()), id: \.element.id) { index, loop in
+            let replies = viewModel.replyPreviews[loop.id]
+            
+            VStack(spacing: 0) {
+                // Single PostCard handles both cases
+                PostCard(
+                    loop: loop,
+                    isLiked: viewModel.isLikedByCurrentUser(loop),
+                    onLike: {
+                        Task {
+                            await viewModel.toggleLike(for: loop)
+                        }
+                    },
+                    onComment: {
+                        if loop.replyCount > 0 {
+                            loopToShowDetail = loop
+                        } else {
+                            viewModel.replyToLoop(loop)
+                        }
+                    },
+                    onShare: {
+                        // TODO: Implement share
+                    },
+                    onDelete: viewModel.canDeleteLoop(loop) ? {
+                        Task {
+                            await viewModel.deleteLoop(loop)
+                        }
+                    } : nil,
+                    onAvatarTap: {
+                        profileUserToShow = ProfileUser(userId: loop.authorId)
+                    },
+                    replyPreviews: replies,
+                    onReplyPreviewTap: {
+                        loopToShowDetail = loop
+                    },
+                    onReplyDelete: { reply in
+                        if viewModel.canDeleteLoop(reply) {
+                            Task {
+                                await viewModel.deleteLoop(reply)
+                            }
+                        }
+                    },
+                    showDebugOverlays: showLayoutDebugOverlays
+                )
+                .padding(.top, index == 0 ? 0 : 5)
+                .padding(.bottom, index == viewModel.loops.count - 1 ? 0 : 5)
+                
+                // Divider between posts
+                if index < viewModel.loops.count - 1 {
+                    PostDivider()
+                }
+            }
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
+            .listRowInsets(EdgeInsets(top: 0, leading: 10, bottom: 0, trailing: 10))
+            .onAppear {
+                // Load more content when near the end
+                if loop.id == viewModel.loops.last?.id {
+                    Task {
+                        await viewModel.loadMoreContent()
+                    }
+                }
+            }
+        }
+        
+        // Loading more indicator
+        if viewModel.isLoading && !viewModel.loops.isEmpty {
+            HStack {
+                Spacer()
+                ProgressView()
+                    .padding()
+                Spacer()
+            }
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
+        }
     }
     
     // MARK: - Loading View
+    
     private var loadingView: some View {
         GeometryReader { geometry in
             VStack {
@@ -119,6 +222,7 @@ struct HomeView: View {
     }
     
     // MARK: - Empty State View
+    
     private var emptyStateView: some View {
         HStack {
             Spacer()
@@ -145,116 +249,10 @@ struct HomeView: View {
         .listRowSeparator(.hidden)
         .listRowBackground(Color.clear)
     }
-    
-    private var feedListView: some View {
-        GeometryReader { scrollGeometry in
-            List {
-                scrollSentinel
-                
-                if viewModel.isLoading && viewModel.loops.isEmpty {
-                    loadingView
-                } else if viewModel.loops.isEmpty {
-                    emptyStateView
-                } else {
-                    ForEach(Array(viewModel.loops.enumerated()), id: \.element.id) { index, loop in
-                        let replies = viewModel.replyPreviews[loop.id]
-                        let _ = print("🏠 DEBUG HomeView: Loop \(loop.id.prefix(8)) - replyPreviews has \(replies?.count ?? 0) replies")
-                        
-                        LoopCardView(
-                            loop: loop,
-                            isLiked: viewModel.isLikedByCurrentUser(loop),
-                            cardIndex: index,
-                            onLike: {
-                                // Stronger haptic feedback for satisfying like action
-                                let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
-                                impactFeedback.impactOccurred()
-                                
-                                Task {
-                                    await viewModel.toggleLike(for: loop)
-                                }
-                            },
-                            onReply: {
-                                // Haptic feedback
-                                let impactFeedback = UIImpactFeedbackGenerator(style: .light)
-                                impactFeedback.impactOccurred()
-                                
-                                viewModel.replyToLoop(loop)
-                            },
-                            onDelete: viewModel.canDeleteLoop(loop) ? {
-                                // Haptic feedback
-                                let impactFeedback = UINotificationFeedbackGenerator()
-                                impactFeedback.notificationOccurred(.warning)
-                                
-                                Task {
-                                    await viewModel.deleteLoop(loop)
-                                }
-                            } : nil,
-                            onAvatarTap: {
-                                print("👆 Avatar tapped - opening profile for user: \(loop.authorId)")
-                                profileUserToShow = ProfileUser(userId: loop.authorId)
-                            },
-                            onCardTap: loop.replyCount > 0 ? {
-                                // Haptic feedback
-                                let impactFeedback = UIImpactFeedbackGenerator(style: .light)
-                                impactFeedback.impactOccurred()
-                                
-                                loopToShowDetail = loop
-                            } : nil,
-                            replyPreviews: replies
-                        )
-                        .padding(.top, index == 0 ? 0 : 5) // Add top padding except for first post
-                        .padding(.bottom, index == viewModel.loops.count - 1 ? 0 : 5) // Add bottom padding except for last post
-                        .overlay(alignment: .bottom) {
-                            if index < viewModel.loops.count - 1 {
-                                // Bottom divider - always full width from left padding
-                                Rectangle()
-                                    .fill(CardLayoutConstants.dividerColor)
-                                    .frame(height: CardLayoutConstants.dividerHeight)
-                                    .padding(.leading, CardLayoutConstants.horizontalPadding)
-                                    .padding(.trailing, CardLayoutConstants.horizontalPadding)
-                            }
-                        }
-                        .listRowSeparator(.hidden)
-                        .listRowBackground(Color.clear)
-                        .listRowInsets(EdgeInsets(top: 0, leading: 10, bottom: 0, trailing: 10))
-                        .onAppear {
-                            // Load more content when near the end
-                            if loop.id == viewModel.loops.last?.id {
-                                Task {
-                                    await viewModel.loadMoreContent()
-                                }
-                            }
-                        }
-                    }
-                    
-                    // Loading more indicator
-                    if viewModel.isLoading && !viewModel.loops.isEmpty {
-                        HStack {
-                            Spacer()
-                            ProgressView()
-                                .padding()
-                            Spacer()
-                        }
-                        .listRowSeparator(.hidden)
-                        .listRowBackground(Color.clear)
-                    }
-                }
-            
-            }
-            .listStyle(.plain)
-            .listSectionSeparator(.hidden)
-            .coordinateSpace(name: "loopScroll")
-            .scrollIndicators(.hidden)
-            .scrollContentBackground(.automatic)
-            .contentMargins(.top, AppConstants.Layout.listContentTopMargin)
-            .refreshable {
-                await viewModel.refreshFeed()
-            }
-        }
-    }
 }
 
-
+// MARK: - Preview
 #Preview {
     HomeView()
 }
+
