@@ -403,7 +403,6 @@ struct MultipleReplyMediaView: View {
     let media: [LoopMedia]
     @Binding var currentIndex: Int
     let onPhotoTap: (Int) -> Void
-    @State private var scrollIndex: Int? = 0
     
     var carouselHeight: CGFloat {
         guard let firstMedia = media.first,
@@ -424,10 +423,12 @@ struct MultipleReplyMediaView: View {
     
     var body: some View {
         GeometryReader { geometry in
-            let photoWidth = geometry.size.width
+            let containerWidth = geometry.size.width
+            // Each photo is slightly smaller to show spacing between them
+            let photoWidth = containerWidth - CardLayoutConstants.photoCarouselSpacing
             
             ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: CardLayoutConstants.photoCarouselSpacing) {
+                HStack(spacing: CardLayoutConstants.photoCarouselSpacing) {
                     ForEach(Array(media.enumerated()), id: \.offset) { index, mediaItem in
                         ReplyCarouselPhotoView(
                             media: mediaItem,
@@ -437,10 +438,7 @@ struct MultipleReplyMediaView: View {
                         .frame(width: photoWidth)
                     }
                 }
-                .scrollTargetLayout()
             }
-            .scrollTargetBehavior(.viewAligned)
-            .scrollPosition(id: $scrollIndex)
         }
         .frame(height: carouselHeight)
         .clipShape(RoundedRectangle(cornerRadius: CardLayoutConstants.mediaCornerRadius))
@@ -448,11 +446,6 @@ struct MultipleReplyMediaView: View {
             // Page indicators inside photo container
             PageIndicator(currentPage: currentIndex, pageCount: media.count)
                 .padding(.bottom, 8)
-        }
-        .onChange(of: scrollIndex) { _, newValue in
-            if let newValue = newValue {
-                currentIndex = newValue
-            }
         }
     }
 }

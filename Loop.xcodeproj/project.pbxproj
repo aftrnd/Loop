@@ -19,6 +19,7 @@
 /* Begin PBXFileReference section */
 		A65C74BD2E9AD0F6004336EF /* loop-icon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = "loop-icon.icon"; sourceTree = "<group>"; };
 		A68674AA2E7B488D00D7A119 /* Loop.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Loop.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A6C9169D2EA145F100EF87EC /* loop.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = loop.xcodeproj; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -84,6 +85,11 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
+		A6C916A12EA145F100EF87EC /* Products */ = {
+			isa = PBXGroup;
+			name = Products;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -145,6 +151,12 @@
 			preferredProjectObjectVersion = 77;
 			productRefGroup = A68674AB2E7B488D00D7A119 /* Products */;
 			projectDirPath = "";
+			projectReferences = (
+				{
+					ProductGroup = A6C916A12EA145F100EF87EC /* Products */;
+					ProjectRef = A6C9169D2EA145F100EF87EC /* loop.xcodeproj */;
+				},
+			);
 			projectRoot = "";
 			targets = (
 				A68674A92E7B488D00D7A119 /* Loop */,

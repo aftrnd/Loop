@@ -77,9 +77,40 @@ struct DebugMenuView: View {
     @ObservedObject var debugManager = DebugManager.shared
     @Environment(\.dismiss) private var dismiss
     
+    // Layout debug settings
+    @AppStorage("showLayoutDebugOverlays") private var showLayoutDebugOverlays = false
+    @AppStorage("showDebugOverlayButton") private var showDebugOverlayButton = false
+    
     var body: some View {
         NavigationView {
             List {
+                Section {
+                    Toggle(isOn: $showDebugOverlayButton) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Show Debug Button")
+                                .font(.body)
+                            Text("Shows overlay toggle button in Home v2")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    
+                    Toggle(isOn: $showLayoutDebugOverlays) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Layout Debug Overlays")
+                                .font(.body)
+                            Text("Shows colored backgrounds and red borders")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .disabled(!showDebugOverlayButton)
+                } header: {
+                    Text("Layout Debugging")
+                } footer: {
+                    Text("Enable 'Show Debug Button' first to see the overlay toggle in Home v2. Then use that button to show/hide the colored debug overlays.")
+                }
+                
                 Section("Authentication Debug") {
                     Button("🔄 Reset Authentication") {
                         debugManager.resetAuthentication()

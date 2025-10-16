@@ -352,8 +352,8 @@ struct ReplyThreadWithLineView: View {
             // Line starts after gap from main avatar
             let lineStart = mainAvatarBottom + CardLayoutConstants.avatarLineGap
             
-            // Reply avatar top edge (after main post, divider, and reply padding)
-            let replyAvatarTop = mainPostHeight + CardLayoutConstants.dividerHeight + CardLayoutConstants.topPadding
+            // Reply avatar top edge (after main post and reply padding)
+            let replyAvatarTop = mainPostHeight + CardLayoutConstants.topPadding
             
             // Line ends before gap to reply avatar
             let lineEnd = replyAvatarTop - CardLayoutConstants.avatarLineGap
@@ -418,17 +418,10 @@ struct ReplyThreadWithLineView: View {
                         }
                     )
                     
-                    // Small spacer to prevent media anti-aliasing from affecting divider
+                    // Small spacer to prevent media anti-aliasing from affecting reply preview
                     if loop.hasMedia {
                         Color.clear.frame(height: 0.5)
                     }
-                    
-                    // Divider - indented to align with main post's content
-                    CardLayoutConstants.dividerColor
-                        .frame(maxWidth: .infinity)
-                        .frame(height: CardLayoutConstants.dividerHeight)
-                        .padding(.leading, CardLayoutConstants.horizontalPadding + CardLayoutConstants.contentShift)
-                        .padding(.trailing, CardLayoutConstants.horizontalPadding)
                     
                     // Reply preview - normal left alignment (no content shift)
                     ForEach(Array(previewReplies.enumerated()), id: \.element.id) { index, reply in
@@ -592,7 +585,6 @@ struct MultipleMediaView: View {
     let cornerRadius: CGFloat
     @Binding var currentIndex: Int
     let onPhotoTap: (Int) -> Void
-    @State private var scrollIndex: Int? = 0
     
     // Use the same height calculation as single photos
     var carouselHeight: CGFloat {
@@ -625,10 +617,12 @@ struct MultipleMediaView: View {
     
     var body: some View {
         GeometryReader { geometry in
-            let photoWidth = geometry.size.width
+            let containerWidth = geometry.size.width
+            // Each photo is slightly smaller to show spacing between them
+            let photoWidth = containerWidth - CardLayoutConstants.photoCarouselSpacing
             
             ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: CardLayoutConstants.photoCarouselSpacing) {
+                HStack(spacing: CardLayoutConstants.photoCarouselSpacing) {
                     ForEach(Array(media.enumerated()), id: \.offset) { index, mediaItem in
                         CarouselPhotoView(
                             media: mediaItem,
@@ -639,10 +633,7 @@ struct MultipleMediaView: View {
                         .frame(width: photoWidth)
                     }
                 }
-                .scrollTargetLayout()
             }
-            .scrollTargetBehavior(.viewAligned)
-            .scrollPosition(id: $scrollIndex)
         }
         .frame(height: carouselHeight)
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
@@ -650,11 +641,6 @@ struct MultipleMediaView: View {
             // Page indicators inside photo container
             PageIndicator(currentPage: currentIndex, pageCount: media.count)
                 .padding(.bottom, 8)
-        }
-        .onChange(of: scrollIndex) { _, newValue in
-            if let newValue = newValue {
-                currentIndex = newValue
-            }
         }
     }
 }

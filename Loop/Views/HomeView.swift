@@ -209,7 +209,6 @@ struct HomeView: View {
                                 // Bottom divider - always full width from left padding
                                 Rectangle()
                                     .fill(CardLayoutConstants.dividerColor)
-                                    .frame(maxWidth: .infinity)
                                     .frame(height: CardLayoutConstants.dividerHeight)
                                     .padding(.leading, CardLayoutConstants.horizontalPadding)
                                     .padding(.trailing, CardLayoutConstants.horizontalPadding)
