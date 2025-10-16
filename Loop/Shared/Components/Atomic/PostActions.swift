@@ -127,7 +127,7 @@ struct PostActions: View {
             }
         }
         .buttonStyle(.plain)
-        .frame(width: CardLayoutConstants.actionButtonWidth, alignment: .leading)
+        .frame(minWidth: CardLayoutConstants.actionButtonWidth, alignment: .leading)
         .contentShape(Rectangle())
     }
     
@@ -153,7 +153,7 @@ struct PostActions: View {
             }
         }
         .buttonStyle(.plain)
-        .frame(width: CardLayoutConstants.actionButtonWidth, alignment: .leading)
+        .frame(minWidth: CardLayoutConstants.actionButtonWidth, alignment: .leading)
         .contentShape(Rectangle())
     }
     
@@ -170,7 +170,7 @@ struct PostActions: View {
                 .foregroundColor(.secondary)
         }
         .buttonStyle(.plain)
-        .frame(width: CardLayoutConstants.actionButtonWidth, alignment: .leading)
+        .frame(minWidth: CardLayoutConstants.actionButtonWidth, alignment: .leading)
         .contentShape(Rectangle())
     }
     
