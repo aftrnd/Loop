@@ -135,18 +135,34 @@ struct ReplyCardView: View {
                     if !reply.content.isEmpty {
                         contentView
                             .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(showDebugOverlay ? Color.green.opacity(0.1) : Color.clear)
+                            .overlay(
+                                Group {
+                                    if showDebugOverlay {
+                                        Rectangle()
+                                            .stroke(Color.red, lineWidth: 1)
+                                    }
+                                }
+                            )
                             .padding(.leading, shouldShiftContent ? CardLayoutConstants.contentShift : 0)
                             .animation(.spring(response: CardLayoutConstants.contentShiftAnimationResponse, dampingFraction: CardLayoutConstants.contentShiftAnimationDamping), value: shouldShiftContent)
-                            .debugFrame("ReplyCard-TextContainer", enabled: showDebugOverlay)
                     }
                     
                     // Media content - own container with debug outline, shifts right when needed
                     if reply.hasMedia {
                         mediaView
                             .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(showDebugOverlay ? Color.green.opacity(0.1) : Color.clear)
+                            .overlay(
+                                Group {
+                                    if showDebugOverlay {
+                                        Rectangle()
+                                            .stroke(Color.red, lineWidth: 1)
+                                    }
+                                }
+                            )
                             .padding(.leading, shouldShiftContent ? CardLayoutConstants.contentShift : 0)
                             .animation(.spring(response: CardLayoutConstants.contentShiftAnimationResponse, dampingFraction: CardLayoutConstants.contentShiftAnimationDamping), value: shouldShiftContent)
-                            .debugFrame("ReplyCard-MediaContainer", enabled: showDebugOverlay)
                     }
                 }
                 .padding(.bottom, CardLayoutConstants.contentToActionsSpacing)

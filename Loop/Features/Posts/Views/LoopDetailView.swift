@@ -268,7 +268,8 @@ struct LoopDetailView: View {
                                                                 }
                                                         }
                                                     )
-                                                    .padding(.top, nestedIndex == 0 ? CardLayoutConstants.contentToActionsSpacing : 0)
+                                                    // 12pt spacing before each nested reply (matches contentToActionsSpacing)
+                                                    .padding(.top, CardLayoutConstants.contentToActionsSpacing)
                                                 }
                                             }
                                             
@@ -415,6 +416,7 @@ struct ConversationLinesView: View {
     let threadedReply: ThreadedReply
     let replyHeights: [String: CGFloat]
     let parentIndex: Int
+    @AppStorage("showLayoutDebugOverlays") private var showDebugOverlay = false
     
     var body: some View {
         let lineWidth = CardLayoutConstants.conversationLineWidth
@@ -427,6 +429,16 @@ struct ConversationLinesView: View {
                 .fill(CardLayoutConstants.conversationLineColor)
                 .frame(width: lineWidth, height: segment.height)
                 .offset(x: lineX, y: segment.startY)
+                .background(
+                    Group {
+                        if showDebugOverlay {
+                            Rectangle()
+                                .fill(Color.blue.opacity(0.3))
+                                .frame(width: lineWidth, height: segment.height)
+                                .offset(x: lineX, y: segment.startY)
+                        }
+                    }
+                )
                 .allowsHitTesting(false)
         }
     }
@@ -451,7 +463,7 @@ struct ConversationLinesView: View {
             }
         }
         
-        // Lines between consecutive nested replies (no dividers, just spacing)
+        // Lines between consecutive nested replies (no dividers, just 12pt spacing)
         var cumulativeHeight = externalTopPadding + parentHeight + CardLayoutConstants.contentToActionsSpacing
         
         for i in 0..<threadedReply.nestedReplies.count {
@@ -465,10 +477,10 @@ struct ConversationLinesView: View {
                     let prevAvatarBottom = cumulativeHeight + CardLayoutConstants.topPadding + CardLayoutConstants.avatarSize
                     let lineStart = prevAvatarBottom + CardLayoutConstants.avatarLineGap
                     
-                    // Add previous reply height to move to current
-                    cumulativeHeight += prevHeight
+                    // Add previous reply height AND the 12pt spacing we added between nested replies
+                    cumulativeHeight += prevHeight + CardLayoutConstants.contentToActionsSpacing
                     
-                    // Current avatar top - gap (no divider, replies stack directly with padding)
+                    // Current avatar top - gap
                     let currentAvatarTop = cumulativeHeight + CardLayoutConstants.topPadding
                     let lineEnd = currentAvatarTop - CardLayoutConstants.avatarLineGap
                     
