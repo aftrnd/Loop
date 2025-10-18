@@ -126,35 +126,29 @@ struct ReplyCardView: View {
                     showDebugOverlay: showDebugOverlay
                 )
                 .padding(.bottom, CardLayoutConstants.headerBottomSpacing)
-                .debugFrame("ReplyCard-HeaderContainer", enabled: AppConstants.Debug.logFrameCoordinates)
+                .debugFrame("ReplyCard-HeaderContainer", enabled: showDebugOverlay)
                 
-                // Content - text and media with identical spacing to LoopCardView
-                // Pattern: Text → 12pt → Media, then container adds 12pt → Actions
-                VStack(alignment: .leading, spacing: reply.hasMedia && !reply.content.isEmpty ? CardLayoutConstants.contentSpacing : 0) {
-                    // Text content - shifts right when needed
+                // Content - separated containers for text and media
+                // Pattern: Text container → 12pt → Media container, then 12pt → Actions
+                VStack(alignment: .leading, spacing: CardLayoutConstants.contentSpacing) {
+                    // Text content - own container with debug outline, shifts right when needed
                     if !reply.content.isEmpty {
                         contentView
+                            .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.leading, shouldShiftContent ? CardLayoutConstants.contentShift : 0)
                             .animation(.spring(response: CardLayoutConstants.contentShiftAnimationResponse, dampingFraction: CardLayoutConstants.contentShiftAnimationDamping), value: shouldShiftContent)
+                            .debugFrame("ReplyCard-TextContainer", enabled: showDebugOverlay)
                     }
                     
-                    // Media content - always full width to right edge, shifts left
+                    // Media content - own container with debug outline, shifts right when needed
                     if reply.hasMedia {
                         mediaView
+                            .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.leading, shouldShiftContent ? CardLayoutConstants.contentShift : 0)
                             .animation(.spring(response: CardLayoutConstants.contentShiftAnimationResponse, dampingFraction: CardLayoutConstants.contentShiftAnimationDamping), value: shouldShiftContent)
+                            .debugFrame("ReplyCard-MediaContainer", enabled: showDebugOverlay)
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(showDebugOverlay ? Color.green.opacity(0.1) : Color.clear)
-                .overlay(
-                    Group {
-                        if showDebugOverlay {
-                            Rectangle()
-                                .stroke(Color.red, lineWidth: 1)
-                        }
-                    }
-                )
                 .padding(.bottom, CardLayoutConstants.contentToActionsSpacing)
                 
                 // Action buttons - using reusable PostActions component
@@ -171,7 +165,7 @@ struct ReplyCardView: View {
                 )
                 .padding(.leading, shouldShiftContent ? CardLayoutConstants.contentShift : 0)
                 .animation(.spring(response: CardLayoutConstants.contentShiftAnimationResponse, dampingFraction: CardLayoutConstants.contentShiftAnimationDamping), value: shouldShiftContent)
-                .debugFrame("ReplyCard-ActionButtons", enabled: AppConstants.Debug.logFrameCoordinates)
+                .debugFrame("ReplyCard-ActionButtons", enabled: showDebugOverlay)
                 
                 // Show/Hide nested replies button - in container matching action buttons
                 if indentLevel == 0 && nestedReplyCount > 0, let onToggleExpanded = onToggleExpanded, !isExpanded {
@@ -274,7 +268,8 @@ struct ReplyCardView: View {
                     onPhotoTap: {
                         selectedPhotoIndex = 0
                         showPhotoViewer = true
-                    }
+                    },
+                    showDebugOverlay: showDebugOverlay
                 )
             } else if reply.media.count > 1 {
                 // Multiple images - swipeable carousel
@@ -284,7 +279,8 @@ struct ReplyCardView: View {
                     onPhotoTap: { index in
                         selectedPhotoIndex = index
                         showPhotoViewer = true
-                    }
+                    },
+                    showDebugOverlay: showDebugOverlay
                 )
             }
         }
@@ -297,6 +293,7 @@ struct ReplyCardView: View {
 struct SingleReplyMediaView: View {
     let media: LoopMedia
     let onPhotoTap: () -> Void
+    var showDebugOverlay: Bool = false
     
     var body: some View {
         if let width = media.width, let height = media.height, height > 0 {
@@ -328,6 +325,14 @@ struct SingleReplyMediaView: View {
                 }
                 .frame(width: geometry.size.width, height: mediaHeight)
                 .clipShape(RoundedRectangle(cornerRadius: CardLayoutConstants.mediaCornerRadius))
+                .overlay(
+                    Group {
+                        if showDebugOverlay {
+                            RoundedRectangle(cornerRadius: CardLayoutConstants.mediaCornerRadius)
+                                .stroke(Color.red, lineWidth: 1)
+                        }
+                    }
+                )
             }
             .frame(height: mediaHeight)
             .onTapGesture {
@@ -341,6 +346,10 @@ struct MultipleReplyMediaView: View {
     let media: [LoopMedia]
     @Binding var currentIndex: Int
     let onPhotoTap: (Int) -> Void
+    var showDebugOverlay: Bool = false
+    
+    // Local state for scroll position (needs to be optional for ScrollView API)
+    @State private var scrollPosition: Int?
     
     var carouselHeight: CGFloat {
         guard let firstMedia = media.first,
@@ -371,15 +380,34 @@ struct MultipleReplyMediaView: View {
                         ReplyCarouselPhotoView(
                             media: mediaItem,
                             height: carouselHeight,
-                            onPhotoTap: { onPhotoTap(index) }
+                            onPhotoTap: { onPhotoTap(index) },
+                            showDebugOverlay: showDebugOverlay
                         )
                         .frame(width: photoWidth)
+                        .id(index)
+                        .containerRelativeFrame(.horizontal, alignment: .center)
                     }
+                }
+                .scrollTargetLayout()
+            }
+            .scrollTargetBehavior(.paging)
+            .scrollPosition(id: $scrollPosition)
+            .onChange(of: scrollPosition) { _, newValue in
+                if let newValue = newValue {
+                    currentIndex = newValue
                 }
             }
         }
         .frame(height: carouselHeight)
         .clipShape(RoundedRectangle(cornerRadius: CardLayoutConstants.mediaCornerRadius))
+        .overlay(
+            Group {
+                if showDebugOverlay {
+                    RoundedRectangle(cornerRadius: CardLayoutConstants.mediaCornerRadius)
+                        .stroke(Color.red, lineWidth: 1)
+                }
+            }
+        )
         .overlay(alignment: .bottom) {
             // Page indicators inside photo container
             PageIndicator(currentPage: currentIndex, pageCount: media.count)
@@ -392,6 +420,7 @@ struct ReplyCarouselPhotoView: View {
     let media: LoopMedia
     let height: CGFloat
     let onPhotoTap: () -> Void
+    var showDebugOverlay: Bool = false
     
     var body: some View {
         CachedAsyncImage(url: URL(string: media.url)) { image in
@@ -410,6 +439,14 @@ struct ReplyCarouselPhotoView: View {
         .frame(height: height)
         .clipped()
         .clipShape(RoundedRectangle(cornerRadius: CardLayoutConstants.mediaCornerRadius))
+        .overlay(
+            Group {
+                if showDebugOverlay {
+                    RoundedRectangle(cornerRadius: CardLayoutConstants.mediaCornerRadius)
+                        .stroke(Color.red, lineWidth: 1)
+                }
+            }
+        )
         .onTapGesture {
             onPhotoTap()
         }

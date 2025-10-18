@@ -29,28 +29,37 @@ struct PostContent: View {
     
     // MARK: - Body
     var body: some View {
-        VStack(alignment: .leading, spacing: hasMedia && !text.isEmpty ? CardLayoutConstants.contentSpacing : 0) {
-            // Text content
+        VStack(alignment: .leading, spacing: CardLayoutConstants.contentSpacing) {
+            // Text content - own container with debug outline
             if !text.isEmpty {
                 textView
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(showDebugOverlay ? Color.green.opacity(0.1) : Color.clear)
+                    .overlay(
+                        Group {
+                            if showDebugOverlay {
+                                Rectangle()
+                                    .stroke(Color.red, lineWidth: 1)
+                            }
+                        }
+                    )
             }
             
-            // Media content
+            // Media content - own container with debug outline
             if hasMedia {
                 mediaView
+                    .background(showDebugOverlay ? Color.green.opacity(0.1) : Color.clear)
+                    .overlay(
+                        Group {
+                            if showDebugOverlay {
+                                Rectangle()
+                                    .stroke(Color.red, lineWidth: 1)
+                            }
+                        }
+                    )
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(showDebugOverlay ? Color.green.opacity(0.1) : Color.clear) // Debug: Content background
-        .overlay(
-            Group {
-                if showDebugOverlay {
-                    Rectangle()
-                        .stroke(Color.red, lineWidth: 1)
-                }
-            }
-        )
         .fullScreenCover(isPresented: $showPhotoViewer) {
             FullScreenPhotoViewer(
                 allMedia: media,
@@ -110,7 +119,8 @@ struct PostContent: View {
                 onPhotoTap: {
                     selectedPhotoIndex = 0
                     showPhotoViewer = true
-                }
+                },
+                showDebugOverlay: showDebugOverlay
             )
         } else if media.count > 1 {
             MultipleMediaView(
@@ -120,7 +130,8 @@ struct PostContent: View {
                 onPhotoTap: { index in
                     selectedPhotoIndex = index
                     showPhotoViewer = true
-                }
+                },
+                showDebugOverlay: showDebugOverlay
             )
         }
     }

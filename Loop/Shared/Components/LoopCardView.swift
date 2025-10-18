@@ -99,6 +99,9 @@ struct LoopCardView: View {
     // Carousel state for page indicators
     @State private var currentCarouselIndex: Int = 0
     
+    // Debug overlay
+    @AppStorage("showLayoutDebugOverlays") private var showDebugOverlay = false
+    
     private let maxPreviewLength = 280
     private let maxReplyPreviews = 1 // Show max 1 reply preview (most recent from followed users)
     
@@ -150,7 +153,7 @@ struct LoopCardView: View {
                     badgeType: loop.authorBadgeType,
                     onAvatarTap: onAvatarTap
                 )
-                .debugFrame("LoopCard-Header", enabled: AppConstants.Debug.logFrameCoordinates)
+                .debugFrame("LoopCard-Header", enabled: showDebugOverlay)
                 
                 Spacer()
                 
@@ -164,12 +167,12 @@ struct LoopCardView: View {
                 }
             }
             .padding(.bottom, CardLayoutConstants.headerBottomSpacing)
-            .debugFrame("LoopCard-HeaderContainer", enabled: AppConstants.Debug.logFrameCoordinates)
+            .debugFrame("LoopCard-HeaderContainer", enabled: showDebugOverlay)
             
-            // Content - identical spacing pattern to ReplyCardView
-            // Pattern: Text → 12pt → Media, then container adds 12pt → Actions
-            VStack(alignment: .leading, spacing: loop.hasMedia && !loop.content.isEmpty ? CardLayoutConstants.contentSpacing : 0) {
-                // Text content
+            // Content - separated containers for text and media
+            // Pattern: Text container → 12pt → Media container, then 12pt → Actions
+            VStack(alignment: .leading, spacing: CardLayoutConstants.contentSpacing) {
+                // Text content - own container with debug outline
                 if !loop.content.isEmpty {
                     let shouldTruncate = loop.content.count > maxPreviewLength && !showingFullText
                     let displayText = shouldTruncate ? String(loop.content.prefix(maxPreviewLength)) + "..." : loop.content
@@ -199,9 +202,11 @@ struct LoopCardView: View {
                             .foregroundColor(.accentColor)
                         }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .debugFrame("LoopCard-TextContainer", enabled: showDebugOverlay)
                 }
                 
-                // Media content - unified approach for both single and multiple photos
+                // Media content - own container with debug outline
                 if loop.hasMedia {
                     LoopMediaView(
                         media: loop.media,
@@ -209,8 +214,11 @@ struct LoopCardView: View {
                         onPhotoTap: { index in
                             selectedPhotoIndex = index
                             showPhotoViewer = true
-                        }
+                        },
+                        showDebugOverlay: showDebugOverlay
                     )
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .debugFrame("LoopCard-MediaContainer", enabled: showDebugOverlay)
                 }
             }
             .padding(.bottom, CardLayoutConstants.contentToActionsSpacing)
@@ -292,7 +300,7 @@ struct LoopCardView: View {
                     .contentShape(Rectangle())
                 }
             }
-            .debugFrame("LoopCard-ActionButtons", enabled: AppConstants.Debug.logFrameCoordinates)
+            .debugFrame("LoopCard-ActionButtons", enabled: showDebugOverlay)
             }
             .padding(.leading, CardLayoutConstants.horizontalPadding)
             .padding(.trailing, CardLayoutConstants.horizontalPadding)
@@ -476,22 +484,27 @@ struct LoopMediaView: View {
     let media: [LoopMedia]
     @Binding var currentIndex: Int
     let onPhotoTap: (Int) -> Void
+    var showDebugOverlay: Bool = false
     
     var body: some View {
-        if media.count == 1, let firstMedia = media.first {
-            SingleMediaView(
-                media: firstMedia,
-                cornerRadius: CardLayoutConstants.mediaCornerRadius,
-                onPhotoTap: { onPhotoTap(0) }
-            )
-        } else if media.count > 1 {
-            // Multiple photos with same padding as single photos
-            MultipleMediaView(
-                media: media,
-                cornerRadius: CardLayoutConstants.mediaCornerRadius,
-                currentIndex: $currentIndex,
-                onPhotoTap: onPhotoTap
-            )
+        Group {
+            if media.count == 1, let firstMedia = media.first {
+                SingleMediaView(
+                    media: firstMedia,
+                    cornerRadius: CardLayoutConstants.mediaCornerRadius,
+                    onPhotoTap: { onPhotoTap(0) },
+                    showDebugOverlay: showDebugOverlay
+                )
+            } else if media.count > 1 {
+                // Multiple photos with same padding as single photos
+                MultipleMediaView(
+                    media: media,
+                    cornerRadius: CardLayoutConstants.mediaCornerRadius,
+                    currentIndex: $currentIndex,
+                    onPhotoTap: onPhotoTap,
+                    showDebugOverlay: showDebugOverlay
+                )
+            }
         }
     }
 }
@@ -500,6 +513,7 @@ struct SingleMediaView: View {
     let media: LoopMedia
     let cornerRadius: CGFloat
     let onPhotoTap: () -> Void
+    var showDebugOverlay: Bool = false
     
     var body: some View {
         switch media.type {
@@ -524,6 +538,14 @@ struct SingleMediaView: View {
                 }
                 .frame(width: geometry.size.width, height: displayMode.height)
                 .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+                .overlay(
+                    Group {
+                        if showDebugOverlay {
+                            RoundedRectangle(cornerRadius: cornerRadius)
+                                .stroke(Color.red, lineWidth: 1)
+                        }
+                    }
+                )
             }
             .frame(height: displayMode.height)
             .onTapGesture {
@@ -585,6 +607,10 @@ struct MultipleMediaView: View {
     let cornerRadius: CGFloat
     @Binding var currentIndex: Int
     let onPhotoTap: (Int) -> Void
+    var showDebugOverlay: Bool = false
+    
+    // Local state for scroll position (needs to be optional for ScrollView API)
+    @State private var scrollPosition: Int?
     
     // Use the same height calculation as single photos
     var carouselHeight: CGFloat {
@@ -628,15 +654,34 @@ struct MultipleMediaView: View {
                             media: mediaItem,
                             cornerRadius: cornerRadius,
                             height: carouselHeight,
-                            onPhotoTap: { onPhotoTap(index) }
+                            onPhotoTap: { onPhotoTap(index) },
+                            showDebugOverlay: showDebugOverlay
                         )
                         .frame(width: photoWidth)
+                        .id(index)
+                        .containerRelativeFrame(.horizontal, alignment: .center)
                     }
+                }
+                .scrollTargetLayout()
+            }
+            .scrollTargetBehavior(.paging)
+            .scrollPosition(id: $scrollPosition)
+            .onChange(of: scrollPosition) { _, newValue in
+                if let newValue = newValue {
+                    currentIndex = newValue
                 }
             }
         }
         .frame(height: carouselHeight)
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+        .overlay(
+            Group {
+                if showDebugOverlay {
+                    RoundedRectangle(cornerRadius: cornerRadius)
+                        .stroke(Color.red, lineWidth: 1)
+                }
+            }
+        )
         .overlay(alignment: .bottom) {
             // Page indicators inside photo container
             PageIndicator(currentPage: currentIndex, pageCount: media.count)
@@ -650,6 +695,7 @@ struct CarouselPhotoView: View {
     let cornerRadius: CGFloat
     let height: CGFloat
     let onPhotoTap: () -> Void
+    var showDebugOverlay: Bool = false
     
     var body: some View {
         switch media.type {
@@ -670,6 +716,14 @@ struct CarouselPhotoView: View {
             .frame(height: height)
             .clipped()
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+            .overlay(
+                Group {
+                    if showDebugOverlay {
+                        RoundedRectangle(cornerRadius: cornerRadius)
+                            .stroke(Color.red, lineWidth: 1)
+                    }
+                }
+            )
             .onTapGesture {
                 onPhotoTap()
             }
