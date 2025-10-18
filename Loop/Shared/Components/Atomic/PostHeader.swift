@@ -36,20 +36,15 @@ struct PostHeader: View {
     
     // MARK: - Body
     var body: some View {
-        HStack(spacing: 0) {
-            // Left: Avatar + Name/Username
-            HStack(spacing: spacing) {
-                avatar
-                nameStack
-            }
+        HStack(spacing: spacing) {
+            // Left: Avatar (full height)
+            avatar
             
-            Spacer()
-            
-            // Right: Timestamp
-            timestampView
+            // Right: Split container
+            splitContainer
         }
         .frame(maxWidth: .infinity)
-        .background(showDebugOverlay ? Color.blue.opacity(0.1) : Color.clear) // Debug: Header background
+        .background(showDebugOverlay ? Color.blue.opacity(0.1) : Color.clear)
         .overlay(
             Group {
                 if showDebugOverlay {
@@ -103,18 +98,55 @@ struct PostHeader: View {
         }
     }
     
-    private var nameStack: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            // Display name
+    private var splitContainer: some View {
+        VStack(alignment: .leading, spacing: 4) { // 4pt spacing - matches ChatRowView
+            topHalf
+            bottomHalf
+        }
+        .frame(maxHeight: avatarSize, alignment: .center)
+        .overlay(
+            Group {
+                if showDebugOverlay {
+                    Rectangle()
+                        .fill(Color.blue)
+                        .frame(height: 2)
+                        .offset(y: 0)
+                }
+            }
+        )
+    }
+    
+    private var topHalf: some View {
+        HStack(spacing: 0) {
             Text(displayName)
                 .font(.headline)
                 .fontWeight(.semibold)
                 .lineLimit(1)
             
-            // Username with badge
+            Spacer()
+            
+            Text(timestamp)
+                .font(.subheadline)
+                .monospacedDigit()
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+        .frame(maxWidth: .infinity)
+        .overlay(
+            Group {
+                if showDebugOverlay {
+                    Rectangle()
+                        .stroke(Color.green, lineWidth: 2)
+                }
+            }
+        )
+    }
+    
+    private var bottomHalf: some View {
+        HStack(spacing: 0) {
             if let username = username, !username.isEmpty {
                 HStack(spacing: 4) {
-                    // Badge icon
                     if let badgeType = badgeType {
                         Image(systemName: badgeType.iconName)
                             .font(.system(size: 14))
@@ -128,31 +160,33 @@ struct PostHeader: View {
                         .lineLimit(1)
                 }
             }
+            
+            Spacer()
         }
-        .frame(maxHeight: .infinity, alignment: .center)
-    }
-    
-    private var timestampView: some View {
-        Text(timestamp)
-            .font(.subheadline)
-            .monospacedDigit()
-            .foregroundColor(.secondary)
-            .lineLimit(1)
-            .truncationMode(.tail)
+        .frame(maxWidth: .infinity)
+        .overlay(
+            Group {
+                if showDebugOverlay {
+                    Rectangle()
+                        .stroke(Color.green, lineWidth: 2)
+                }
+            }
+        )
     }
 }
 
 // MARK: - Preview
 #Preview {
     VStack(spacing: 20) {
-        // Verified user
+        // Verified user with debug overlay
         PostHeader(
             avatarURL: nil,
             displayName: "John Doe",
             username: "johndoe",
             badgeType: .verified,
             timestamp: "2m",
-            onAvatarTap: {}
+            onAvatarTap: {},
+            showDebugOverlay: true
         )
         .padding()
         .background(Color(.systemBackground))
