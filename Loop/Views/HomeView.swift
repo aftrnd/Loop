@@ -162,6 +162,9 @@ struct HomeView: View {
                             }
                         }
                     },
+                    isReplyLiked: { reply in
+                        viewModel.isLikedByCurrentUser(reply)
+                    },
                     showDebugOverlays: showLayoutDebugOverlays
                 )
                 .padding(.top, index == 0 ? 0 : 5)

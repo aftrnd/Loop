@@ -17,6 +17,7 @@ struct PostCard: View {
     let replyPreviews: [Loop]?
     let onReplyPreviewTap: (() -> Void)?
     let onReplyDelete: ((Loop) -> Void)? // Delete individual replies
+    let isReplyLiked: ((Loop) -> Bool)? // Check if reply is liked by current user
     
     // Debug overlays
     let showDebugOverlays: Bool
@@ -33,6 +34,7 @@ struct PostCard: View {
         replyPreviews: [Loop]? = nil,
         onReplyPreviewTap: (() -> Void)? = nil,
         onReplyDelete: ((Loop) -> Void)? = nil,
+        isReplyLiked: ((Loop) -> Bool)? = nil,
         showDebugOverlays: Bool = false
     ) {
         self.loop = loop
@@ -45,6 +47,7 @@ struct PostCard: View {
         self.replyPreviews = replyPreviews
         self.onReplyPreviewTap = onReplyPreviewTap
         self.onReplyDelete = onReplyDelete
+        self.isReplyLiked = isReplyLiked
         self.showDebugOverlays = showDebugOverlays
     }
     
@@ -214,7 +217,7 @@ struct PostCard: View {
             
             // Actions - same as main posts, show delete menu if deletable
             PostActions(
-                isLiked: false, // Reply like state would need to be passed from parent
+                isLiked: isReplyLiked?(reply) ?? false,
                 likeCount: reply.likeCount,
                 onLike: {
                     // Tap anywhere on reply preview to view full thread
