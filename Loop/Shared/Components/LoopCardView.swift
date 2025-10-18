@@ -644,8 +644,8 @@ struct MultipleMediaView: View {
     var body: some View {
         GeometryReader { geometry in
             let containerWidth = geometry.size.width
-            // Each photo is slightly smaller to show spacing between them
-            let photoWidth = containerWidth - CardLayoutConstants.photoCarouselSpacing
+            // Each photo fills container width, spacing creates the gaps between
+            let photoWidth = containerWidth
             
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: CardLayoutConstants.photoCarouselSpacing) {
@@ -657,9 +657,8 @@ struct MultipleMediaView: View {
                             onPhotoTap: { onPhotoTap(index) },
                             showDebugOverlay: showDebugOverlay
                         )
-                        .frame(width: photoWidth)
+                        .frame(width: photoWidth, height: carouselHeight)
                         .id(index)
-                        .containerRelativeFrame(.horizontal, alignment: .center)
                     }
                 }
                 .scrollTargetLayout()
@@ -700,21 +699,24 @@ struct CarouselPhotoView: View {
     var body: some View {
         switch media.type {
         case .image:
-            CachedAsyncImage(url: URL(string: media.url)) { image in
-                image
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-            } placeholder: {
-                RoundedRectangle(cornerRadius: cornerRadius)
-                    .fill(Color.secondary.opacity(0.2))
-                    .frame(height: height)
-                    .overlay(
-                        ProgressView()
-                            .scaleEffect(1.0)
-                    )
+            GeometryReader { geometry in
+                CachedAsyncImage(url: URL(string: media.url)) { image in
+                    image
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: geometry.size.width, height: height)
+                        .clipped()
+                } placeholder: {
+                    RoundedRectangle(cornerRadius: cornerRadius)
+                        .fill(Color.secondary.opacity(0.2))
+                        .frame(width: geometry.size.width, height: height)
+                        .overlay(
+                            ProgressView()
+                                .scaleEffect(1.0)
+                        )
+                }
             }
             .frame(height: height)
-            .clipped()
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
             .overlay(
                 Group {
