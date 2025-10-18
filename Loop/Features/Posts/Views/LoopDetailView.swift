@@ -164,25 +164,6 @@ struct LoopDetailView: View {
                         LazyVStack(spacing: 0) {
                             ForEach(Array(viewModel.threadedReplies.enumerated()), id: \.element.id) { index, threadedReply in
                                 ZStack(alignment: .topLeading) {
-                                    // Connecting line overlay (only when expanded)
-                                    if threadedReply.isExpanded && !threadedReply.nestedReplies.isEmpty {
-                                        let lineHeight = calculateLineHeight(for: threadedReply, parentIndex: index)
-                                        
-                                        if lineHeight > 0 {
-                                            // Account for external top padding on parent card
-                                            let externalTopPadding: CGFloat = index == 0 ? 0 : 5
-                                            // Line starts below parent avatar + gap
-                                            let lineStartY = externalTopPadding + CardLayoutConstants.topPadding + CardLayoutConstants.avatarSize + CardLayoutConstants.avatarLineGap
-                                            // Line X position: centered on avatar
-                                            let lineX = CardLayoutConstants.horizontalPadding + CardLayoutConstants.avatarSize / 2 - CardLayoutConstants.conversationLineWidth / 2
-                                            
-                                            RoundedRectangle(cornerRadius: CardLayoutConstants.conversationLineWidth / 2)
-                                                .fill(CardLayoutConstants.conversationLineColor)
-                                                .frame(width: CardLayoutConstants.conversationLineWidth, height: lineHeight)
-                                                .offset(x: lineX, y: lineStartY)
-                                        }
-                                    }
-                                    
                                     VStack(spacing: 0) {
                                         // Top-level reply - wrapped in container like PostCard
                                         ReplyCardView(
@@ -318,7 +299,7 @@ struct LoopDetailView: View {
                                                 }
                                             }
                                             
-                                            // "Hide replies" button at bottom when expanded - aligned like action buttons
+                                            // "Hide replies" button at bottom when expanded - in container matching action buttons
                                             VStack(spacing: 0) {
                                                 HStack(spacing: 0) {
                                                     Button(action: {
@@ -348,7 +329,36 @@ struct LoopDetailView: View {
                                                 .padding(.top, 8)
                                             }
                                             .padding(.horizontal, CardLayoutConstants.horizontalPadding)
+                                            .background(showDebugOverlay ? Color.orange.opacity(0.1) : Color.clear)
+                                            .overlay(
+                                                Group {
+                                                    if showDebugOverlay {
+                                                        Rectangle()
+                                                            .stroke(Color.red, lineWidth: 1)
+                                                    }
+                                                }
+                                            )
                                             .transition(.opacity.combined(with: .move(edge: .bottom)))
+                                        }
+                                    }
+                                    
+                                    // Connecting line overlay (drawn on top, only when expanded)
+                                    if threadedReply.isExpanded && !threadedReply.nestedReplies.isEmpty {
+                                        let lineHeight = calculateLineHeight(for: threadedReply, parentIndex: index)
+                                        
+                                        if lineHeight > 0 {
+                                            // Account for external top padding on parent card
+                                            let externalTopPadding: CGFloat = index == 0 ? 0 : 5
+                                            // Line starts below parent avatar + gap
+                                            let lineStartY = externalTopPadding + CardLayoutConstants.topPadding + CardLayoutConstants.avatarSize + CardLayoutConstants.avatarLineGap
+                                            // Line X position: centered on avatar
+                                            let lineX = CardLayoutConstants.horizontalPadding + CardLayoutConstants.avatarSize / 2 - CardLayoutConstants.conversationLineWidth / 2
+                                            
+                                            RoundedRectangle(cornerRadius: CardLayoutConstants.conversationLineWidth / 2)
+                                                .fill(CardLayoutConstants.conversationLineColor)
+                                                .frame(width: CardLayoutConstants.conversationLineWidth, height: lineHeight)
+                                                .offset(x: lineX, y: lineStartY)
+                                                .allowsHitTesting(false)
                                         }
                                     }
                                 }

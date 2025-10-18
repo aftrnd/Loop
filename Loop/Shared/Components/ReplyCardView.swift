@@ -145,6 +145,16 @@ struct ReplyCardView: View {
                             .animation(.spring(response: CardLayoutConstants.contentShiftAnimationResponse, dampingFraction: CardLayoutConstants.contentShiftAnimationDamping), value: shouldShiftContent)
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(showDebugOverlay ? Color.green.opacity(0.1) : Color.clear)
+                .overlay(
+                    Group {
+                        if showDebugOverlay {
+                            Rectangle()
+                                .stroke(Color.red, lineWidth: 1)
+                        }
+                    }
+                )
                 .padding(.bottom, CardLayoutConstants.contentToActionsSpacing)
                 
                 // Action buttons - using reusable PostActions component
@@ -163,32 +173,43 @@ struct ReplyCardView: View {
                 .animation(.spring(response: CardLayoutConstants.contentShiftAnimationResponse, dampingFraction: CardLayoutConstants.contentShiftAnimationDamping), value: shouldShiftContent)
                 .debugFrame("ReplyCard-ActionButtons", enabled: AppConstants.Debug.logFrameCoordinates)
                 
-                // Show/Hide nested replies button - positioned like action buttons (another row below)
+                // Show/Hide nested replies button - in container matching action buttons
                 if indentLevel == 0 && nestedReplyCount > 0, let onToggleExpanded = onToggleExpanded, !isExpanded {
-                    HStack(spacing: 0) {
-                        Button(action: onToggleExpanded) {
-                            HStack(spacing: 6) {
-                                Image(systemName: "chevron.down")
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundColor(.secondary)
-                                
-                                Text("View \(nestedReplyCount) \(nestedReplyCount == 1 ? "reply" : "replies")")
-                                    .font(.caption)
-                                    .fontWeight(.medium)
-                                    .foregroundColor(.secondary)
+                    VStack(spacing: 0) {
+                        HStack(spacing: 0) {
+                            Button(action: onToggleExpanded) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "chevron.down")
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundColor(.secondary)
+                                    
+                                    Text("View \(nestedReplyCount) \(nestedReplyCount == 1 ? "reply" : "replies")")
+                                        .font(.caption)
+                                        .fontWeight(.medium)
+                                        .foregroundColor(.secondary)
+                                }
+                                .padding(.vertical, 6)
+                                .padding(.horizontal, 12)
+                                .background(Color(.systemGray5))
+                                .cornerRadius(8)
                             }
-                            .padding(.vertical, 6)
-                            .padding(.horizontal, 12)
-                            .background(Color(.systemGray5))
-                            .cornerRadius(8)
+                            .buttonStyle(.plain)
+                            
+                            Spacer()
                         }
-                        .buttonStyle(.plain)
-                        
-                        Spacer()
+                        .padding(.leading, shouldShiftContent ? CardLayoutConstants.contentShift : 0)
+                        .padding(.top, 8)
+                        .animation(.spring(response: CardLayoutConstants.contentShiftAnimationResponse, dampingFraction: CardLayoutConstants.contentShiftAnimationDamping), value: shouldShiftContent)
                     }
-                    .padding(.leading, shouldShiftContent ? CardLayoutConstants.contentShift : 0)
-                    .padding(.top, 8)
-                    .animation(.spring(response: CardLayoutConstants.contentShiftAnimationResponse, dampingFraction: CardLayoutConstants.contentShiftAnimationDamping), value: shouldShiftContent)
+                    .background(showDebugOverlay ? Color.orange.opacity(0.1) : Color.clear)
+                    .overlay(
+                        Group {
+                            if showDebugOverlay {
+                                Rectangle()
+                                    .stroke(Color.red, lineWidth: 1)
+                            }
+                        }
+                    )
                     .transition(.opacity.combined(with: .move(edge: .top)))
                 }
             }
