@@ -29,8 +29,8 @@ struct LoopDetailView: View {
         // 1. Parent card height (includes all padding applied to it)
         let parentCardHeight = parentHeight
         
-        // 2. Divider after parent
-        let dividerHeight = CardLayoutConstants.dividerHeight
+        // 2. Spacing between parent actions and first nested reply (no divider, just spacing)
+        let spacingAfterParent = CardLayoutConstants.contentToActionsSpacing
         
         // 3. Sum of nested reply heights before the last one
         var nestedHeightsBeforeLast: CGFloat = 0
@@ -45,7 +45,7 @@ struct LoopDetailView: View {
         
         // 4. Last nested reply avatar position (in ZStack coordinates)
         // Everything is offset by externalTopPadding
-        let lastAvatarTop = externalTopPadding + parentCardHeight + dividerHeight + nestedHeightsBeforeLast
+        let lastAvatarTop = externalTopPadding + parentCardHeight + spacingAfterParent + nestedHeightsBeforeLast
         
         // Line ends before last nested avatar
         let lineEndY = lastAvatarTop - CardLayoutConstants.avatarLineGap
@@ -53,12 +53,10 @@ struct LoopDetailView: View {
         return max(10, lineEndY - lineStartY)
     }
     
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 0) {
-                    // Main loop (the one being replied to)
-                    PostCard(
+    // MARK: - View Components
+    
+    private var mainPostView: some View {
+        PostCard(
                         loop: viewModel.loop,
                         isLiked: viewModel.isLikedByCurrentUser(viewModel.loop),
                         onLike: {
@@ -80,15 +78,45 @@ struct LoopDetailView: View {
                         onAvatarTap: {
                             profileUserToShow = ProfileUser(userId: viewModel.loop.authorId)
                         },
-                        showDebugOverlays: showDebugOverlay
-                    )
-                    .padding(.top, 10)
-                    
-                    // Divider above replies section
-                    PostDivider()
-                        .padding(.top, 5)
-                    
-                    // Replies section
+            showDebugOverlays: showDebugOverlay
+        )
+        .padding(.top, 10)
+    }
+    
+    private var commentsHeaderView: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Comments")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                
+                Spacer()
+                
+                Text("\(viewModel.replies.count)")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.secondary)
+                    .monospacedDigit()
+            }
+        }
+        .padding(.horizontal, CardLayoutConstants.horizontalPadding)
+        .padding(.top, CardLayoutConstants.topPadding)
+        .padding(.bottom, CardLayoutConstants.bottomPadding)
+        .background(Color(.systemBackground))
+        .overlay(
+            Group {
+                if showDebugOverlay {
+                    RoundedRectangle(cornerRadius: CardLayoutConstants.cornerRadius)
+                        .stroke(Color.red, lineWidth: 2)
+                }
+            }
+        )
+        .padding(.top, 5)
+    }
+    
+    @ViewBuilder
+    private var repliesContentView: some View {
+        // Replies section
                     if viewModel.isLoading && viewModel.threadedReplies.isEmpty {
                         // Loading state
                         VStack(spacing: 16) {
@@ -129,43 +157,15 @@ struct LoopDetailView: View {
                             }
                         }
                         .padding(.vertical, 40)
-                    } else {
-                        // Comments header - in container matching posts
-                        VStack(spacing: 0) {
-                            HStack {
-                                Text("Comments")
-                                    .font(.title2)
-                                    .fontWeight(.bold)
-                                
-                                Spacer()
-                                
-                                Text("\(viewModel.replies.count)")
-                                    .font(.subheadline)
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(.secondary)
-                                    .monospacedDigit()
-                            }
-                        }
-                        .padding(.horizontal, CardLayoutConstants.horizontalPadding)
-                        .padding(.top, CardLayoutConstants.topPadding)
-                        .padding(.bottom, CardLayoutConstants.bottomPadding)
-                        .background(Color(.systemBackground))
-                        .overlay(
-                            Group {
-                                if showDebugOverlay {
-                                    RoundedRectangle(cornerRadius: CardLayoutConstants.cornerRadius)
-                                        .stroke(Color.red, lineWidth: 2)
-                                }
-                            }
-                        )
-                        .padding(.top, 5)
-                        
-                        // Replies list - threaded structure with collapsible nested replies
+        } else {
+            commentsHeaderView
+            
+            // Replies list - threaded structure with collapsible nested replies
                         LazyVStack(spacing: 0) {
                             ForEach(Array(viewModel.threadedReplies.enumerated()), id: \.element.id) { index, threadedReply in
                                 ZStack(alignment: .topLeading) {
                                     VStack(spacing: 0) {
-                                        // Top-level reply - wrapped in container like PostCard
+                                        // Top-level reply
                                         ReplyCardView(
                                             reply: threadedReply.reply,
                                             isLiked: viewModel.isLikedByCurrentUser(threadedReply.reply),
@@ -205,18 +205,6 @@ struct LoopDetailView: View {
                                             },
                                             applyInternalPadding: false
                                         )
-                                        .padding(.horizontal, CardLayoutConstants.horizontalPadding)
-                                        .padding(.top, CardLayoutConstants.topPadding)
-                                        .padding(.bottom, CardLayoutConstants.bottomPadding)
-                                        .background(Color(.systemBackground))
-                                        .overlay(
-                                            Group {
-                                                if showDebugOverlay {
-                                                    RoundedRectangle(cornerRadius: CardLayoutConstants.cornerRadius)
-                                                        .stroke(Color.red, lineWidth: 2)
-                                                }
-                                            }
-                                        )
                                         .overlay(
                                             GeometryReader { geo in
                                                 Color.clear
@@ -228,59 +216,59 @@ struct LoopDetailView: View {
                                                     }
                                             }
                                         )
-                                        .padding(.top, index == 0 ? 0 : 5)
-                                        .padding(.bottom, index == viewModel.threadedReplies.count - 1 ? 0 : 5)
                                         
                                         // Show nested replies if expanded
                                         if threadedReply.isExpanded {
                                             ForEach(Array(threadedReply.nestedReplies.enumerated()), id: \.element.id) { nestedIndex, nestedReply in
-                                                ReplyCardView(
-                                                    reply: nestedReply,
-                                                    isLiked: viewModel.isLikedByCurrentUser(nestedReply),
-                                                    indentLevel: 1,
-                                                    nestedReplyCount: 0,
-                                                    isExpanded: false,
-                                                    isLastInThread: nestedIndex == threadedReply.nestedReplies.count - 1,
-                                                    onLike: {
-                                                        let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
-                                                        impactFeedback.impactOccurred()
-                                                        
-                                                        Task {
-                                                            await viewModel.toggleLike(for: nestedReply)
-                                                        }
-                                                    },
-                                                    onReply: (nestedIndex == threadedReply.nestedReplies.count - 1) ? {
-                                                        let impactFeedback = UIImpactFeedbackGenerator(style: .light)
-                                                        impactFeedback.impactOccurred()
-                                                        
-                                                        viewModel.replyToReply(threadedReply.reply)
-                                                    } : nil,
-                                                    onToggleExpanded: nil,
-                                                    onDelete: viewModel.canDeleteLoop(nestedReply) ? {
-                                                        let impactFeedback = UINotificationFeedbackGenerator()
-                                                        impactFeedback.notificationOccurred(.warning)
-                                                        
-                                                        Task {
-                                                            await viewModel.deleteLoop(nestedReply)
-                                                        }
-                                                    } : nil,
-                                                    onAvatarTap: {
-                                                        profileUserToShow = ProfileUser(userId: nestedReply.authorId)
-                                                    },
-                                                    applyInternalPadding: false
-                                                )
-                                                .padding(.horizontal, CardLayoutConstants.horizontalPadding)
-                                                .overlay(
-                                                    GeometryReader { geo in
-                                                        Color.clear
-                                                            .onAppear {
-                                                                replyHeights[nestedReply.id] = geo.size.height
+                                                VStack(spacing: 0) {
+                                                    ReplyCardView(
+                                                        reply: nestedReply,
+                                                        isLiked: viewModel.isLikedByCurrentUser(nestedReply),
+                                                        indentLevel: 1,
+                                                        nestedReplyCount: 0,
+                                                        isExpanded: false,
+                                                        isLastInThread: nestedIndex == threadedReply.nestedReplies.count - 1,
+                                                        onLike: {
+                                                            let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
+                                                            impactFeedback.impactOccurred()
+                                                            
+                                                            Task {
+                                                                await viewModel.toggleLike(for: nestedReply)
                                                             }
-                                                            .onChange(of: geo.size.height) { newHeight in
-                                                                replyHeights[nestedReply.id] = newHeight
+                                                        },
+                                                        onReply: (nestedIndex == threadedReply.nestedReplies.count - 1) ? {
+                                                            let impactFeedback = UIImpactFeedbackGenerator(style: .light)
+                                                            impactFeedback.impactOccurred()
+                                                            
+                                                            viewModel.replyToReply(threadedReply.reply)
+                                                        } : nil,
+                                                        onToggleExpanded: nil,
+                                                        onDelete: viewModel.canDeleteLoop(nestedReply) ? {
+                                                            let impactFeedback = UINotificationFeedbackGenerator()
+                                                            impactFeedback.notificationOccurred(.warning)
+                                                            
+                                                            Task {
+                                                                await viewModel.deleteLoop(nestedReply)
                                                             }
-                                                    }
-                                                )
+                                                        } : nil,
+                                                        onAvatarTap: {
+                                                            profileUserToShow = ProfileUser(userId: nestedReply.authorId)
+                                                        },
+                                                        applyInternalPadding: false
+                                                    )
+                                                    .overlay(
+                                                        GeometryReader { geo in
+                                                            Color.clear
+                                                                .onAppear {
+                                                                    replyHeights[nestedReply.id] = geo.size.height
+                                                                }
+                                                                .onChange(of: geo.size.height) { newHeight in
+                                                                    replyHeights[nestedReply.id] = newHeight
+                                                                }
+                                                        }
+                                                    )
+                                                    .padding(.top, nestedIndex == 0 ? CardLayoutConstants.contentToActionsSpacing : 0)
+                                                }
                                                 
                                                 // Divider between nested replies (aligned with name/text)
                                                 if nestedIndex < threadedReply.nestedReplies.count - 1 {
@@ -318,7 +306,6 @@ struct LoopDetailView: View {
                                                 
                                                 Spacer()
                                             }
-                                            .padding(.horizontal, CardLayoutConstants.horizontalPadding)
                                             .background(showDebugOverlay ? Color.orange.opacity(0.1) : Color.clear)
                                             .overlay(
                                                 Group {
@@ -332,6 +319,20 @@ struct LoopDetailView: View {
                                             .transition(.opacity.combined(with: .move(edge: .bottom)))
                                         }
                                     }
+                                    .padding(.horizontal, CardLayoutConstants.horizontalPadding)
+                                    .padding(.top, CardLayoutConstants.topPadding)
+                                    .padding(.bottom, CardLayoutConstants.bottomPadding)
+                                    .background(Color(.systemBackground))
+                                    .overlay(
+                                        Group {
+                                            if showDebugOverlay {
+                                                RoundedRectangle(cornerRadius: CardLayoutConstants.cornerRadius)
+                                                    .stroke(Color.red, lineWidth: 2)
+                                            }
+                                        }
+                                    )
+                                    .padding(.top, index == 0 ? 0 : 5)
+                                    .padding(.bottom, index == viewModel.threadedReplies.count - 1 ? 0 : 5)
                                     
                                     // Connecting line overlay (drawn on top, only when expanded)
                                     if threadedReply.isExpanded && !threadedReply.nestedReplies.isEmpty {
@@ -345,6 +346,15 @@ struct LoopDetailView: View {
                                             // Line X position: centered on avatar
                                             let lineX = CardLayoutConstants.horizontalPadding + CardLayoutConstants.avatarSize / 2 - CardLayoutConstants.conversationLineWidth / 2
                                             
+                                            // Debug: Show full line area (behind the line)
+                                            if showDebugOverlay {
+                                                Color.cyan.opacity(0.3)
+                                                    .frame(width: CardLayoutConstants.conversationLineWidth, height: lineHeight)
+                                                    .offset(x: lineX, y: lineStartY)
+                                                    .allowsHitTesting(false)
+                                            }
+                                            
+                                            // Actual conversation line (on top)
                                             RoundedRectangle(cornerRadius: CardLayoutConstants.conversationLineWidth / 2)
                                                 .fill(CardLayoutConstants.conversationLineColor)
                                                 .frame(width: CardLayoutConstants.conversationLineWidth, height: lineHeight)
@@ -359,9 +369,22 @@ struct LoopDetailView: View {
                                     PostDivider()
                                 }
                             }
-                        }
-                        .padding(.bottom, 20)
-                    }
+            }
+            .padding(.bottom, 20)
+        }
+    }
+    
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 0) {
+                    mainPostView
+                    
+                    // Divider above replies section
+                    PostDivider()
+                        .padding(.top, 5)
+                    
+                    repliesContentView
                 }
                 .padding(.horizontal, 10) // Foundation padding - matches home/messages listRowInsets
             }
