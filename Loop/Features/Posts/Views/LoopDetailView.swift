@@ -233,13 +233,6 @@ struct LoopDetailView: View {
                                         
                                         // Show nested replies if expanded
                                         if threadedReply.isExpanded {
-                                            // Divider after parent reply when expanded (aligned with name/text)
-                                            Rectangle()
-                                                .fill(CardLayoutConstants.dividerColor)
-                                                .frame(maxWidth: .infinity)
-                                                .frame(height: CardLayoutConstants.dividerHeight)
-                                                .padding(.leading, CardLayoutConstants.contentShift)
-                                            
                                             ForEach(Array(threadedReply.nestedReplies.enumerated()), id: \.element.id) { nestedIndex, nestedReply in
                                                 ReplyCardView(
                                                     reply: nestedReply,
@@ -300,33 +293,30 @@ struct LoopDetailView: View {
                                             }
                                             
                                             // "Hide replies" button at bottom when expanded - in container matching action buttons
-                                            VStack(spacing: 0) {
-                                                HStack(spacing: 0) {
-                                                    Button(action: {
-                                                        withAnimation(.spring(duration: 0.4, bounce: 0.1)) {
-                                                            viewModel.toggleReplyExpansion(threadedReply.id)
-                                                        }
-                                                    }) {
-                                                        HStack(spacing: 6) {
-                                                            Image(systemName: "chevron.up")
-                                                                .font(.system(size: 12, weight: .semibold))
-                                                                .foregroundColor(.secondary)
-                                                            
-                                                            Text("Hide replies")
-                                                                .font(.caption)
-                                                                .fontWeight(.medium)
-                                                                .foregroundColor(.secondary)
-                                                        }
-                                                        .padding(.vertical, 6)
-                                                        .padding(.horizontal, 12)
-                                                        .background(Color(.systemGray5))
-                                                        .cornerRadius(8)
+                                            HStack(spacing: 0) {
+                                                Button(action: {
+                                                    withAnimation(.spring(duration: 0.4, bounce: 0.1)) {
+                                                        viewModel.toggleReplyExpansion(threadedReply.id)
                                                     }
-                                                    .buttonStyle(.plain)
-                                                    
-                                                    Spacer()
+                                                }) {
+                                                    HStack(spacing: 6) {
+                                                        Image(systemName: "chevron.up")
+                                                            .font(.system(size: 12, weight: .semibold))
+                                                            .foregroundColor(.secondary)
+                                                        
+                                                        Text("Hide replies")
+                                                            .font(.caption)
+                                                            .fontWeight(.medium)
+                                                            .foregroundColor(.secondary)
+                                                    }
+                                                    .padding(.vertical, 6)
+                                                    .padding(.horizontal, 12)
+                                                    .background(Color(.systemGray5))
+                                                    .cornerRadius(8)
                                                 }
-                                                .padding(.top, 8)
+                                                .buttonStyle(.plain)
+                                                
+                                                Spacer()
                                             }
                                             .padding(.horizontal, CardLayoutConstants.horizontalPadding)
                                             .background(showDebugOverlay ? Color.orange.opacity(0.1) : Color.clear)
@@ -338,6 +328,7 @@ struct LoopDetailView: View {
                                                     }
                                                 }
                                             )
+                                            .padding(.top, CardLayoutConstants.contentToActionsSpacing)
                                             .transition(.opacity.combined(with: .move(edge: .bottom)))
                                         }
                                     }

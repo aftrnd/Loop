@@ -175,32 +175,29 @@ struct ReplyCardView: View {
                 
                 // Show/Hide nested replies button - in container matching action buttons
                 if indentLevel == 0 && nestedReplyCount > 0, let onToggleExpanded = onToggleExpanded, !isExpanded {
-                    VStack(spacing: 0) {
-                        HStack(spacing: 0) {
-                            Button(action: onToggleExpanded) {
-                                HStack(spacing: 6) {
-                                    Image(systemName: "chevron.down")
-                                        .font(.system(size: 12, weight: .semibold))
-                                        .foregroundColor(.secondary)
-                                    
-                                    Text("View \(nestedReplyCount) \(nestedReplyCount == 1 ? "reply" : "replies")")
-                                        .font(.caption)
-                                        .fontWeight(.medium)
-                                        .foregroundColor(.secondary)
-                                }
-                                .padding(.vertical, 6)
-                                .padding(.horizontal, 12)
-                                .background(Color(.systemGray5))
-                                .cornerRadius(8)
+                    HStack(spacing: 0) {
+                        Button(action: onToggleExpanded) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundColor(.secondary)
+                                
+                                Text("View \(nestedReplyCount) \(nestedReplyCount == 1 ? "reply" : "replies")")
+                                    .font(.caption)
+                                    .fontWeight(.medium)
+                                    .foregroundColor(.secondary)
                             }
-                            .buttonStyle(.plain)
-                            
-                            Spacer()
+                            .padding(.vertical, 6)
+                            .padding(.horizontal, 12)
+                            .background(Color(.systemGray5))
+                            .cornerRadius(8)
                         }
-                        .padding(.leading, shouldShiftContent ? CardLayoutConstants.contentShift : 0)
-                        .padding(.top, 8)
-                        .animation(.spring(response: CardLayoutConstants.contentShiftAnimationResponse, dampingFraction: CardLayoutConstants.contentShiftAnimationDamping), value: shouldShiftContent)
+                        .buttonStyle(.plain)
+                        
+                        Spacer()
                     }
+                    .padding(.leading, shouldShiftContent ? CardLayoutConstants.contentShift : 0)
+                    .animation(.spring(response: CardLayoutConstants.contentShiftAnimationResponse, dampingFraction: CardLayoutConstants.contentShiftAnimationDamping), value: shouldShiftContent)
                     .background(showDebugOverlay ? Color.orange.opacity(0.1) : Color.clear)
                     .overlay(
                         Group {
@@ -210,6 +207,7 @@ struct ReplyCardView: View {
                             }
                         }
                     )
+                    .padding(.top, CardLayoutConstants.contentToActionsSpacing)
                     .transition(.opacity.combined(with: .move(edge: .top)))
                 }
             }
