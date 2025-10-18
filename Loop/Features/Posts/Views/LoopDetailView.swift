@@ -45,7 +45,8 @@ struct LoopDetailView: View {
         
         // 4. Last nested reply avatar position (in ZStack coordinates)
         // Everything is offset by externalTopPadding
-        let lastAvatarTop = externalTopPadding + parentCardHeight + spacingAfterParent + nestedHeightsBeforeLast
+        // Avatar is topPadding below the start of the nested reply container
+        let lastAvatarTop = externalTopPadding + parentCardHeight + spacingAfterParent + nestedHeightsBeforeLast + CardLayoutConstants.topPadding
         
         // Line ends before last nested avatar
         let lineEndY = lastAvatarTop - CardLayoutConstants.avatarLineGap
@@ -346,15 +347,15 @@ struct LoopDetailView: View {
                                             // Line X position: centered on avatar
                                             let lineX = CardLayoutConstants.horizontalPadding + CardLayoutConstants.avatarSize / 2 - CardLayoutConstants.conversationLineWidth / 2
                                             
-                                            // Debug: Show full line area (behind the line)
+                                            // Debug: Show full line area (spans full width for visibility)
                                             if showDebugOverlay {
                                                 Color.cyan.opacity(0.3)
-                                                    .frame(width: CardLayoutConstants.conversationLineWidth, height: lineHeight)
-                                                    .offset(x: lineX, y: lineStartY)
+                                                    .frame(height: lineHeight)
+                                                    .offset(y: lineStartY)
                                                     .allowsHitTesting(false)
                                             }
                                             
-                                            // Actual conversation line (on top)
+                                            // Actual conversation line
                                             RoundedRectangle(cornerRadius: CardLayoutConstants.conversationLineWidth / 2)
                                                 .fill(CardLayoutConstants.conversationLineColor)
                                                 .frame(width: CardLayoutConstants.conversationLineWidth, height: lineHeight)
