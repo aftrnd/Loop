@@ -19,7 +19,7 @@ struct ChatRowView: View {
             if chat.unreadCount > 0 {
                 let totalLeadingSpace = listRowLeadingInset + rowLeadingPadding
                 let dotOffset = totalLeadingSpace / 2 - dotSize / 2
-                let verticalOffset = 8 + (CardLayoutConstants.avatarSize / 2) - (dotSize / 2)
+                let verticalOffset = CardLayoutConstants.topPadding + (CardLayoutConstants.avatarSize / 2) - (dotSize / 2)
                 
                 Circle()
                     .fill(Color.blue)
@@ -46,8 +46,8 @@ struct ChatRowView: View {
         .offset(y: 0)
         .padding(.leading, rowLeadingPadding)
         .padding(.trailing, 0) // No trailing padding to allow time to extend to edge
-        .padding(.top, 8)
-        .padding(.bottom, 12)
+        .padding(.top, CardLayoutConstants.topPadding)
+        .padding(.bottom, CardLayoutConstants.bottomPadding)
         .contentShape(RoundedRectangle(cornerRadius: 18))
         .compositingGroup()
         // Parallax is now applied at the row container level in ChatsListView
