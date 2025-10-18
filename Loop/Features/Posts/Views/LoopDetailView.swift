@@ -270,15 +270,6 @@ struct LoopDetailView: View {
                                                     )
                                                     .padding(.top, nestedIndex == 0 ? CardLayoutConstants.contentToActionsSpacing : 0)
                                                 }
-                                                
-                                                // Divider between nested replies (aligned with name/text)
-                                                if nestedIndex < threadedReply.nestedReplies.count - 1 {
-                                                    Rectangle()
-                                                        .fill(CardLayoutConstants.dividerColor)
-                                                        .frame(maxWidth: .infinity)
-                                                        .frame(height: CardLayoutConstants.dividerHeight)
-                                                        .padding(.leading, CardLayoutConstants.contentShift)
-                                                }
                                             }
                                             
                                             // "Hide replies" button at bottom when expanded - in container matching action buttons
@@ -335,33 +326,13 @@ struct LoopDetailView: View {
                                     .padding(.top, index == 0 ? 0 : 5)
                                     .padding(.bottom, index == viewModel.threadedReplies.count - 1 ? 0 : 5)
                                     
-                                    // Connecting line overlay (drawn on top, only when expanded)
+                                    // Connecting lines overlay - separate lines between each consecutive pair (O-O pattern)
                                     if threadedReply.isExpanded && !threadedReply.nestedReplies.isEmpty {
-                                        let lineHeight = calculateLineHeight(for: threadedReply, parentIndex: index)
-                                        
-                                        if lineHeight > 0 {
-                                            // Account for external top padding on parent card
-                                            let externalTopPadding: CGFloat = index == 0 ? 0 : 5
-                                            // Line starts below parent avatar + gap
-                                            let lineStartY = externalTopPadding + CardLayoutConstants.topPadding + CardLayoutConstants.avatarSize + CardLayoutConstants.avatarLineGap
-                                            // Line X position: centered on avatar
-                                            let lineX = CardLayoutConstants.horizontalPadding + CardLayoutConstants.avatarSize / 2 - CardLayoutConstants.conversationLineWidth / 2
-                                            
-                                            // Debug: Show full line area (spans full width for visibility)
-                                            if showDebugOverlay {
-                                                Color.cyan.opacity(0.3)
-                                                    .frame(height: lineHeight)
-                                                    .offset(y: lineStartY)
-                                                    .allowsHitTesting(false)
-                                            }
-                                            
-                                            // Actual conversation line
-                                            RoundedRectangle(cornerRadius: CardLayoutConstants.conversationLineWidth / 2)
-                                                .fill(CardLayoutConstants.conversationLineColor)
-                                                .frame(width: CardLayoutConstants.conversationLineWidth, height: lineHeight)
-                                                .offset(x: lineX, y: lineStartY)
-                                                .allowsHitTesting(false)
-                                        }
+                                        ConversationLinesView(
+                                            threadedReply: threadedReply,
+                                            replyHeights: replyHeights,
+                                            parentIndex: index
+                                        )
                                     }
                                 }
                                 
@@ -436,6 +407,85 @@ struct LoopDetailView: View {
             await viewModel.loadReplies()
             viewModel.startListeningForReplies()
         }
+    }
+}
+
+// MARK: - Conversation Lines Component
+struct ConversationLinesView: View {
+    let threadedReply: ThreadedReply
+    let replyHeights: [String: CGFloat]
+    let parentIndex: Int
+    
+    var body: some View {
+        let lineWidth = CardLayoutConstants.conversationLineWidth
+        let lineX = CardLayoutConstants.horizontalPadding + CardLayoutConstants.avatarSize / 2 - lineWidth / 2
+        let externalTopPadding: CGFloat = parentIndex == 0 ? 0 : 5
+        
+        // Draw individual lines between each consecutive pair
+        ForEach(Array(lineSegments.enumerated()), id: \.offset) { _, segment in
+            RoundedRectangle(cornerRadius: lineWidth / 2)
+                .fill(CardLayoutConstants.conversationLineColor)
+                .frame(width: lineWidth, height: segment.height)
+                .offset(x: lineX, y: segment.startY)
+                .allowsHitTesting(false)
+        }
+    }
+    
+    private var lineSegments: [LineSegment] {
+        var segments: [LineSegment] = []
+        let externalTopPadding: CGFloat = parentIndex == 0 ? 0 : 5
+        
+        guard let parentHeight = replyHeights[threadedReply.reply.id] else { return segments }
+        
+        // Line from parent to first nested reply
+        if !threadedReply.nestedReplies.isEmpty {
+            let parentAvatarBottom = externalTopPadding + CardLayoutConstants.topPadding + CardLayoutConstants.avatarSize
+            let lineStart = parentAvatarBottom + CardLayoutConstants.avatarLineGap
+            
+            let firstNestedTop = externalTopPadding + parentHeight + CardLayoutConstants.contentToActionsSpacing + CardLayoutConstants.topPadding
+            let lineEnd = firstNestedTop - CardLayoutConstants.avatarLineGap
+            
+            let height = max(0, lineEnd - lineStart)
+            if height > 0 {
+                segments.append(LineSegment(startY: lineStart, height: height))
+            }
+        }
+        
+        // Lines between consecutive nested replies (no dividers, just spacing)
+        var cumulativeHeight = externalTopPadding + parentHeight + CardLayoutConstants.contentToActionsSpacing
+        
+        for i in 0..<threadedReply.nestedReplies.count {
+            if i > 0 {
+                // Previous nested reply
+                let prevReply = threadedReply.nestedReplies[i - 1]
+                let currentReply = threadedReply.nestedReplies[i]
+                
+                if let prevHeight = replyHeights[prevReply.id], let currentHeight = replyHeights[currentReply.id] {
+                    // Previous avatar bottom + gap
+                    let prevAvatarBottom = cumulativeHeight + CardLayoutConstants.topPadding + CardLayoutConstants.avatarSize
+                    let lineStart = prevAvatarBottom + CardLayoutConstants.avatarLineGap
+                    
+                    // Add previous reply height to move to current
+                    cumulativeHeight += prevHeight
+                    
+                    // Current avatar top - gap (no divider, replies stack directly with padding)
+                    let currentAvatarTop = cumulativeHeight + CardLayoutConstants.topPadding
+                    let lineEnd = currentAvatarTop - CardLayoutConstants.avatarLineGap
+                    
+                    let height = max(0, lineEnd - lineStart)
+                    if height > 0 {
+                        segments.append(LineSegment(startY: lineStart, height: height))
+                    }
+                }
+            }
+        }
+        
+        return segments
+    }
+    
+    struct LineSegment {
+        let startY: CGFloat
+        let height: CGFloat
     }
 }
 

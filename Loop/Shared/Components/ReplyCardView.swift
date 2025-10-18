@@ -62,7 +62,7 @@ enum CardLayoutConstants {
     static let dividerColor: Color = Color(.separator)
     static let conversationLineWidth: CGFloat = 2.5
     static let conversationLineColor: Color = Color(.separator)
-    static let avatarLineGap: CGFloat = 10 // Gap between avatar edge and conversation line
+    static let avatarLineGap: CGFloat = 12 // Gap between avatar edge and conversation line
     
     // MARK: - Media
     static let mediaCornerRadius: CGFloat = 12

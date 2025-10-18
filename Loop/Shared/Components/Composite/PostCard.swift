@@ -51,6 +51,13 @@ struct PostCard: View {
     // State for conversation line
     @State private var mainPostHeight: CGFloat = 0
     
+    // Entrance animation state
+    @State private var entranceOpacity: Double = 0
+    @State private var conversationLineOpacity: Double = 0
+    
+    // Animated shift state - controls the actual padding value
+    @State private var contentShiftAmount: CGFloat = 0
+    
     // Content shifts when there are reply previews
     private var shouldShiftContent: Bool {
         guard let previews = replyPreviews else { return false }
@@ -61,76 +68,14 @@ struct PostCard: View {
     
     // MARK: - Body
     var body: some View {
-        if let replyPreviews = replyPreviews, !replyPreviews.isEmpty {
-            // Post with reply preview
-            postWithReplyView(replyPreviews: replyPreviews)
-        } else {
-            // Regular post
-            regularPostView
-        }
-    }
-    
-    // MARK: - Regular Post (No Replies)
-    
-    private var regularPostView: some View {
-        VStack(spacing: 0) {
-            PostHeader(
-                avatarURL: loop.authorAvatarURL,
-                displayName: loop.displayAuthorName,
-                username: loop.authorUsername,
-                badgeType: loop.authorBadgeType,
-                timestamp: loop.timeAgoString,
-                onAvatarTap: onAvatarTap,
-                showDebugOverlay: showDebugOverlays
-            )
-            .padding(.bottom, CardLayoutConstants.headerBottomSpacing)
-            .background(showDebugOverlays ? Color.purple.opacity(0.05) : Color.clear) // Debug: Bottom padding
-            
-            PostContent(
-                text: loop.content,
-                media: loop.media,
-                showDebugOverlay: showDebugOverlays
-            )
-            .padding(.bottom, CardLayoutConstants.contentToActionsSpacing)
-            .background(showDebugOverlays ? Color.purple.opacity(0.05) : Color.clear) // Debug: Bottom padding
-            
-            PostActions(
-                isLiked: isLiked,
-                likeCount: loop.likeCount,
-                onLike: onLike,
-                commentCount: loop.replyCount,
-                onComment: onComment,
-                onShare: onShare,
-                onDelete: onDelete,
-                showDebugOverlay: showDebugOverlays
-            )
-        }
-        .padding(.horizontal, CardLayoutConstants.horizontalPadding)
-        .background(showDebugOverlays ? Color.yellow.opacity(0.05) : Color.clear) // Debug: Horizontal padding
-        .padding(.top, CardLayoutConstants.topPadding)
-        .background(showDebugOverlays ? Color.pink.opacity(0.05) : Color.clear) // Debug: Top padding
-        .padding(.bottom, CardLayoutConstants.bottomPadding)
-        .background(showDebugOverlays ? Color.cyan.opacity(0.05) : Color.clear) // Debug: Bottom padding
-        .background(Color(.systemBackground))
-        .overlay(
-            Group {
-                if showDebugOverlays {
-                    RoundedRectangle(cornerRadius: CardLayoutConstants.cornerRadius)
-                        .stroke(Color.red, lineWidth: 2)
-                }
-            }
-        )
-    }
-    
-    // MARK: - Post with Reply Preview
-    
-    private func postWithReplyView(replyPreviews: [Loop]) -> some View {
-        let previewReplies = Array(replyPreviews.prefix(maxReplyPreviews))
+        let previewReplies = replyPreviews?.prefix(maxReplyPreviews).map { $0 } ?? []
+        let hasReplies = !previewReplies.isEmpty
         
-        return ZStack(alignment: .topLeading) {
+        // Use same view structure for both cases to enable smooth animation
+        ZStack(alignment: .topLeading) {
             VStack(spacing: 0) {
-                // Main post with content shift
-                mainPostWithShift
+                // Main post content with animated shift
+                mainPostContent
                     .overlay(
                         GeometryReader { geo in
                             Color.clear
@@ -143,25 +88,28 @@ struct PostCard: View {
                         }
                     )
                 
-                // Spacing before reply (same as content to actions spacing: 12pt)
-                (showDebugOverlays ? Color.purple.opacity(0.05) : Color.clear) // Debug: Reply spacing
-                    .frame(height: CardLayoutConstants.contentToActionsSpacing)
-                
-                // Reply previews
-                ForEach(previewReplies) { reply in
-                    replyPreviewView(reply: reply)
+                // Reply preview (only visible when there are replies)
+                if hasReplies {
+                    // Spacing before reply
+                    (showDebugOverlays ? Color.purple.opacity(0.05) : Color.clear)
+                        .frame(height: CardLayoutConstants.contentToActionsSpacing)
+                    
+                    ForEach(previewReplies) { reply in
+                        replyPreviewView(reply: reply)
+                    }
                 }
             }
             .padding(.horizontal, CardLayoutConstants.horizontalPadding)
-            .background(showDebugOverlays ? Color.yellow.opacity(0.05) : Color.clear) // Debug: Horizontal padding
+            .background(showDebugOverlays ? Color.yellow.opacity(0.05) : Color.clear)
             .padding(.top, CardLayoutConstants.topPadding)
-            .background(showDebugOverlays ? Color.pink.opacity(0.05) : Color.clear) // Debug: Top padding
+            .background(showDebugOverlays ? Color.pink.opacity(0.05) : Color.clear)
             .padding(.bottom, CardLayoutConstants.bottomPadding)
-            .background(showDebugOverlays ? Color.cyan.opacity(0.05) : Color.clear) // Debug: Bottom padding
+            .background(showDebugOverlays ? Color.cyan.opacity(0.05) : Color.clear)
             
-            // Conversation line
-            if !previewReplies.isEmpty {
+            // Conversation line (only visible when there are replies)
+            if hasReplies {
                 conversationLine
+                    .opacity(conversationLineOpacity)
             }
         }
         .background(Color(.systemBackground))
@@ -176,9 +124,11 @@ struct PostCard: View {
         )
     }
     
-    private var mainPostWithShift: some View {
+    // MARK: - Main Post Content (unified for all cases)
+    
+    private var mainPostContent: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Header - uses HStack internally with avatar + spacing + name
+            // Header - always stays in same position
             PostHeader(
                 avatarURL: loop.authorAvatarURL,
                 displayName: loop.displayAuthorName,
@@ -189,42 +139,52 @@ struct PostCard: View {
                 showDebugOverlay: showDebugOverlays
             )
             .padding(.bottom, CardLayoutConstants.headerBottomSpacing)
-            .background(showDebugOverlays ? Color.purple.opacity(0.05) : Color.clear) // Debug: Bottom padding
+            .background(showDebugOverlays ? Color.purple.opacity(0.05) : Color.clear)
             
-            // Content - shifts to align with name (avatar + spacing from header's left edge)
-            HStack(spacing: 0) {
-                // Spacer matching avatar + spacing to align with name
-                (showDebugOverlays ? Color.red.opacity(0.2) : Color.clear) // Debug: Spacer for alignment
-                    .frame(width: CardLayoutConstants.avatarSize + CardLayoutConstants.avatarSpacing)
-                
-                PostContent(
-                    text: loop.content,
-                    media: loop.media,
-                    showDebugOverlay: showDebugOverlays
-                )
-            }
+            // Content - animates shift when replies appear
+            PostContent(
+                text: loop.content,
+                media: loop.media,
+                showDebugOverlay: showDebugOverlays
+            )
+            .opacity(entranceOpacity)
             .padding(.bottom, CardLayoutConstants.contentToActionsSpacing)
-            .background(showDebugOverlays ? Color.purple.opacity(0.05) : Color.clear) // Debug: Bottom padding
+            .background(showDebugOverlays ? Color.purple.opacity(0.05) : Color.clear)
+            .padding(.leading, contentShiftAmount)
             
-            // Actions - shifts to align with name (avatar + spacing from header's left edge)
-            HStack(spacing: 0) {
-                // Spacer matching avatar + spacing to align with name
-                (showDebugOverlays ? Color.red.opacity(0.2) : Color.clear) // Debug: Spacer for alignment
-                    .frame(width: CardLayoutConstants.avatarSize + CardLayoutConstants.avatarSpacing)
-                
-                PostActions(
-                    isLiked: isLiked,
-                    likeCount: loop.likeCount,
-                    onLike: onLike,
-                    commentCount: loop.replyCount,
-                    onComment: onComment,
-                    onShare: onShare,
-                    onDelete: onDelete,
-                    showDebugOverlay: showDebugOverlays
-                )
+            // Actions - animates shift when replies appear
+            PostActions(
+                isLiked: isLiked,
+                likeCount: loop.likeCount,
+                onLike: onLike,
+                commentCount: loop.replyCount,
+                onComment: onComment,
+                onShare: onShare,
+                onDelete: onDelete,
+                showDebugOverlay: showDebugOverlays
+            )
+            .opacity(entranceOpacity)
+            .padding(.leading, contentShiftAmount)
+        }
+        .onAppear {
+            // Set initial shift state if replies already present
+            if shouldShiftContent {
+                contentShiftAmount = CardLayoutConstants.contentShift
+            }
+            
+            // Entrance animation (fade in content and conversation line)
+            withAnimation(.spring(response: CardLayoutConstants.contentShiftAnimationResponse, dampingFraction: CardLayoutConstants.contentShiftAnimationDamping)) {
+                entranceOpacity = 1
+                conversationLineOpacity = 1
             }
         }
-        // NO padding here - padding is applied to the whole card in postWithReplyView
+        .onChange(of: shouldShiftContent) { _, newValue in
+            // Animate shift and line visibility when replies appear/disappear
+            withAnimation(.spring(response: CardLayoutConstants.contentShiftAnimationResponse, dampingFraction: CardLayoutConstants.contentShiftAnimationDamping)) {
+                contentShiftAmount = newValue ? CardLayoutConstants.contentShift : 0
+                conversationLineOpacity = newValue ? 1 : 0
+            }
+        }
     }
     
     private func replyPreviewView(reply: Loop) -> some View {
@@ -248,6 +208,7 @@ struct PostCard: View {
                 maxPreviewLength: 280,
                 showDebugOverlay: showDebugOverlays
             )
+            .opacity(entranceOpacity)
             .padding(.bottom, CardLayoutConstants.contentToActionsSpacing)
             .background(showDebugOverlays ? Color.purple.opacity(0.05) : Color.clear) // Debug: Bottom padding
             
@@ -270,6 +231,7 @@ struct PostCard: View {
                 isReplyPreview: true, // Show arrow icon for reply previews
                 showDebugOverlay: showDebugOverlays
             )
+            .opacity(entranceOpacity)
         }
         // NO padding here - padding is applied to the whole card
     }
@@ -283,7 +245,7 @@ struct PostCard: View {
             let mainAvatarTop = CardLayoutConstants.topPadding
             let mainAvatarBottom = mainAvatarTop + CardLayoutConstants.avatarSize
             
-            // Line starts 10pt below main avatar
+            // Line starts 12pt below main avatar
             let lineStart = mainAvatarBottom + CardLayoutConstants.avatarLineGap
             
             // Reply position calculation:
@@ -293,7 +255,7 @@ struct PostCard: View {
             let replyHeaderTop = mainPostHeight + CardLayoutConstants.contentToActionsSpacing + CardLayoutConstants.topPadding
             let replyAvatarTop = replyHeaderTop // Avatar is at top of header
             
-            // Line ends 10pt above reply avatar
+            // Line ends 12pt above reply avatar
             let lineEnd = replyAvatarTop - CardLayoutConstants.avatarLineGap
             
             // Line height
