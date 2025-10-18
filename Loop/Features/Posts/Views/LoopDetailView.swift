@@ -79,7 +79,7 @@ struct LoopDetailView: View {
                     
                     // Divider above replies section
                     PostDivider()
-                        .padding(.top, 3)
+                        .padding(.top, 5)
                     
                     // Replies section
                     if viewModel.isLoading && viewModel.threadedReplies.isEmpty {
