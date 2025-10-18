@@ -371,11 +371,9 @@ struct MultipleReplyMediaView: View {
     var body: some View {
         GeometryReader { geometry in
             let containerWidth = geometry.size.width
-            // Each photo fills container width, spacing creates the gaps between
-            let photoWidth = containerWidth
             
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: CardLayoutConstants.photoCarouselSpacing) {
+                LazyHStack(spacing: CardLayoutConstants.photoCarouselSpacing) {
                     ForEach(Array(media.enumerated()), id: \.offset) { index, mediaItem in
                         ReplyCarouselPhotoView(
                             media: mediaItem,
@@ -383,13 +381,14 @@ struct MultipleReplyMediaView: View {
                             onPhotoTap: { onPhotoTap(index) },
                             showDebugOverlay: showDebugOverlay
                         )
-                        .frame(width: photoWidth, height: carouselHeight)
+                        .frame(width: containerWidth, height: carouselHeight)
+                        .containerRelativeFrame(.horizontal)
                         .id(index)
                     }
                 }
                 .scrollTargetLayout()
             }
-            .scrollTargetBehavior(.paging)
+            .scrollTargetBehavior(.viewAligned)
             .scrollPosition(id: $scrollPosition)
             .onChange(of: scrollPosition) { _, newValue in
                 if let newValue = newValue {
