@@ -10,6 +10,7 @@ struct FullScreenPhotoViewer: View {
     @State private var lastScale: CGFloat = 1.0
     @State private var dragOffset: CGSize = .zero
     @State private var isDragging = false
+    @State private var backgroundOpacity: Double = 0
     
     init(allMedia: [LoopMedia], startingIndex: Int, isPresented: Binding<Bool>) {
         self.allMedia = allMedia
@@ -19,24 +20,32 @@ struct FullScreenPhotoViewer: View {
     }
     
     var body: some View {
-        // Photo Gallery only - no background, just photos
-        TabView(selection: $currentIndex) {
-            ForEach(Array(allMedia.enumerated()), id: \.element.id) { index, media in
-                if media.type == .image {
-                    photoView(for: media)
-                        .tag(index)
+        ZStack {
+            // Animated background
+            Color.black
+                .opacity(backgroundOpacity)
+                .ignoresSafeArea()
+            
+            // Photo Gallery
+            TabView(selection: $currentIndex) {
+                ForEach(Array(allMedia.enumerated()), id: \.element.id) { index, media in
+                    if media.type == .image {
+                        photoView(for: media, index: index)
+                            .tag(index)
+                    }
                 }
             }
+            .tabViewStyle(.page(indexDisplayMode: allMedia.count > 1 ? .automatic : .never))
         }
-        .tabViewStyle(.page(indexDisplayMode: allMedia.count > 1 ? .automatic : .never))
         .ignoresSafeArea()
-        .background(
-            // Blur the actual content behind (the home feed)
-            TranslucentBlurBackground(isDragging: isDragging, dragOffset: dragOffset.height)
-        )
+        .onAppear {
+            withAnimation(.easeOut(duration: 0.25)) {
+                backgroundOpacity = 1.0
+            }
+        }
     }
     
-    private func photoView(for media: LoopMedia) -> some View {
+    private func photoView(for media: LoopMedia, index: Int) -> some View {
         GeometryReader { geometry in
             CachedAsyncImage(url: URL(string: media.url)) { image in
                 let dragProgress = min(abs(dragOffset.height) / 300, 1.0)
@@ -82,6 +91,10 @@ struct FullScreenPhotoViewer: View {
                                             width: 0,
                                             height: value.translation.height
                                         )
+                                        
+                                        // Fade background as we drag
+                                        let newOpacity = max(0.3, 1.0 - dragProgress * 0.7)
+                                        backgroundOpacity = newOpacity
                                     }
                                 } else {
                                     // Allow free drag when zoomed
@@ -100,26 +113,19 @@ struct FullScreenPhotoViewer: View {
                                         
                                         // Dismiss if dragged far enough OR with high velocity
                                         if verticalAmount > threshold || abs(velocity) > 400 {
-                                            // Continue animation in dismiss direction
-                                            let targetOffset: CGFloat = value.translation.height > 0 ? 1000 : -1000
-                                            
-                                            withAnimation(.spring(response: 0.45, dampingFraction: 0.9)) {
-                                                dragOffset = CGSize(width: 0, height: targetOffset)
+                                            // Animate background to transparent before dismissing
+                                            withAnimation(.easeOut(duration: 0.2)) {
+                                                backgroundOpacity = 0
                                             }
                                             
-                                            // Dismiss after animation completes
-                                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
                                                 isPresented = false
-                                            }
-                                            
-                                            // Keep isDragging true during dismiss animation
-                                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                                                isDragging = false
                                             }
                                         } else {
                                             // Bounce back with spring
                                             withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
                                                 dragOffset = .zero
+                                                backgroundOpacity = 1.0
                                             }
                                             
                                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
@@ -130,6 +136,7 @@ struct FullScreenPhotoViewer: View {
                                         // Reset on horizontal swipe
                                         withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
                                             dragOffset = .zero
+                                            backgroundOpacity = 1.0
                                         }
                                         
                                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
@@ -172,37 +179,16 @@ struct FullScreenPhotoViewer: View {
     }
 }
 
-// Blur background that shows the actual content behind
-struct TranslucentBlurBackground: View {
-    let isDragging: Bool
-    let dragOffset: CGFloat
-    
-    var body: some View {
-        let dragProgress = min(abs(dragOffset) / 300, 1.0)
-        let backgroundOpacity = isDragging ? max(0.3, 0.7 - dragProgress * 0.5) : 0.7
-        
-        ZStack {
-            // This will blur the actual content behind (home feed)
-            Rectangle()
-                .fill(.ultraThinMaterial)
-                .environment(\.colorScheme, .dark)
-            
-            // Add darkening overlay
-            Color.black
-                .opacity(backgroundOpacity)
-        }
-        .ignoresSafeArea()
-    }
-}
-
 #Preview {
+    @Previewable @State var isPresented = true
+    
     FullScreenPhotoViewer(
         allMedia: [
             LoopMedia(type: .image, url: "https://picsum.photos/800/600", width: 800, height: 600),
             LoopMedia(type: .image, url: "https://picsum.photos/600/800", width: 600, height: 800)
         ],
         startingIndex: 0,
-        isPresented: .constant(true)
+        isPresented: $isPresented
     )
 }
 

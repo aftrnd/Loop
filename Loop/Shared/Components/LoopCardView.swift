@@ -704,7 +704,6 @@ struct CarouselPhotoView: View {
                         .resizable()
                         .aspectRatio(contentMode: .fill)
                         .frame(width: geometry.size.width, height: height)
-                        .clipped()
                 } placeholder: {
                     RoundedRectangle(cornerRadius: cornerRadius)
                         .fill(Color.secondary.opacity(0.2))
