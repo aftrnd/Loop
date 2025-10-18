@@ -8,7 +8,7 @@ struct PostHeader: View {
     let displayName: String
     let username: String?
     let badgeType: BadgeType?
-    let timestamp: String
+    let timestamp: String?
     let trailingIcon: String? // Optional trailing icon (e.g., "chevron.right")
     let showUsernamePrefix: Bool // Whether to show "@" before username
     let onAvatarTap: (() -> Void)?
@@ -23,7 +23,7 @@ struct PostHeader: View {
         displayName: String,
         username: String?,
         badgeType: BadgeType?,
-        timestamp: String,
+        timestamp: String? = nil,
         trailingIcon: String? = nil,
         showUsernamePrefix: Bool = true,
         onAvatarTap: (() -> Void)? = nil,
@@ -131,18 +131,20 @@ struct PostHeader: View {
             
             Spacer()
             
-            HStack(spacing: 4) {
-                Text(timestamp)
-                    .font(.subheadline)
-                    .monospacedDigit()
-                    .foregroundColor(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                
-                if let trailingIcon = trailingIcon {
-                    Image(systemName: trailingIcon)
+            if let timestamp = timestamp, !timestamp.isEmpty {
+                HStack(spacing: 4) {
+                    Text(timestamp)
                         .font(.subheadline)
+                        .monospacedDigit()
                         .foregroundColor(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    
+                    if let trailingIcon = trailingIcon {
+                        Image(systemName: trailingIcon)
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
                 }
             }
         }

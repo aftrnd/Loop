@@ -6,6 +6,9 @@ struct LoopDetailView: View {
     @State private var profileUserToShow: ProfileUser?
     @State private var replyHeights: [String: CGFloat] = [:] // Store actual heights by reply ID
     
+    // Debug overlay
+    @AppStorage("showLayoutDebugOverlays") private var showDebugOverlay = false
+    
     init(loop: Loop, onRepliesChanged: (() -> Void)? = nil) {
         _viewModel = StateObject(wrappedValue: LoopDetailViewModel(loop: loop, onRepliesChanged: onRepliesChanged))
     }
@@ -69,7 +72,8 @@ struct LoopDetailView: View {
                         onDelete: nil, // Can't delete main loop from detail view
                         onAvatarTap: {
                             profileUserToShow = ProfileUser(userId: viewModel.loop.authorId)
-                        }
+                        },
+                        showDebugOverlays: showDebugOverlay
                     )
                     .padding(.top, 10)
                     

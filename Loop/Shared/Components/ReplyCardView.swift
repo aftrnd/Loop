@@ -98,6 +98,9 @@ struct ReplyCardView: View {
     @State private var selectedPhotoIndex: Int = 0
     @State private var currentMediaIndex: Int = 0
     
+    // Debug overlay
+    @AppStorage("showLayoutDebugOverlays") private var showDebugOverlay = false
+    
     private let maxPreviewLength = 280
     
     // Determines if content should shift right (to align with name instead of avatar)
@@ -112,28 +115,16 @@ struct ReplyCardView: View {
     var body: some View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 0) {
-                // Header row: Avatar + Name/Badge/Time - using immutable UserInfoHeader component
-                HStack(spacing: 0) {
-                    UserInfoHeader(
-                        avatarURL: reply.authorAvatarURL,
-                        displayName: reply.displayAuthorName,
-                        username: reply.authorUsername,
-                        badgeType: reply.authorBadgeType,
-                        onAvatarTap: onAvatarTap
-                    )
-                    .debugFrame("ReplyCard-Header", enabled: AppConstants.Debug.logFrameCoordinates)
-                    
-                    Spacer()
-                    
-                    HStack(spacing: 4) {
-                        Text(reply.timeAgoString)
-                            .font(.subheadline)
-                            .monospacedDigit()
-                            .foregroundColor(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                    }
-                }
+                // Header row: Avatar + Name/Badge/Time - using PostHeader component for consistency
+                PostHeader(
+                    avatarURL: reply.authorAvatarURL,
+                    displayName: reply.displayAuthorName,
+                    username: reply.authorUsername,
+                    badgeType: reply.authorBadgeType,
+                    timestamp: reply.timeAgoString,
+                    onAvatarTap: onAvatarTap,
+                    showDebugOverlay: showDebugOverlay
+                )
                 .padding(.bottom, CardLayoutConstants.headerBottomSpacing)
                 .debugFrame("ReplyCard-HeaderContainer", enabled: AppConstants.Debug.logFrameCoordinates)
                 

@@ -25,6 +25,9 @@ struct ComposeLoopView: View {
     @State private var textHeight: CGFloat = 0
     @State private var isSheetExpanded = false
     
+    // Debug overlay
+    @AppStorage("showLayoutDebugOverlays") private var showDebugOverlay = false
+    
     private var characterCountColor: Color {
         let remaining = draft.remainingCharacters
         if remaining < 0 {
@@ -160,12 +163,14 @@ struct ComposeLoopView: View {
     private func mainContent(geometry: GeometryProxy) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                // User info section using reusable component
-                UserInfoHeader(
+                // User info section using PostHeader component for consistency
+                PostHeader(
                     avatarURL: currentUser?.avatarURL,
                     displayName: currentUser?.displayName ?? "You",
                     username: currentUser?.username,
-                    badgeType: currentUser?.badgeType
+                    badgeType: currentUser?.badgeType,
+                    // No timestamp in compose view
+                    showDebugOverlay: showDebugOverlay
                 )
                 .padding(.horizontal, 20)
                 .padding(.top, 4)
