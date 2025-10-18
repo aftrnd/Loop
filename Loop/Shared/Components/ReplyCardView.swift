@@ -147,11 +147,50 @@ struct ReplyCardView: View {
                 }
                 .padding(.bottom, CardLayoutConstants.contentToActionsSpacing)
                 
-                // Action buttons - aligned with avatar's left edge, shifts right when content does
-                actionButtonsView
+                // Action buttons - using reusable PostActions component
+                PostActions(
+                    isLiked: isLiked,
+                    likeCount: reply.likeCount,
+                    onLike: onLike,
+                    commentCount: reply.replyCount,
+                    onComment: onReply,
+                    onShare: showAsMainPost ? {} : nil,
+                    onDelete: onDelete,
+                    isReplyPreview: !showAsMainPost,
+                    showDebugOverlay: showDebugOverlay
+                )
+                .padding(.leading, shouldShiftContent ? CardLayoutConstants.contentShift : 0)
+                .animation(.spring(response: CardLayoutConstants.contentShiftAnimationResponse, dampingFraction: CardLayoutConstants.contentShiftAnimationDamping), value: shouldShiftContent)
+                .debugFrame("ReplyCard-ActionButtons", enabled: AppConstants.Debug.logFrameCoordinates)
+                
+                // Show/Hide nested replies button - positioned like action buttons (another row below)
+                if indentLevel == 0 && nestedReplyCount > 0, let onToggleExpanded = onToggleExpanded, !isExpanded {
+                    HStack(spacing: 0) {
+                        Button(action: onToggleExpanded) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundColor(.secondary)
+                                
+                                Text("View \(nestedReplyCount) \(nestedReplyCount == 1 ? "reply" : "replies")")
+                                    .font(.caption)
+                                    .fontWeight(.medium)
+                                    .foregroundColor(.secondary)
+                            }
+                            .padding(.vertical, 6)
+                            .padding(.horizontal, 12)
+                            .background(Color(.systemGray5))
+                            .cornerRadius(8)
+                        }
+                        .buttonStyle(.plain)
+                        
+                        Spacer()
+                    }
                     .padding(.leading, shouldShiftContent ? CardLayoutConstants.contentShift : 0)
+                    .padding(.top, 8)
                     .animation(.spring(response: CardLayoutConstants.contentShiftAnimationResponse, dampingFraction: CardLayoutConstants.contentShiftAnimationDamping), value: shouldShiftContent)
-                    .debugFrame("ReplyCard-ActionButtons", enabled: AppConstants.Debug.logFrameCoordinates)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                }
             }
             .if(applyInternalPadding) { view in
                 view
@@ -159,34 +198,6 @@ struct ReplyCardView: View {
                     .padding(.trailing, CardLayoutConstants.horizontalPadding)
                     .padding(.top, CardLayoutConstants.topPadding)
                     .padding(.bottom, CardLayoutConstants.bottomPadding)
-            }
-            
-            // Show/Hide nested replies button - shows at top when collapsed
-            if indentLevel == 0 && nestedReplyCount > 0, let onToggleExpanded = onToggleExpanded, !isExpanded {
-                HStack {
-                    Button(action: onToggleExpanded) {
-                        HStack(spacing: 6) {
-                            Image(systemName: "chevron.down")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundColor(.secondary)
-                            
-                            Text("View \(nestedReplyCount) \(nestedReplyCount == 1 ? "reply" : "replies")")
-                                .font(.caption)
-                                .fontWeight(.medium)
-                                .foregroundColor(.secondary)
-                        }
-                        .padding(.vertical, 6)
-                        .padding(.horizontal, 12)
-                        .background(Color(.systemGray5))
-                        .cornerRadius(8)
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.leading, 0) // Align with content at left edge
-                    .padding(.bottom, 12)
-                    
-                    Spacer()
-                }
-                .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
         .fullScreenCover(isPresented: $showPhotoViewer) {
@@ -260,89 +271,6 @@ struct ReplyCardView: View {
         }
     }
     
-    private var actionButtonsView: some View {
-        HStack(spacing: CardLayoutConstants.actionButtonSpacing) {
-            // Like button
-            Button(action: onLike) {
-                HStack(spacing: 4) {
-                    Image(systemName: isLiked ? "heart.fill" : "heart")
-                        .font(.system(size: CardLayoutConstants.actionButtonIconSize, weight: .medium))
-                        .foregroundColor(isLiked ? .red : .secondary)
-                    
-                    if reply.likeCount > 0 {
-                        Text(reply.likeCount > 99 ? "99+" : "\(reply.likeCount)")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .monospacedDigit()
-                    }
-                }
-            }
-            .buttonStyle(.plain)
-            .frame(width: CardLayoutConstants.actionButtonWidth, alignment: .leading)
-            .contentShape(Rectangle())
-            
-            // Show different buttons based on context
-            if showAsMainPost {
-                // Comment button (for main posts with reply previews)
-                if let onReply = onReply {
-                    Button(action: onReply) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "bubble.left")
-                                .font(.system(size: CardLayoutConstants.actionButtonIconSize, weight: .medium))
-                                .foregroundColor(.secondary)
-                            
-                            Text(reply.replyCount > 99 ? "99+" : reply.replyCount > 0 ? "\(reply.replyCount)" : "")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                                .monospacedDigit()
-                        }
-                    }
-                    .buttonStyle(.plain)
-                    .frame(width: CardLayoutConstants.actionButtonWidth, alignment: .leading)
-                    .contentShape(Rectangle())
-                }
-                
-                // Share button
-                Button(action: {
-                    // TODO: Implement share functionality
-                }) {
-                    Image(systemName: "paperplane")
-                        .font(.system(size: CardLayoutConstants.actionButtonIconSize, weight: .medium))
-                        .foregroundColor(.secondary)
-                }
-                .buttonStyle(.plain)
-                .frame(width: CardLayoutConstants.actionButtonWidth, alignment: .leading)
-                .contentShape(Rectangle())
-            } else {
-                // Reply button (for actual replies)
-                if let onReply = onReply {
-                    Button(action: onReply) {
-                        Image(systemName: "arrow.turn.up.left")
-                            .font(.system(size: CardLayoutConstants.actionButtonIconSize, weight: .medium))
-                            .foregroundColor(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                    .frame(width: CardLayoutConstants.actionButtonWidth, alignment: .leading)
-                    .contentShape(Rectangle())
-                }
-            }
-            
-            Spacer()
-            
-            // Three dots menu (only show if user can delete)
-            if let onDelete = onDelete {
-                Menu {
-                    Button("Delete", role: .destructive, action: onDelete)
-                } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: CardLayoutConstants.actionButtonIconSize, weight: .medium))
-                        .foregroundColor(.secondary)
-                }
-                .buttonStyle(.plain)
-                .contentShape(Rectangle())
-            }
-        }
-    }
 }
 
 // MARK: - Helper Views for Reply Media

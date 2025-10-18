@@ -123,22 +123,38 @@ struct LoopDetailView: View {
                         }
                         .padding(.vertical, 40)
                     } else {
-                        // Comments header
-                        HStack {
-                            Text("Comments")
-                                .font(.title2)
-                                .fontWeight(.bold)
-                            
-                            Spacer()
-                            
-                            Text("\(viewModel.replies.count)")
-                                .font(.subheadline)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.secondary)
-                                .monospacedDigit()
+                        // Comments header - in container matching posts
+                        VStack(spacing: 0) {
+                            HStack {
+                                Text("Comments")
+                                    .font(.title2)
+                                    .fontWeight(.bold)
+                                
+                                Spacer()
+                                
+                                Text("\(viewModel.replies.count)")
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(.secondary)
+                                    .monospacedDigit()
+                            }
                         }
-                        .padding(.top, 20)
-                        .padding(.bottom, 8)
+                        .padding(.horizontal, CardLayoutConstants.horizontalPadding)
+                        .padding(.top, CardLayoutConstants.topPadding)
+                        .padding(.bottom, CardLayoutConstants.bottomPadding)
+                        .background(Color(.systemBackground))
+                        .overlay(
+                            Group {
+                                if showDebugOverlay {
+                                    RoundedRectangle(cornerRadius: CardLayoutConstants.cornerRadius)
+                                        .stroke(Color.red, lineWidth: 2)
+                                }
+                            }
+                        )
+                        .padding(.top, 5)
+                        
+                        PostDivider()
+                            .padding(.top, 5)
                         
                         // Replies list - threaded structure with collapsible nested replies
                         LazyVStack(spacing: 0) {
@@ -150,23 +166,24 @@ struct LoopDetailView: View {
                                         
                                         if lineHeight > 0 {
                                             let lineStartY = CardLayoutConstants.topPadding + CardLayoutConstants.avatarSize + CardLayoutConstants.avatarLineGap
+                                            let lineX = CardLayoutConstants.horizontalPadding + CardLayoutConstants.avatarSize / 2 - CardLayoutConstants.conversationLineWidth / 2
                                             
-                                        RoundedRectangle(cornerRadius: CardLayoutConstants.conversationLineWidth / 2)
-                                            .fill(CardLayoutConstants.conversationLineColor)
-                                            .frame(width: CardLayoutConstants.conversationLineWidth, height: lineHeight)
-                                                .offset(x: CardLayoutConstants.avatarSize / 2 - CardLayoutConstants.conversationLineWidth / 2, y: lineStartY)
+                                            RoundedRectangle(cornerRadius: CardLayoutConstants.conversationLineWidth / 2)
+                                                .fill(CardLayoutConstants.conversationLineColor)
+                                                .frame(width: CardLayoutConstants.conversationLineWidth, height: lineHeight)
+                                                .offset(x: lineX, y: lineStartY)
                                         }
                                     }
                                     
                                     VStack(spacing: 0) {
-                                        // Top-level reply
+                                        // Top-level reply - wrapped in container like PostCard
                                         ReplyCardView(
                                             reply: threadedReply.reply,
                                             isLiked: viewModel.isLikedByCurrentUser(threadedReply.reply),
                                             indentLevel: 0,
                                             nestedReplyCount: threadedReply.nestedReplies.count,
                                             isExpanded: threadedReply.isExpanded,
-                                            isLastInThread: false, // Top-level comments are never "last in thread"
+                                            isLastInThread: false,
                                             onLike: {
                                                 let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
                                                 impactFeedback.impactOccurred()
@@ -176,7 +193,6 @@ struct LoopDetailView: View {
                                                 }
                                             },
                                             onReply: {
-                                                // Always reply to the top-level comment, adding to nested list
                                                 let impactFeedback = UIImpactFeedbackGenerator(style: .light)
                                                 impactFeedback.impactOccurred()
                                                 
@@ -197,9 +213,21 @@ struct LoopDetailView: View {
                                             } : nil,
                                             onAvatarTap: {
                                                 profileUserToShow = ProfileUser(userId: threadedReply.reply.authorId)
+                                            },
+                                            applyInternalPadding: false
+                                        )
+                                        .padding(.horizontal, CardLayoutConstants.horizontalPadding)
+                                        .padding(.top, CardLayoutConstants.topPadding)
+                                        .padding(.bottom, CardLayoutConstants.bottomPadding)
+                                        .background(Color(.systemBackground))
+                                        .overlay(
+                                            Group {
+                                                if showDebugOverlay {
+                                                    RoundedRectangle(cornerRadius: CardLayoutConstants.cornerRadius)
+                                                        .stroke(Color.red, lineWidth: 2)
+                                                }
                                             }
                                         )
-                                        .padding(.horizontal, -CardLayoutConstants.horizontalPadding) // Cancel internal padding to match main post
                                         .overlay(
                                             GeometryReader { geo in
                                                 Color.clear
@@ -211,6 +239,8 @@ struct LoopDetailView: View {
                                                     }
                                             }
                                         )
+                                        .padding(.top, index == 0 ? 0 : 5)
+                                        .padding(.bottom, index == viewModel.threadedReplies.count - 1 ? 0 : 5)
                                         
                                         // Show nested replies if expanded
                                         if threadedReply.isExpanded {
@@ -219,7 +249,7 @@ struct LoopDetailView: View {
                                                 .fill(CardLayoutConstants.dividerColor)
                                                 .frame(maxWidth: .infinity)
                                                 .frame(height: CardLayoutConstants.dividerHeight)
-                                                .padding(.leading, CardLayoutConstants.contentShift) // Avatar + spacing (replies have negative padding)
+                                                .padding(.leading, CardLayoutConstants.contentShift)
                                             
                                             ForEach(Array(threadedReply.nestedReplies.enumerated()), id: \.element.id) { nestedIndex, nestedReply in
                                                 ReplyCardView(
@@ -228,7 +258,7 @@ struct LoopDetailView: View {
                                                     indentLevel: 1,
                                                     nestedReplyCount: 0,
                                                     isExpanded: false,
-                                                    isLastInThread: nestedIndex == threadedReply.nestedReplies.count - 1, // Check if this is the last nested reply
+                                                    isLastInThread: nestedIndex == threadedReply.nestedReplies.count - 1,
                                                     onLike: {
                                                         let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
                                                         impactFeedback.impactOccurred()
@@ -238,11 +268,10 @@ struct LoopDetailView: View {
                                                         }
                                                     },
                                                     onReply: (nestedIndex == threadedReply.nestedReplies.count - 1) ? {
-                                                        // Only last nested reply can be replied to
                                                         let impactFeedback = UIImpactFeedbackGenerator(style: .light)
                                                         impactFeedback.impactOccurred()
                                                         
-                                                        viewModel.replyToReply(threadedReply.reply) // Reply to parent comment
+                                                        viewModel.replyToReply(threadedReply.reply)
                                                     } : nil,
                                                     onToggleExpanded: nil,
                                                     onDelete: viewModel.canDeleteLoop(nestedReply) ? {
@@ -255,9 +284,10 @@ struct LoopDetailView: View {
                                                     } : nil,
                                                     onAvatarTap: {
                                                         profileUserToShow = ProfileUser(userId: nestedReply.authorId)
-                                                    }
+                                                    },
+                                                    applyInternalPadding: false
                                                 )
-                                                .padding(.horizontal, -CardLayoutConstants.horizontalPadding) // Cancel internal padding to match main post
+                                                .padding(.horizontal, CardLayoutConstants.horizontalPadding)
                                                 .overlay(
                                                     GeometryReader { geo in
                                                         Color.clear
@@ -276,38 +306,40 @@ struct LoopDetailView: View {
                                                         .fill(CardLayoutConstants.dividerColor)
                                                         .frame(maxWidth: .infinity)
                                                         .frame(height: CardLayoutConstants.dividerHeight)
-                                                        .padding(.leading, CardLayoutConstants.contentShift) // Avatar + spacing (replies have negative padding)
+                                                        .padding(.leading, CardLayoutConstants.contentShift)
                                                 }
                                             }
                                             
-                                            // "Hide replies" button at bottom when expanded
-                                            HStack {
-                                                Button(action: {
-                                                    withAnimation(.spring(duration: 0.4, bounce: 0.1)) {
-                                                        viewModel.toggleReplyExpansion(threadedReply.id)
+                                            // "Hide replies" button at bottom when expanded - aligned like action buttons
+                                            VStack(spacing: 0) {
+                                                HStack(spacing: 0) {
+                                                    Button(action: {
+                                                        withAnimation(.spring(duration: 0.4, bounce: 0.1)) {
+                                                            viewModel.toggleReplyExpansion(threadedReply.id)
+                                                        }
+                                                    }) {
+                                                        HStack(spacing: 6) {
+                                                            Image(systemName: "chevron.up")
+                                                                .font(.system(size: 12, weight: .semibold))
+                                                                .foregroundColor(.secondary)
+                                                            
+                                                            Text("Hide replies")
+                                                                .font(.caption)
+                                                                .fontWeight(.medium)
+                                                                .foregroundColor(.secondary)
+                                                        }
+                                                        .padding(.vertical, 6)
+                                                        .padding(.horizontal, 12)
+                                                        .background(Color(.systemGray5))
+                                                        .cornerRadius(8)
                                                     }
-                                                }) {
-                                                    HStack(spacing: 6) {
-                                                        Image(systemName: "chevron.up")
-                                                            .font(.system(size: 12, weight: .semibold))
-                                                            .foregroundColor(.secondary)
-                                                        
-                                                        Text("Hide replies")
-                                                            .font(.caption)
-                                                            .fontWeight(.medium)
-                                                            .foregroundColor(.secondary)
-                                                    }
-                                                    .padding(.vertical, 6)
-                                                    .padding(.horizontal, 12)
-                                                    .background(Color(.systemGray5))
-                                                    .cornerRadius(8)
+                                                    .buttonStyle(.plain)
+                                                    
+                                                    Spacer()
                                                 }
-                                                .buttonStyle(.plain)
-                                                .padding(.leading, 0) // Left-aligned like "View replies"
-                                                .padding(.bottom, 12) // Bottom padding to match divider spacing
-                                                
-                                                Spacer()
+                                                .padding(.top, 8)
                                             }
+                                            .padding(.horizontal, CardLayoutConstants.horizontalPadding)
                                             .transition(.opacity.combined(with: .move(edge: .bottom)))
                                         }
                                     }
@@ -315,10 +347,7 @@ struct LoopDetailView: View {
                                 
                                 // Divider after each top-level reply
                                 if index < viewModel.threadedReplies.count - 1 {
-                                    Rectangle()
-                                        .fill(CardLayoutConstants.dividerColor)
-                                        .frame(maxWidth: .infinity)
-                                        .frame(height: CardLayoutConstants.dividerHeight)
+                                    PostDivider()
                                 }
                             }
                         }
