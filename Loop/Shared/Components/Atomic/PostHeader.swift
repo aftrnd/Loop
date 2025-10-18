@@ -9,6 +9,8 @@ struct PostHeader: View {
     let username: String?
     let badgeType: BadgeType?
     let timestamp: String
+    let trailingIcon: String? // Optional trailing icon (e.g., "chevron.right")
+    let showUsernamePrefix: Bool // Whether to show "@" before username
     let onAvatarTap: (() -> Void)?
     let showDebugOverlay: Bool
     
@@ -22,6 +24,8 @@ struct PostHeader: View {
         username: String?,
         badgeType: BadgeType?,
         timestamp: String,
+        trailingIcon: String? = nil,
+        showUsernamePrefix: Bool = true,
         onAvatarTap: (() -> Void)? = nil,
         showDebugOverlay: Bool = false
     ) {
@@ -30,6 +34,8 @@ struct PostHeader: View {
         self.username = username
         self.badgeType = badgeType
         self.timestamp = timestamp
+        self.trailingIcon = trailingIcon
+        self.showUsernamePrefix = showUsernamePrefix
         self.onAvatarTap = onAvatarTap
         self.showDebugOverlay = showDebugOverlay
     }
@@ -125,12 +131,20 @@ struct PostHeader: View {
             
             Spacer()
             
-            Text(timestamp)
-                .font(.subheadline)
-                .monospacedDigit()
-                .foregroundColor(.secondary)
-                .lineLimit(1)
-                .truncationMode(.tail)
+            HStack(spacing: 4) {
+                Text(timestamp)
+                    .font(.subheadline)
+                    .monospacedDigit()
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                
+                if let trailingIcon = trailingIcon {
+                    Image(systemName: trailingIcon)
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+            }
         }
         .frame(maxWidth: .infinity)
         .overlay(
@@ -153,7 +167,7 @@ struct PostHeader: View {
                             .foregroundColor(badgeType.color)
                     }
                     
-                    Text("@\(username)")
+                    Text(showUsernamePrefix ? "@\(username)" : username)
                         .font(.callout)
                         .fontWeight(.regular)
                         .foregroundColor(.secondary)

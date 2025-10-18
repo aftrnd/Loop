@@ -12,6 +12,9 @@ struct UserInfoHeader: View {
     let avatarSize: CGFloat
     let spacing: CGFloat // Configurable spacing between avatar and text
     
+    // Debug overlay
+    @AppStorage("showLayoutDebugOverlays") private var showDebugOverlay = false
+    
     init(
         avatarURL: String?,
         displayName: String,
@@ -79,6 +82,14 @@ struct UserInfoHeader: View {
                     .font(.headline)
                     .fontWeight(.semibold)
                     .lineLimit(1)
+                    .overlay(
+                        Group {
+                            if showDebugOverlay {
+                                Rectangle()
+                                    .stroke(Color.green, lineWidth: 2)
+                            }
+                        }
+                    )
                 
                 // Username with badge on its own line
                 if let username = username, !username.isEmpty {
@@ -96,9 +107,27 @@ struct UserInfoHeader: View {
                             .foregroundColor(.secondary)
                             .lineLimit(1)
                     }
+                    .overlay(
+                        Group {
+                            if showDebugOverlay {
+                                Rectangle()
+                                    .stroke(Color.green, lineWidth: 2)
+                            }
+                        }
+                    )
                 }
             }
             .frame(maxHeight: .infinity, alignment: .center)
+            .overlay(
+                Group {
+                    if showDebugOverlay {
+                        Rectangle()
+                            .fill(Color.blue)
+                            .frame(height: 2)
+                            .offset(y: 0)
+                    }
+                }
+            )
         }
     }
 }
