@@ -14,35 +14,42 @@ struct LoopDetailView: View {
     }
     
     // Helper function to calculate conversation line height
-    private func calculateLineHeight(for threadedReply: ThreadedReply) -> CGFloat {
+    private func calculateLineHeight(for threadedReply: ThreadedReply, parentIndex: Int) -> CGFloat {
         guard let parentHeight = replyHeights[threadedReply.reply.id], parentHeight > 0 else {
             return 0
         }
         
-        // Line starts below parent avatar + gap
-        let lineStartY = CardLayoutConstants.topPadding + CardLayoutConstants.avatarSize + CardLayoutConstants.avatarLineGap
+        // External top padding on parent card
+        let externalTopPadding: CGFloat = parentIndex == 0 ? 0 : 5
         
-        // Calculate where last nested avatar's top is using actual measurements
-        // 1. Parent card actual height
+        // Line starts below parent avatar + gap
+        let lineStartY = externalTopPadding + CardLayoutConstants.topPadding + CardLayoutConstants.avatarSize + CardLayoutConstants.avatarLineGap
+        
+        // Calculate where last nested avatar's top is
+        // 1. Parent card height (includes all padding applied to it)
         let parentCardHeight = parentHeight
+        
         // 2. Divider after parent
         let dividerHeight = CardLayoutConstants.dividerHeight
-        // 3. Sum of all nested reply heights except the last
+        
+        // 3. Sum of nested reply heights before the last one
         var nestedHeightsBeforeLast: CGFloat = 0
         for i in 0..<(threadedReply.nestedReplies.count - 1) {
             let nestedReply = threadedReply.nestedReplies[i]
             nestedHeightsBeforeLast += replyHeights[nestedReply.id] ?? 145
-            // Add divider height between nested replies
+            // Add divider between nested replies
             if i < threadedReply.nestedReplies.count - 2 {
                 nestedHeightsBeforeLast += CardLayoutConstants.dividerHeight
             }
         }
         
-        // 4. Last reply's top padding to get to its avatar top
-        let lastAvatarTop = parentCardHeight + dividerHeight + nestedHeightsBeforeLast + CardLayoutConstants.topPadding
+        // 4. Last nested reply avatar position (in ZStack coordinates)
+        // Everything is offset by externalTopPadding
+        let lastAvatarTop = externalTopPadding + parentCardHeight + dividerHeight + nestedHeightsBeforeLast
         
-        // Line ends before last nested avatar - gap
+        // Line ends before last nested avatar
         let lineEndY = lastAvatarTop - CardLayoutConstants.avatarLineGap
+        
         return max(10, lineEndY - lineStartY)
     }
     
@@ -153,19 +160,20 @@ struct LoopDetailView: View {
                         )
                         .padding(.top, 5)
                         
-                        PostDivider()
-                            .padding(.top, 5)
-                        
                         // Replies list - threaded structure with collapsible nested replies
                         LazyVStack(spacing: 0) {
                             ForEach(Array(viewModel.threadedReplies.enumerated()), id: \.element.id) { index, threadedReply in
                                 ZStack(alignment: .topLeading) {
                                     // Connecting line overlay (only when expanded)
                                     if threadedReply.isExpanded && !threadedReply.nestedReplies.isEmpty {
-                                        let lineHeight = calculateLineHeight(for: threadedReply)
+                                        let lineHeight = calculateLineHeight(for: threadedReply, parentIndex: index)
                                         
                                         if lineHeight > 0 {
-                                            let lineStartY = CardLayoutConstants.topPadding + CardLayoutConstants.avatarSize + CardLayoutConstants.avatarLineGap
+                                            // Account for external top padding on parent card
+                                            let externalTopPadding: CGFloat = index == 0 ? 0 : 5
+                                            // Line starts below parent avatar + gap
+                                            let lineStartY = externalTopPadding + CardLayoutConstants.topPadding + CardLayoutConstants.avatarSize + CardLayoutConstants.avatarLineGap
+                                            // Line X position: centered on avatar
                                             let lineX = CardLayoutConstants.horizontalPadding + CardLayoutConstants.avatarSize / 2 - CardLayoutConstants.conversationLineWidth / 2
                                             
                                             RoundedRectangle(cornerRadius: CardLayoutConstants.conversationLineWidth / 2)
