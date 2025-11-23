@@ -64,12 +64,13 @@ struct ProfileView: View {
     }
     
     // Layout constants
-    private let avatarMaskSize: CGFloat = 110
     private let avatarImageSize: CGFloat = 100
+    private let avatarSpacing: CGFloat = 8 // Match vertical spacing in profile (8pt)
+    private var avatarMaskSize: CGFloat { avatarImageSize + (avatarSpacing * 2) } // 116pt: avatar + 8pt spacing on each side
     // Match post card padding: 10pt list inset + 10pt card padding = 20pt total
     private let profileContentPadding: CGFloat = CardLayoutConstants.horizontalPadding + 10 // 20pt total (matches posts)
-    private let avatarLeadingPadding: CGFloat = 10 // Matches list inset (avatar mask aligns with post card left edge)
-    private let avatarOverlapOffset: CGFloat = -55
+    private let avatarLeadingPadding: CGFloat = 10 // Matches list inset (avatar left edge aligns with post card left edge)
+    private var avatarOverlapOffset: CGFloat { -(avatarMaskSize / 2) } // -58pt: half of mask size to center overlap
     
     // Computed property to determine if viewing own profile
     private var isOwnProfile: Bool {
@@ -337,7 +338,16 @@ struct ProfileView: View {
     // MARK: - Banner
     
     private var bannerContent: some View {
-        GeometryReader { geometry in
+        GeometryReader { bannerGeometry in
+            // Calculate avatar center position based on actual layout
+            // Avatar is in VStack with .frame(maxWidth: .infinity, alignment: .leading)
+            // Then .padding(.leading, avatarLeadingPadding) positions the avatar
+            // Avatar left edge = avatarLeadingPadding from screen left
+            // Avatar center X = avatarLeadingPadding + (avatarImageSize / 2)
+            // Banner GeometryReader coordinate space matches screen width, so we can use the same calculation
+            let avatarCenterX = avatarLeadingPadding + (avatarImageSize / 2)
+            let avatarCenterY = bannerGeometry.size.height
+            
             ZStack(alignment: .bottomTrailing) {
                 Group {
                     if let banner = selectedBanner {
@@ -345,7 +355,7 @@ struct ProfileView: View {
                         Image(uiImage: banner)
                             .resizable()
                             .aspectRatio(contentMode: .fill)
-                            .frame(width: geometry.size.width, height: geometry.size.height)
+                            .frame(width: bannerGeometry.size.width, height: bannerGeometry.size.height)
                             .clipped()
                     } else if let bannerURL = currentUser?.bannerURL, let url = URL(string: bannerURL) {
                         // Load from Firebase Storage URL with caching
@@ -353,12 +363,12 @@ struct ProfileView: View {
                             image
                                 .resizable()
                                 .aspectRatio(contentMode: .fill)
-                                .frame(width: geometry.size.width, height: geometry.size.height)
+                                .frame(width: bannerGeometry.size.width, height: bannerGeometry.size.height)
                                 .clipped()
                         } placeholder: {
                             ZStack {
                                 Color(.systemGray5)
-                                    .frame(width: geometry.size.width, height: geometry.size.height)
+                                    .frame(width: bannerGeometry.size.width, height: bannerGeometry.size.height)
                                 
                                 ProgressView()
                             }
@@ -366,19 +376,20 @@ struct ProfileView: View {
                     } else {
                         // Default gray background
                         Color(.systemGray5)
-                            .frame(width: geometry.size.width, height: geometry.size.height)
+                            .frame(width: bannerGeometry.size.width, height: bannerGeometry.size.height)
                     }
                 }
                 .mask {
                     ZStack {
                         Rectangle()
-                        // Cut out avatar ring area - positioned exactly where avatar will be
-                        // Avatar center: x = leadingPadding + (maskSize / 2), y = banner bottom (height)
+                        // Position mask circle center at exact avatar center using bannerGeometry coordinates
+                        // Avatar center X: avatarLeadingPadding + (avatarImageSize / 2) = 60pt from screen left
+                        // Avatar center Y: at bottom of banner = bannerGeometry.size.height
                         Circle()
                             .frame(width: avatarMaskSize, height: avatarMaskSize)
-                            .offset(
-                                x: -(geometry.size.width / 2) + avatarLeadingPadding + (avatarMaskSize / 2),
-                                y: (geometry.size.height / 2)
+                            .position(
+                                x: avatarCenterX, // Avatar center X: calculated from avatarLeadingPadding + avatarImageSize/2
+                                y: avatarCenterY // Avatar center Y: at bottom of banner
                             )
                             .blendMode(.destinationOut)
                     }
@@ -1142,7 +1153,7 @@ struct ProfileView: View {
     
     @ViewBuilder
     private func profileInfoContent(for user: User) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: CardLayoutConstants.headerBottomSpacing) { // Match PostCard internal spacing: 12pt between components (header->content->actions)
             displayNameView
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(debugBackground(color: .green))
@@ -1184,9 +1195,9 @@ struct ProfileView: View {
         .padding(.horizontal, profileContentPadding) // Match post content padding (20pt total)
         .background(showLayoutDebugOverlays ? Color.pink.opacity(0.05) : Color.clear)
         .overlay(debugPaddingLine())
-        .padding(.top, CardLayoutConstants.topPadding)
+        .padding(.top, CardLayoutConstants.topPadding) // Match PostCard top padding: 8pt
         .background(showLayoutDebugOverlays ? Color.purple.opacity(0.05) : Color.clear)
-        .padding(.bottom, !isOwnProfile && !isEditing ? 8 : CardLayoutConstants.bottomPadding) // Match VStack spacing (8pt) between buttons and tabs
+        .padding(.bottom, CardLayoutConstants.bottomPadding) // Match PostCard bottom padding: 8pt (consistent top/bottom)
         .background(showLayoutDebugOverlays ? Color.cyan.opacity(0.05) : Color.clear)
         .background(Color(.systemBackground))
         .clipShape(RoundedRectangle(cornerRadius: CardLayoutConstants.cornerRadius))
@@ -1423,93 +1434,125 @@ struct ProfileView: View {
     
     private var profileTabs: some View {
         VStack(spacing: 0) {
-            // Tab buttons container with padding
-            HStack(spacing: 0) {
-                ForEach(ProfileTab.allCases, id: \.self) { tab in
-                    Button {
-                        selectedTab = tab
-                    } label: {
-                        VStack(spacing: 8) {
-                            Text(tab.rawValue)
-                                .font(.headline)
-                                .foregroundColor(selectedTab == tab ? .primary : .secondary)
-                            
-                            // Spacer for indicator line - maintains consistent height
-                            Rectangle()
-                                .fill(Color.clear)
-                                .frame(height: CardLayoutConstants.dividerHeight)
-                        }
-                        .frame(maxWidth: .infinity)
+            // Top padding - only when viewing someone else's profile (when buttons are shown)
+            if !isOwnProfile && !isEditing {
+                Color.clear
+                    .frame(height: CardLayoutConstants.bottomPadding)
+                    .background(showLayoutDebugOverlays ? Color.purple.opacity(0.3) : Color.clear)
+            }
+            
+            tabButtonsContainer
+            tabIndicatorArea
+        }
+        .allowsHitTesting(true)
+        .background(Color(.systemBackground).opacity(0.01)) // Minimal background for hit testing
+        .overlay(tabDebugOverlay)
+    }
+    
+    private var tabButtonsContainer: some View {
+        HStack(spacing: 0) {
+            ForEach(ProfileTab.allCases, id: \.self) { tab in
+                Button {
+                    selectedTab = tab
+                } label: {
+                    VStack(spacing: 8) {
+                        Text(tab.rawValue)
+                            .font(.headline)
+                            .foregroundColor(selectedTab == tab ? .primary : .secondary)
+                        
+                        Rectangle()
+                            .fill(Color.clear)
+                            .frame(height: CardLayoutConstants.dividerHeight)
                     }
+                    .frame(maxWidth: .infinity)
                 }
             }
-            .padding(.horizontal, profileContentPadding) // Match post content padding (20pt total)
-            .background(showLayoutDebugOverlays ? Color.pink.opacity(0.05) : Color.clear)
-            .overlay(debugPaddingLine())
-            
-            // Tab indicator area with full-width divider and selected indicator on top
+        }
+        .padding(.horizontal, profileContentPadding) // Only side padding
+        .background(showLayoutDebugOverlays ? Color.pink.opacity(0.05) : Color(.systemBackground))
+        .overlay(debugPaddingLine())
+        .overlay(tabButtonsDebugStroke)
+    }
+    
+    @ViewBuilder
+    private var tabButtonsDebugStroke: some View {
+        if showLayoutDebugOverlays {
+            Rectangle()
+                .stroke(Color.red, lineWidth: 1)
+        }
+    }
+    
+    private var tabIndicatorArea: some View {
+        VStack(spacing: 0) {
             ZStack(alignment: .top) {
-                // Full-width divider (respecting side padding) - background layer
-                HStack(spacing: 0) {
-                    Spacer()
-                        .frame(width: profileContentPadding)
-                    
-                    Rectangle()
-                        .fill(CardLayoutConstants.dividerColor)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: CardLayoutConstants.dividerHeight)
-                    
-                    Spacer()
-                        .frame(width: profileContentPadding)
-                }
-                .frame(height: CardLayoutConstants.dividerHeight)
-                
-                // Selected tab indicator - rendered on top of divider
-                HStack(spacing: 0) {
-                    Spacer()
-                        .frame(width: profileContentPadding)
-                    
-                    // Indicator lines container - same width as the button container content area
-                    HStack(spacing: 0) {
-                        if selectedTab == .posts {
-                            Rectangle()
-                                .fill(Color.primary) // Black in light mode, white in dark mode
-                                .frame(maxWidth: .infinity)
-                                .frame(height: CardLayoutConstants.dividerHeight)
-                            Rectangle()
-                                .fill(Color.clear)
-                                .frame(maxWidth: .infinity)
-                                .frame(height: CardLayoutConstants.dividerHeight)
-                        } else {
-                            Rectangle()
-                                .fill(Color.clear)
-                                .frame(maxWidth: .infinity)
-                                .frame(height: CardLayoutConstants.dividerHeight)
-                            Rectangle()
-                                .fill(Color.primary) // Black in light mode, white in dark mode
-                                .frame(maxWidth: .infinity)
-                                .frame(height: CardLayoutConstants.dividerHeight)
-                        }
-                    }
-                    
-                    Spacer()
-                        .frame(width: profileContentPadding)
-                }
-                .frame(height: CardLayoutConstants.dividerHeight)
+                fullWidthDivider
+                selectedTabIndicator
             }
             .frame(height: CardLayoutConstants.dividerHeight)
+            .background(Color(.systemBackground))
+            
+            // Bottom padding with purple background for visibility
+            Color.clear
+                .frame(height: CardLayoutConstants.bottomPadding)
+                .background(showLayoutDebugOverlays ? Color.purple.opacity(0.3) : Color.clear)
         }
-        .padding(.top, 5 + CardLayoutConstants.dividerHeight + 5) // Match post-to-post spacing: bottom padding + divider + top padding
-        .padding(.bottom, 5 + CardLayoutConstants.dividerHeight + 5) // Match post-to-post spacing: bottom padding + divider + top padding
-        .background(showLayoutDebugOverlays ? Color.yellow.opacity(0.05) : Color(.systemBackground))
-        .overlay(
-            Group {
-                if showLayoutDebugOverlays {
-                    RoundedRectangle(cornerRadius: 0)
-                        .stroke(Color.red, lineWidth: 2)
+    }
+    
+    private var fullWidthDivider: some View {
+        HStack(spacing: 0) {
+            Spacer()
+                .frame(width: profileContentPadding)
+            
+            Rectangle()
+                .fill(CardLayoutConstants.dividerColor)
+                .frame(maxWidth: .infinity)
+                .frame(height: CardLayoutConstants.dividerHeight)
+            
+            Spacer()
+                .frame(width: profileContentPadding)
+        }
+        .frame(height: CardLayoutConstants.dividerHeight)
+    }
+    
+    private var selectedTabIndicator: some View {
+        HStack(spacing: 0) {
+            Spacer()
+                .frame(width: profileContentPadding)
+            
+            HStack(spacing: 0) {
+                if selectedTab == .posts {
+                    Rectangle()
+                        .fill(Color.primary)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: CardLayoutConstants.dividerHeight)
+                    Rectangle()
+                        .fill(Color.clear)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: CardLayoutConstants.dividerHeight)
+                } else {
+                    Rectangle()
+                        .fill(Color.clear)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: CardLayoutConstants.dividerHeight)
+                    Rectangle()
+                        .fill(Color.primary)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: CardLayoutConstants.dividerHeight)
                 }
             }
-        )
+            
+            Spacer()
+                .frame(width: profileContentPadding)
+        }
+        .frame(height: CardLayoutConstants.dividerHeight)
+    }
+    
+    @ViewBuilder
+    private var tabDebugOverlay: some View {
+        if showLayoutDebugOverlays {
+            RoundedRectangle(cornerRadius: 0)
+                .stroke(Color.red, lineWidth: 2)
+        }
     }
     
     private var profilePostsTab: some View {
