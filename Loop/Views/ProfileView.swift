@@ -1186,8 +1186,18 @@ struct ProfileView: View {
         .overlay(debugPaddingLine())
         .padding(.top, CardLayoutConstants.topPadding)
         .background(showLayoutDebugOverlays ? Color.purple.opacity(0.05) : Color.clear)
-        .padding(.bottom, CardLayoutConstants.bottomPadding)
+        .padding(.bottom, !isOwnProfile && !isEditing ? 24 : CardLayoutConstants.bottomPadding) // Extra spacing before tabs when buttons are shown
         .background(showLayoutDebugOverlays ? Color.cyan.opacity(0.05) : Color.clear)
+        .background(Color(.systemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: CardLayoutConstants.cornerRadius))
+        .overlay(
+            Group {
+                if showLayoutDebugOverlays {
+                    RoundedRectangle(cornerRadius: CardLayoutConstants.cornerRadius)
+                        .stroke(Color.red, lineWidth: 2)
+                }
+            }
+        )
     }
     
     @ViewBuilder
@@ -1437,50 +1447,57 @@ struct ProfileView: View {
             .background(showLayoutDebugOverlays ? Color.pink.opacity(0.05) : Color.clear)
             .overlay(debugPaddingLine())
             
-            // Tab indicator line - matches button container exactly with same padding
-            HStack(spacing: 0) {
-                // Left padding - matches button container
-                Spacer()
-                    .frame(width: profileContentPadding)
-                
-                // Indicator lines container - same width as the button container content area
+            // Tab indicator area with full-width divider and selected indicator on top
+            ZStack(alignment: .top) {
+                // Full-width divider (respecting side padding) - background layer
                 HStack(spacing: 0) {
-                    if selectedTab == .posts {
-                        Rectangle()
-                            .fill(CardLayoutConstants.dividerColor)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: CardLayoutConstants.dividerHeight)
-                        Rectangle()
-                            .fill(Color.clear)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: CardLayoutConstants.dividerHeight)
-                    } else {
-                        Rectangle()
-                            .fill(Color.clear)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: CardLayoutConstants.dividerHeight)
-                        Rectangle()
-                            .fill(CardLayoutConstants.dividerColor)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: CardLayoutConstants.dividerHeight)
-                    }
+                    Spacer()
+                        .frame(width: profileContentPadding)
+                    
+                    Rectangle()
+                        .fill(CardLayoutConstants.dividerColor)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: CardLayoutConstants.dividerHeight)
+                    
+                    Spacer()
+                        .frame(width: profileContentPadding)
                 }
-                .background(showLayoutDebugOverlays ? Color.red.opacity(0.2) : Color.clear)
+                .frame(height: CardLayoutConstants.dividerHeight)
                 
-                // Right padding - matches button container
-                Spacer()
-                    .frame(width: profileContentPadding)
+                // Selected tab indicator - rendered on top of divider
+                HStack(spacing: 0) {
+                    Spacer()
+                        .frame(width: profileContentPadding)
+                    
+                    // Indicator lines container - same width as the button container content area
+                    HStack(spacing: 0) {
+                        if selectedTab == .posts {
+                            Rectangle()
+                                .fill(Color.primary) // Black in light mode, white in dark mode
+                                .frame(maxWidth: .infinity)
+                                .frame(height: CardLayoutConstants.dividerHeight)
+                            Rectangle()
+                                .fill(Color.clear)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: CardLayoutConstants.dividerHeight)
+                        } else {
+                            Rectangle()
+                                .fill(Color.clear)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: CardLayoutConstants.dividerHeight)
+                            Rectangle()
+                                .fill(Color.primary) // Black in light mode, white in dark mode
+                                .frame(maxWidth: .infinity)
+                                .frame(height: CardLayoutConstants.dividerHeight)
+                        }
+                    }
+                    
+                    Spacer()
+                        .frame(width: profileContentPadding)
+                }
+                .frame(height: CardLayoutConstants.dividerHeight)
             }
             .frame(height: CardLayoutConstants.dividerHeight)
-            .overlay(debugStrokeOverlay())
-            
-            // Debug overlay for tab bar
-            if showLayoutDebugOverlays {
-                Rectangle()
-                    .stroke(Color.red, lineWidth: 1)
-                    .frame(height: 1)
-                    .padding(.horizontal, profileContentPadding)
-            }
         }
         .background(showLayoutDebugOverlays ? Color.yellow.opacity(0.05) : Color(.systemBackground))
     }
