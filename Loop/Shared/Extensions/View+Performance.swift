@@ -1,12 +1,12 @@
 import SwiftUI
 
 extension View {
-    /// Lightweight glass effect alternative for better performance
-    func lightGlassEffect<S: Shape>(_ style: Material = .regular, in shape: S) -> some View {
+    /// Lightweight glass effect with iOS 26 material support
+    /// Default is .thin for subtle glass effect
+    func lightGlassEffect<S: Shape>(_ material: Material = .thin, in shape: S) -> some View {
         self.background(
             shape
-                .fill(.ultraThinMaterial)
-                .opacity(0.8)
+                .fill(material)
         )
     }
     

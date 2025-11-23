@@ -21,4 +21,16 @@ extension View {
             self
         }
     }
+    
+    /// Conditionally applies refreshable modifier
+    @ViewBuilder
+    func conditionalRefreshable(isEnabled: Bool, action: @escaping () async -> Void) -> some View {
+        if isEnabled {
+            self.refreshable {
+                await action()
+            }
+        } else {
+            self
+        }
+    }
 }

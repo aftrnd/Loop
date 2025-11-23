@@ -8,9 +8,10 @@
 import SwiftUI
 import FirebaseCore
 import FirebaseAuth
+import FirebaseMessaging
 import UserNotifications
 
-class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
+class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate, MessagingDelegate {
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey : Any]? = nil) -> Bool {
         // THIS MUST BE FIRST - Firebase configuration
@@ -19,6 +20,10 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         
         // Set notification center delegate
         UNUserNotificationCenter.current().delegate = self
+        
+        // Set Firebase Messaging delegate
+        Messaging.messaging().delegate = self
+        print("🔍 DEBUG: ✅ Firebase Messaging delegate set")
         
         // Request notification permissions for phone auth
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { granted, error in
@@ -134,6 +139,10 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         let tokenString = deviceToken.map { String(format: "%02x", $0) }.joined()
         UserDefaults.standard.set(tokenString, forKey: "APNsTokenString")
         print("🔍 DEBUG: ✅ APNs token string saved for debugging")
+        
+        // Also pass the token to Firebase Messaging
+        Messaging.messaging().apnsToken = deviceToken
+        print("🔍 DEBUG: ✅ APNs token set for Firebase Messaging")
     }
     
     func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
@@ -187,7 +196,45 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
     // Handle user interaction with notifications
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
         print("🔍 DEBUG: User interacted with notification: \(response.notification.request.content.userInfo)")
+        
+        // Handle message notification tap
+        let userInfo = response.notification.request.content.userInfo
+        if let chatId = userInfo["chatId"] as? String {
+            print("🔍 DEBUG: Opening chat: \(chatId)")
+            // Post notification to navigate to chat
+            NotificationCenter.default.post(name: NSNotification.Name("OpenChat"), object: chatId)
+        }
+        
         completionHandler()
+    }
+    
+    // MARK: - MessagingDelegate
+    
+    // Handle FCM token updates
+    func messaging(_ messaging: Messaging, didReceiveRegistrationToken fcmToken: String?) {
+        print("🔍 DEBUG: 🎉 FCM registration token received")
+        
+        guard let fcmToken = fcmToken else {
+            print("🔍 DEBUG: ❌ FCM token is nil")
+            return
+        }
+        
+        print("🔍 DEBUG: ✅ FCM Token: \(fcmToken)")
+        
+        // Store FCM token
+        UserDefaults.standard.set(fcmToken, forKey: "FCMToken")
+        
+        // Update token in Firebase for current user
+        if let userId = Auth.auth().currentUser?.uid {
+            Task {
+                do {
+                    try await FirebaseService.shared.updateFCMToken(fcmToken)
+                    print("🔍 DEBUG: ✅ FCM token stored in Firestore for user: \(userId)")
+                } catch {
+                    print("🔍 DEBUG: ❌ Failed to store FCM token: \(error)")
+                }
+            }
+        }
     }
 }
 

@@ -4,108 +4,50 @@ struct ChatRowView: View {
     let chat: Chat
     var parallax: CGFloat = 0
     var onAvatarTap: (() -> Void)?
-    @Environment(\.colorScheme) private var colorScheme
+    
+    // Layout constants
+    private let rowLeadingPadding: CGFloat = 10
+    private let listRowLeadingInset: CGFloat = 10 // From listRowInsets in ChatsListView
+    private let dotSize: CGFloat = 8
+    
+    // Debug overlay
+    @AppStorage("showLayoutDebugOverlays") private var showDebugOverlay = false
     
     var body: some View {
-        HStack(spacing: 16) {
-            // Avatar
-            ZStack {
-                if let avatarURLString = chat.otherParticipantAvatarURL, let avatarURL = URL(string: avatarURLString) {
-                    // Show actual user avatar
-                    CachedAsyncImage(url: avatarURL) { image in
-                        image
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                            .frame(width: 50, height: 50)
-                            .clipShape(Circle())
-                    } placeholder: {
-                        // Placeholder while loading
-                        Circle()
-                            .fill(Color(.systemGray5))
-                            .frame(width: 50, height: 50)
-                            .overlay {
-                                ProgressView()
-                                    .scaleEffect(0.7)
-                            }
-                    }
-                } else {
-                    // Default avatar with initials
-                    Circle()
-                        .fill(Color(.systemGray5))
-                        .frame(width: 50, height: 50)
-                    
-                    Color.clear
-                        .frame(width: 50, height: 50)
-                        .glassEffect(.regular, in: Circle())
-                    
-                    Text(String(chat.displayTitle.prefix(1)).uppercased())
-                        .font(.headline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.primary)
-                }
-            }
-            .onTapGesture {
-                // Only show profile for 1:1 chats
-                if !chat.isGroupChat {
-                    onAvatarTap?()
-                }
-            }
-            .overlay(alignment: .topTrailing) {
-                if chat.unreadCount > 0 {
-                    Circle()
-                        .fill(colorScheme == .light ? Color.red : Color.blue)
-                        .frame(width: 22, height: 22)
-                        .overlay {
-                            Text(badgeText(chat.unreadCount))
-                                .font(.caption2)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.white)
-                                .minimumScaleFactor(0.6)
-                                .lineLimit(1)
-                        }
-                        .offset(x: 7, y: -7)
-                }
+        ZStack(alignment: .topLeading) {
+            // Unread indicator dot - positioned to the left of avatar
+            if chat.unreadCount > 0 {
+                let totalLeadingSpace = listRowLeadingInset + rowLeadingPadding
+                let dotOffset = totalLeadingSpace / 2 - dotSize / 2
+                let verticalOffset = CardLayoutConstants.topPadding + (CardLayoutConstants.avatarSize / 2) - (dotSize / 2)
+                
+                Circle()
+                    .fill(Color.blue)
+                    .frame(width: dotSize, height: dotSize)
+                    .offset(x: dotOffset, y: verticalOffset)
             }
             
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(alignment: .center) {
-                    Text(chat.displayTitle)
-                        .font(.headline)
-                        .fontWeight(.semibold)
-                        .lineLimit(1)
-                    
-                    Spacer()
-                    
-                    HStack(spacing: 4) {
-                        Text(formatTime(chat.lastMessageTime))
-                            .font(.subheadline)
-                            .monospacedDigit()
-                            .foregroundColor(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                        
-                        Image(systemName: "chevron.right")
-                            .font(.subheadline) // Match the time font size
-                            .foregroundColor(.secondary)
-                    }
-                    .padding(.trailing, 16)
-                }
-                
-                HStack {
-                    Text(chat.lastMessagePreview)
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                    
-                    Spacer()
-                }
+            VStack(alignment: .leading, spacing: 0) {
+                // Use PostHeader component with message preview in username slot
+                PostHeader(
+                    avatarURL: chat.otherParticipantAvatarURL,
+                    displayName: chat.displayTitle,
+                    username: chat.lastMessagePreview, // Message preview goes in username position
+                    badgeType: chat.isGroupChat ? nil : chat.otherParticipantBadgeType,
+                    timestamp: formatTime(chat.lastMessageTime),
+                    trailingIcon: "chevron.right",
+                    showUsernamePrefix: false, // Don't show "@" for message preview
+                    onAvatarTap: !chat.isGroupChat ? onAvatarTap : nil,
+                    showDebugOverlay: showDebugOverlay
+                )
+                .padding(.trailing, 10)
             }
-            .frame(maxHeight: .infinity, alignment: .center)
         }
         .offset(y: 0)
-        .padding(.leading, 16)
+        .padding(.leading, rowLeadingPadding)
         .padding(.trailing, 0) // No trailing padding to allow time to extend to edge
+        .padding(.top, CardLayoutConstants.topPadding)
+        .padding(.bottom, CardLayoutConstants.bottomPadding)
         .contentShape(RoundedRectangle(cornerRadius: 18))
         .compositingGroup()
         // Parallax is now applied at the row container level in ChatsListView
@@ -124,11 +66,6 @@ struct ChatRowView: View {
         }
         
         return formatter.string(from: date)
-    }
-
-    private func badgeText(_ count: Int) -> String {
-        if count > 99 { return "99+" }
-        return "\(count)"
     }
 }
 

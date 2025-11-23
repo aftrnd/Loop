@@ -51,18 +51,22 @@ struct AuthenticationView: View {
             Spacer()
             
             ZStack {
+                // Orbiting particle animation (background)
+                OrbitingParticlesView(baseColor: .blue, tiltX: 0.3, tiltY: -0.2)
+                    .frame(width: 600, height: 600)
+                    .allowsHitTesting(false)
+                
+                // Native iOS liquid glass circle (on top of particles)
                 Circle()
-                    .fill(Color(.systemGray5))
                     .frame(width: 120, height: 120)
+                    .glassEffect(.clear)
                 
-                Color.clear
-                    .frame(width: 120, height: 120)
-                    .glassEffect(.regular, in: Circle())
-                
+                // Progress indicator (on top of everything)
                 ProgressView()
                     .scaleEffect(1.5)
                     .tint(.primary)
             }
+            .frame(width: 120, height: 120)
             
             VStack(spacing: 8) {
                 Text("Loading...")
@@ -112,7 +116,7 @@ struct AuthenticationView: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 16)
             .background(
-                LinearGradient(colors: [.blue, .purple], startPoint: .topLeading, endPoint: .bottomTrailing)
+                Color.blue
                     .clipShape(RoundedRectangle(cornerRadius: 16))
             )
             

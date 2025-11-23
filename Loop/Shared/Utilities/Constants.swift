@@ -7,8 +7,18 @@ struct AppConstants {
         static let spacing: CGFloat = 8
     }
     
+    struct Layout {
+        // Standard list content margin to align with navigation bar (shared across all feeds)
+        static let listContentTopMargin: CGFloat = -32
+    }
+    
     struct Animation {
         static let defaultDuration: Double = 0.3
         static let springDamping: Double = 0.8
+    }
+    
+    struct Debug {
+        /// Enable to log frame coordinates for layout debugging
+        static let logFrameCoordinates: Bool = false
     }
 }

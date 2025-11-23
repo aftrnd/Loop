@@ -4,55 +4,53 @@ import UIKit
 struct MessageInputView: View {
     @Binding var messageText: String
     let onSend: () -> Void
-    @FocusState private var isFocused: Bool
+    var onTextChanged: (() -> Void)? = nil
+    var isFocused: FocusState<Bool>.Binding
     
     var body: some View {
-        HStack(spacing: 12) {
-            TextField("Message", text: $messageText)
+        HStack(spacing: 8) {
+            // Text field matching iOS 26 search field style
+            TextField("Message", text: $messageText, axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(.body)
+                .lineLimit(1...6)
                 .submitLabel(.send)
                 .onSubmit(onSend)
                 .textInputAutocapitalization(.sentences)
                 .disableAutocorrection(false)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .lineLimit(1)
-                .focused($isFocused)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(
-                    Color.clear
-                        .glassEffect(.regular, in: Capsule())
-                        .allowsHitTesting(false)
-                )
+                .focused(isFocused)
+                .onChange(of: messageText) { _, _ in
+                    onTextChanged?()
+                }
             
+            // Send button inside the text field
             Button(action: onSend) {
                 Image(systemName: "arrow.up.circle.fill")
-                    .font(.title2)
-                    .foregroundColor(messageText.isEmpty ? Color.secondary : Color.white)
-                    .overlay(
-                        LinearGradient(colors: [.blue, .purple], startPoint: .topLeading, endPoint: .bottomTrailing)
-                            .mask(
-                                Image(systemName: "arrow.up.circle.fill").font(.title2)
-                            )
-                            .opacity(messageText.isEmpty ? 0 : 1)
-                    )
+                    .font(.system(size: 28))
+                    .foregroundStyle(messageText.isEmpty ? Color.gray.opacity(0.3) : Color.blue)
             }
             .disabled(messageText.isEmpty)
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 12)
         .padding(.vertical, 8)
+        .frame(minHeight: 38)
+        .background(
+            Color.clear
+                .glassEffect(.regular, in: Capsule())
+        )
+        .padding(.horizontal, isFocused.wrappedValue ? 0 : 20)
+        .animation(.easeInOut(duration: 0.25), value: isFocused.wrappedValue)
     }
 }
 
 #Preview {
-    @Previewable @State var messageText = ""
     struct Host: View {
         @State var text: String = ""
+        @FocusState var focused: Bool
         var body: some View {
             VStack {
                 Spacer()
-                MessageInputView(messageText: $text) {}
+                MessageInputView(messageText: $text, onSend: {}, isFocused: $focused)
             }
             .background(Color(.systemBackground))
         }

@@ -11,8 +11,11 @@ struct ChatsListView: View {
     @State private var showNewMessage = false
     @State private var showProfile = false
     @State private var profileUserToShow: ProfileUser?
+    @State private var chatToDelete: Chat?
+    @State private var showDeleteConfirmation = false
     @Environment(\.colorScheme) private var colorScheme
     @ObservedObject private var debugManager = DebugManager.shared
+    @StateObject private var notificationManager = NotificationNavigationManager.shared
     
     var body: some View {
         mainView
@@ -28,7 +31,12 @@ struct ChatsListView: View {
     
     private var mainView: some View {
         NavigationStack(path: $navigationPath) {
-            contentView
+            ZStack {
+                Color(.systemBackground)
+                    .ignoresSafeArea()
+                
+                chatListView
+            }
                 .navigationTitle("")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
@@ -49,6 +57,10 @@ struct ChatsListView: View {
                     
                     ToolbarItem(placement: .topBarTrailing) {
                         Button(action: {
+                            // Haptic feedback
+                            let impactFeedback = UIImpactFeedbackGenerator(style: .light)
+                            impactFeedback.impactOccurred()
+                            
                             showProfile = true
                         }) {
                             Image(systemName: "person")
@@ -72,34 +84,62 @@ struct ChatsListView: View {
         }
         .sheet(isPresented: $showProfile) {
             ProfileView()
-                .presentationDetents([.height(340), .large])
-                .presentationDragIndicator(.visible)
         }
         .sheet(item: $profileUserToShow) { profileUser in
             ProfileView(userId: profileUser.userId)
-                .presentationDetents([.height(340), .large])
-                .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $debugManager.isDebugMenuVisible) {
             DebugMenuView()
         }
-    }
-    
-    private var contentView: some View {
-        ZStack {
-            Color(.systemBackground)
-                .ignoresSafeArea()
-            
-            chatListView
-            fadeOverlays
+        .onChange(of: notificationManager.chatToOpen) { _, chatId in
+            guard let chatId = chatId else { return }
+            handleNotificationNavigation(chatId: chatId)
+        }
+        .alert("Delete Conversation?", isPresented: $showDeleteConfirmation, presenting: chatToDelete) { chat in
+            Button("Delete", role: .destructive) {
+                Task {
+                    try? await viewModel.deleteChat(withId: chat.id)
+                }
+            }
+            Button("Cancel", role: .cancel) {
+                chatToDelete = nil
+            }
+        } message: { chat in
+            Text("This will remove the conversation from your list. Your messages will still be there if you message \(chat.displayTitle) again.\n\nThis won't delete the conversation for the other person.")
         }
     }
+    
+    private func handleNotificationNavigation(chatId: String) {
+        // Find the chat in our list
+        let allChats = viewModel.pinned + viewModel.recent
+        guard let chat = allChats.first(where: { $0.id.uuidString == chatId }) else {
+            print("⚠️ Chat not found for notification: \(chatId)")
+            notificationManager.clearNavigation()
+            return
+        }
+        
+        print("📱 Navigating to chat: \(chat.displayTitle)")
+        navigationPath.append(ChatsRoute.conversation(chat))
+        notificationManager.clearNavigation()
+    }
+    
     
     private var chatListView: some View {
         GeometryReader { scrollGeometry in
             List {
-                scrollSentinel
-                
+                // Scroll sentinel
+                GeometryReader { geo in
+                    let topMinY = geo.frame(in: .named("loopScroll")).minY
+                    Color.clear
+                        .onChange(of: topMinY) { _, newValue in
+                            let offset = max(0, -newValue)
+                            scrollOffset = offset
+                        }
+                }
+                .frame(height: 0)
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets())
                 // Show loading indicator while initial data loads
                 if viewModel.isLoadingInitialData {
                     HStack {
@@ -130,27 +170,33 @@ struct ChatsListView: View {
                     .padding(.bottom, 8)
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
-                    .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
+                    .listRowInsets(EdgeInsets(top: 0, leading: 10, bottom: 0, trailing: 10))
                 }
                 
                 ForEach(Array(viewModel.recent.enumerated()), id: \.element.id) { index, chat in
-                    ChatItemView(
-                        chat: chat,
-                        index: index,
-                        totalCount: viewModel.recent.count,
-                        isLastItem: index == viewModel.recent.count - 1,
-                        isAtListStart: index == 0 && scrollOffset <= 32,
-                        hasPinnedMessages: !viewModel.pinned.isEmpty,
-                        scrollOffset: scrollOffset,
-                        contentHeight: contentHeight,
-                        scrollViewHeight: scrollViewHeight,
-                        navigationPath: $navigationPath,
-                        profileUserToShow: $profileUserToShow
-                    )
-                    .frame(height: 84)
+                    ChatRowView(chat: chat, onAvatarTap: {
+                        // Open the other user's profile for 1:1 chats
+                        if let otherUserId = chat.otherParticipantId, !chat.isGroupChat {
+                            print("👆 Avatar tapped - opening profile for user: \(otherUserId)")
+                            profileUserToShow = ProfileUser(userId: otherUserId)
+                        }
+                    })
+                    .overlay(alignment: .bottom) {
+                        if index < viewModel.recent.count - 1 {
+                            Rectangle()
+                                .fill(CardLayoutConstants.dividerColor)
+                                .frame(height: CardLayoutConstants.dividerHeight)
+                                .padding(.leading, 82)
+                                .padding(.trailing, 10)
+                        }
+                    }
+                    .contentShape(RoundedRectangle(cornerRadius: 18))
+                    .onTapGesture {
+                        navigationPath.append(ChatsRoute.conversation(chat))
+                    }
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
-                    .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
+                    .listRowInsets(EdgeInsets(top: 0, leading: 10, bottom: 0, trailing: 10))
                     .swipeActions(edge: .leading, allowsFullSwipe: false) {
                         Button {
                             viewModel.pinChat(chat)
@@ -161,102 +207,33 @@ struct ChatsListView: View {
                     }
                     .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                         Button {
-                            Task {
-                                try? await viewModel.deleteChat(withId: chat.id)
-                            }
+                            chatToDelete = chat
+                            showDeleteConfirmation = true
                         } label: {
                             Image(systemName: "trash")
                         }
                         .tint(.red)
                     }
                 }
-                
-                // Bottom sentinel to track content height
-                GeometryReader { geo in
-                    Color.clear
-                        .onChange(of: geo.frame(in: .named("chatScroll")).maxY) { _, newValue in
-                            contentHeight = newValue
-                        }
-                }
-                .frame(height: 0)
-                .listRowSeparator(.hidden)
-                .listRowBackground(Color.clear)
-                .listRowInsets(EdgeInsets())
+            
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .listSectionSeparator(.hidden)
-            .coordinateSpace(name: "chatScroll")
+            .coordinateSpace(name: "loopScroll")
             .scrollIndicators(.hidden)
-            .contentMargins(.top, -32)
+            .contentMargins(.top, AppConstants.Layout.listContentTopMargin)
             .refreshable {
                 await refreshChats()
             }
-            .onAppear {
-                scrollViewHeight = scrollGeometry.size.height
-            }
-            .onChange(of: scrollGeometry.size.height) { _, newValue in
-                scrollViewHeight = newValue
-            }
         }
     }
     
-    private var scrollSentinel: some View {
-        GeometryReader { geo in
-            let topMinY = geo.frame(in: .named("chatScroll")).minY
-            Color.clear
-                .onChange(of: topMinY) { _, newValue in
-                    let offset = max(0, -newValue)
-                    scrollOffset = offset
-                    topDistance = offset
-                }
-        }
-        .frame(height: 0)
-        .listRowSeparator(.hidden)
-        .listRowBackground(Color.clear)
-        .listRowInsets(EdgeInsets())
-    }
-    
-    
-    private var fadeOverlays: some View {
-        VStack {
-            LinearGradient(
-                colors: [
-                    Color(.systemBackground),
-                    Color(.systemBackground).opacity(0)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .frame(height: 40)
-            .allowsHitTesting(false)
-            
-            Spacer()
-            
-            LinearGradient(
-                colors: [
-                    Color(.systemBackground).opacity(0),
-                    Color(.systemBackground)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .frame(height: 40)
-            .allowsHitTesting(false)
-        }
-        .ignoresSafeArea(.container, edges: .vertical)
-    }
     
     private var toolbarContent: some View {
         Text("Messages")
             .font(.headline)
             .fontWeight(.semibold)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(
-                Color.clear
-                    .glassEffect(.regular, in: Capsule())
-            )
     }
 }
 
@@ -312,84 +289,94 @@ struct PinnedMessagesView: View {
     }
     
     private func pinnedChatItem(chat: Chat, isLongPressed: Bool, profileUserToShow: Binding<ProfileUser?>) -> some View {
-        VStack(spacing: 8) {
-            ZStack {
-                if let avatarURLString = chat.otherParticipantAvatarURL, let avatarURL = URL(string: avatarURLString) {
-                    // Show actual user avatar
-                    CachedAsyncImage(url: avatarURL) { image in
-                        image
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                            .frame(width: 90, height: 90)
-                            .clipShape(Circle())
-                    } placeholder: {
-                        // Placeholder while loading
+        let avatarSize: CGFloat = 90
+        let dotSize: CGFloat = 10
+        
+        return VStack(spacing: 8) {
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    // Unread indicator dot - positioned to the left of avatar
+                    if chat.unreadCount > 0 && !isLongPressed {
+                        let containerWidth = geometry.size.width
+                        let leadingSpace = (containerWidth - avatarSize) / 2
+                        let dotOffset = -(leadingSpace / 2 + dotSize / 2)
+                        
                         Circle()
-                            .fill(Color(.systemGray5))
-                            .frame(width: 90, height: 90)
-                            .overlay {
-                                ProgressView()
-                            }
+                            .fill(Color.blue)
+                            .frame(width: dotSize, height: dotSize)
+                            .offset(x: dotOffset) // Centered between edge and avatar
                     }
-                } else {
-                    // Default avatar with initials
-                    Circle()
-                        .fill(Color(.systemGray5))
-                        .frame(width: 90, height: 90)
+                    
+                    ZStack {
+                        if let avatarURLString = chat.otherParticipantAvatarURL, let avatarURL = URL(string: avatarURLString) {
+                            // Show actual user avatar
+                            CachedAsyncImage(url: avatarURL) { image in
+                                image
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fill)
+                                    .frame(width: avatarSize, height: avatarSize)
+                                    .clipShape(Circle())
+                            } placeholder: {
+                                // Placeholder while loading
+                                Circle()
+                                    .fill(Color(.systemGray5))
+                                    .frame(width: avatarSize, height: avatarSize)
+                                    .overlay {
+                                        ProgressView()
+                                    }
+                            }
+                        } else {
+                            // Default avatar with initials
+                            Circle()
+                                .fill(Color(.systemGray5))
+                                .frame(width: avatarSize, height: avatarSize)
 
-                    Color.clear
-                        .frame(width: 90, height: 90)
-                        .glassEffect(.regular, in: Circle())
+                            Color.clear
+                                .frame(width: avatarSize, height: avatarSize)
+                                .glassEffect(.regular, in: Circle())
 
-                    Text(String(chat.displayTitle.prefix(1)).uppercased())
-                        .font(.largeTitle)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.primary)
-                }
-            }
-            .onTapGesture(count: 1) {
-                // Avatar tap - show profile for 1:1 chats
-                if !chat.isGroupChat, let otherUserId = chat.otherParticipantId {
-                    print("👆 Pinned avatar tapped - opening profile for user: \(otherUserId)")
-                    profileUserToShow.wrappedValue = ProfileUser(userId: otherUserId)
-                    print("   profileUserToShow set to: \(profileUserToShow.wrappedValue?.userId ?? "nil")")
-                }
-            }
-            .overlay(alignment: .topTrailing) {
-                if isLongPressed {
-                    Circle()
-                        .fill(Color.clear)
-                        .frame(width: 30, height: 30)
-                        .overlay {
-                            Image(systemName: "minus")
-                                .font(.system(size: 16, weight: .bold))
+                            Text(String(chat.displayTitle.prefix(1)).uppercased())
+                                .font(.largeTitle)
+                                .fontWeight(.semibold)
                                 .foregroundColor(.primary)
                         }
-                        .background(
+                    }
+                    .frame(width: geometry.size.width, height: avatarSize)
+                    .overlay(alignment: .topTrailing) {
+                        if isLongPressed {
                             Circle()
-                                .fill(Color(.systemBackground))
-                                .glassEffect(.regular, in: Circle())
-                        )
-                        .onTapGesture {
-                            withAnimation {
-                                viewModel.unpinChat(chat)
-                                longPressedChat = nil
-                            }
+                                .fill(Color.clear)
+                                .frame(width: 30, height: 30)
+                                .overlay {
+                                    Image(systemName: "minus")
+                                        .font(.system(size: 16, weight: .bold))
+                                        .foregroundColor(.primary)
+                                }
+                                .background(
+                                    Circle()
+                                        .fill(Color(.systemBackground))
+                                        .glassEffect(.regular, in: Circle())
+                                )
+                                .onTapGesture {
+                                    withAnimation {
+                                        viewModel.unpinChat(chat)
+                                        longPressedChat = nil
+                                    }
+                                }
+                                .offset(x: 8, y: -8)
                         }
-                        .offset(x: 8, y: -8)
-                } else if chat.unreadCount > 0 {
-                    Circle()
-                        .fill(colorScheme == .light ? Color.red : Color.blue)
-                        .frame(width: 30, height: 30)
-                        .overlay {
-                            Text("\(min(chat.unreadCount, 99))")
-                                .font(.caption)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.white)
+                    }
+                    .onTapGesture(count: 1) {
+                        // Avatar tap - show profile for 1:1 chats
+                        if !chat.isGroupChat, let otherUserId = chat.otherParticipantId {
+                            print("👆 Pinned avatar tapped - opening profile for user: \(otherUserId)")
+                            profileUserToShow.wrappedValue = ProfileUser(userId: otherUserId)
+                            print("   profileUserToShow set to: \(profileUserToShow.wrappedValue?.userId ?? "nil")")
                         }
-                        .offset(x: 8, y: -8)
+                    }
                 }
             }
+            .frame(height: avatarSize)
             
             Text(chat.displayTitle)
                 .font(.caption)
@@ -397,6 +384,13 @@ struct PinnedMessagesView: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .frame(width: 105)
+            
+            // Badge if user has one (only for 1:1 chats)
+            if !chat.isGroupChat, let badgeType = chat.otherParticipantBadgeType {
+                Image(systemName: badgeType.iconName)
+                    .font(.system(size: 10))
+                    .foregroundColor(badgeType.color)
+            }
         }
         .contentShape(Rectangle())
         .onTapGesture {
@@ -413,123 +407,7 @@ struct PinnedMessagesView: View {
     }
 }
 
-struct ChatItemView: View {
-    let chat: Chat
-    let index: Int
-    let totalCount: Int
-    let isLastItem: Bool
-    let isAtListStart: Bool
-    let hasPinnedMessages: Bool
-    let scrollOffset: CGFloat
-    let contentHeight: CGFloat
-    let scrollViewHeight: CGFloat
-    @Binding var navigationPath: NavigationPath
-    @Binding var profileUserToShow: ProfileUser?
-    
-    var body: some View {
-        GeometryReader { geo in
-            createChatItem(geo: geo)
-        }
-    }
-    
-    private func createChatItem(geo: GeometryProxy) -> some View {
-        let midY = geo.frame(in: .global).midY
-        let screenMid = UIScreen.main.bounds.midY
-        let screen = UIScreen.main.bounds
-        let edgeZone: CGFloat = max(120, screen.height * 0.18)
-        
-        // Calculate distance factors
-        let distanceFromTop = max(0, midY - screen.minY)
-        let distanceFromBottom = max(0, screen.maxY - midY)
-        let topFactor = max(0, 1 - distanceFromTop / edgeZone)
-        let bottomFactor = max(0, 1 - distanceFromBottom / edgeZone)
-        
-        let rotationSign: CGFloat = topFactor >= bottomFactor ? 1 : -1
-        
-        // Better scroll position detection
-        let itemFrame = geo.frame(in: .named("chatScroll"))
-        
-        // Calculate if we're at the absolute bottom by checking if the last item is fully visible
-        let isAtAbsoluteBottom = isLastItem && itemFrame.maxY <= scrollViewHeight + 10 // 10px tolerance
-        let isAtAbsoluteTop = scrollOffset <= 10 // Very close to top
-        
-        // Effect gates - disable at absolute boundaries
-        var topEffectGate: CGFloat = 1
-        var bottomEffectGate: CGFloat = 1
-        
-        // At the very top of the list
-        // When there are no pinned messages, the first item should still get parallax effect
-        // because it's not at the visual "top" of the interface
-        if isAtListStart && isAtAbsoluteTop && !hasPinnedMessages {
-            // Don't disable top effect when there are no pinned messages
-            topEffectGate = 1
-        } else if isAtListStart && isAtAbsoluteTop {
-            // Only disable when there are pinned messages and we're at the very top
-            topEffectGate = 0
-        }
-        
-        // At the very bottom of the list - completely disable effect when at bottom
-        if isAtAbsoluteBottom {
-            bottomEffectGate = 0
-        }
-        
-        // Apply effects with smoother transitions
-        let effectiveTop = topFactor * topEffectGate
-        let effectiveBottom = bottomFactor * bottomEffectGate
-        let effective = min(1, max(effectiveTop, effectiveBottom))
-        
-        // Calculate transforms
-        let scale = 1 - (0.04 * effective)
-        let rotation = Angle(degrees: rotationSign * 4 * effective)
-        let opacity = 0.9 + (1 - effective) * 0.1
-        let blur = 4 * effective
-        let parallaxDistance = (midY - screenMid) / 24
-        let parallax = parallaxDistance * effective
-        
-        return ChatRowView(chat: chat,             onAvatarTap: {
-                // Open the other user's profile for 1:1 chats
-                if let otherUserId = chat.otherParticipantId, !chat.isGroupChat {
-                    print("👆 Avatar tapped - opening profile for user: \(otherUserId)")
-                    profileUserToShow = ProfileUser(userId: otherUserId)
-                    print("   profileUserToShow set to: \(profileUserToShow?.userId ?? "nil")")
-                }
-            })
-            .frame(height: 84)
-            .frame(maxWidth: .infinity)
-            .compositingGroup()
-            .listRowSeparator(.hidden)
-            .contentShape(RoundedRectangle(cornerRadius: 18))
-            .onTapGesture {
-                navigationPath.append(ChatsRoute.conversation(chat))
-            }
-        .overlay(alignment: .bottom) {
-            if index < totalCount - 1 {
-                Rectangle()
-                    .fill(Color(.separator))
-                    .frame(height: 1.15)
-                    .padding(.leading, 82)
-                    .padding(.trailing, 16)
-            }
-        }
-        .compositingGroup()
-        .scaleEffect(scale)
-        .rotation3DEffect(rotation, axis: (x: 1, y: 0, z: 0), anchor: .center)
-        .opacity(opacity)
-        .blur(radius: blur)
-        .offset(y: parallax)
-    }
-}
 
-// Helper struct for presenting user profiles
-struct ProfileUser: Identifiable {
-    let id: String
-    let userId: String
-    
-    init(userId: String) {
-        self.id = userId
-        self.userId = userId
-    }
-}
 
 #Preview {
     NavigationStack {
