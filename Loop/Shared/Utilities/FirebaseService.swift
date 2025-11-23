@@ -1329,4 +1329,52 @@ class FirebaseService {
             height: Double(image.size.height)
         )
     }
+    
+    // MARK: - Profile Feed Operations
+    
+    /// Fetches all loops (posts and replies) created by a specific user
+    func getUserLoops(userId: String) async throws -> [Loop] {
+        let snapshot = try await db.collection("loops")
+            .whereField("authorId", isEqualTo: userId)
+            .order(by: "createdAt", descending: true)
+            .getDocuments()
+        
+        var loops: [Loop] = []
+        for doc in snapshot.documents {
+            if let loop = try? await parseLoopFromDocument(doc) {
+                loops.append(loop)
+            }
+        }
+        
+        return loops
+    }
+    
+    /// Fetches all loops liked by a specific user
+    func getUserLikedLoops(userId: String) async throws -> [Loop] {
+        // Note: Firestore doesn't support querying arrays directly for "contains"
+        // We need to fetch all loops and filter client-side, or use a different data structure
+        // For now, we'll fetch all loops and filter (this is not efficient for large datasets)
+        // In production, you might want to maintain a separate collection of user likes
+        
+        let snapshot = try await db.collection("loops")
+            .order(by: "createdAt", descending: true)
+            .limit(to: 1000) // Limit to prevent excessive reads
+            .getDocuments()
+        
+        var likedLoops: [Loop] = []
+        for doc in snapshot.documents {
+            let data = doc.data()
+            guard let likes = data["likes"] as? [String],
+                  likes.contains(userId) else {
+                continue
+            }
+            
+            if let loop = try? await parseLoopFromDocument(doc) {
+                likedLoops.append(loop)
+            }
+        }
+        
+        // Sort by creation date (most recent first)
+        return likedLoops.sorted { $0.createdAt > $1.createdAt }
+    }
 }

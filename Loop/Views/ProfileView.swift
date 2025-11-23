@@ -46,9 +46,18 @@ struct ProfileView: View {
     @State private var contentHeight: CGFloat = 0
     @State private var currentDetent: PresentationDetent = .height(366)
     
+    // Profile feed
+    @StateObject private var feedViewModel: ProfileFeedViewModel
+    @State private var selectedTab: ProfileTab = .posts
+    
     // Computed property to check if sheet is fully expanded
     private var isSheetFullyExpanded: Bool {
         currentDetent == .large
+    }
+    
+    enum ProfileTab: String, CaseIterable {
+        case posts = "Posts"
+        case likes = "Likes"
     }
     
     // Layout constants
@@ -90,6 +99,9 @@ struct ProfileView: View {
         if userId != nil {
             _isLoading = State(initialValue: true)
         }
+        // Initialize feed view model with the target user ID or current user
+        let targetUserId = userId ?? Auth.auth().currentUser?.uid ?? ""
+        _feedViewModel = StateObject(wrappedValue: ProfileFeedViewModel(userId: targetUserId))
         print("🎯 ProfileView.init(userId: \(userId ?? "nil"))")
     }
     
@@ -98,51 +110,96 @@ struct ProfileView: View {
             GeometryReader { geometry in
                 let bannerHeight: CGFloat = 180
                 
-                ScrollView {
+                if isSheetFullyExpanded && currentUser != nil {
+                    // Show tabs when fully expanded
                     VStack(spacing: 0) {
-                        if let user = currentUser {
-                            // Profile content - show when user is loaded
-                            profileContent(for: user, bannerHeight: bannerHeight, geometry: geometry)
-                        } else if isLoading {
-                            // Loading state - show while fetching
-                            VStack(spacing: 20) {
-                                ProgressView()
-                                    .scaleEffect(1.5)
-                                    .padding(.top, 100)
-                                Text("Loading profile...")
-                                    .foregroundColor(.secondary)
+                        // Profile header (compact when expanded)
+                        profileHeaderCompact
+                        
+                        // Tabs
+                        profileTabs
+                        
+                        // Tab content
+                        Group {
+                            if selectedTab == .posts {
+                                profilePostsTab
+                            } else {
+                                profileLikesTab
                             }
-                            .frame(maxWidth: .infinity)
-                            .frame(minHeight: 400)
-                        } else if loadError != nil {
-                            // Error state
-                            VStack(spacing: 20) {
-                                Image(systemName: "exclamationmark.triangle")
-                                    .font(.system(size: 50))
-                                    .foregroundColor(.orange)
-                                Text("Failed to load profile")
-                                    .font(.headline)
-                                Text(loadError ?? "Unknown error")
-                                    .font(.subheadline)
-                                    .foregroundColor(.secondary)
-                                    .multilineTextAlignment(.center)
-                                    .padding(.horizontal, 40)
-                                Button("Retry") {
-                                    loadCurrentUser()
+                        }
+                    }
+                } else {
+                    // Show normal scroll view when not fully expanded
+                    ScrollView {
+                        VStack(spacing: 0) {
+                            if let user = currentUser {
+                                // Profile content - show when user is loaded
+                                profileContent(for: user, bannerHeight: bannerHeight, geometry: geometry)
+                            } else if isLoading {
+                                // Loading state - show while fetching
+                                VStack(spacing: 20) {
+                                    ProgressView()
+                                        .scaleEffect(1.5)
+                                        .padding(.top, 100)
+                                    Text("Loading profile...")
+                                        .foregroundColor(.secondary)
                                 }
-                                .buttonStyle(.borderedProminent)
+                                .frame(maxWidth: .infinity)
+                                .frame(minHeight: 400)
+                            } else if loadError != nil {
+                                // Error state
+                                VStack(spacing: 20) {
+                                    Image(systemName: "exclamationmark.triangle")
+                                        .font(.system(size: 50))
+                                        .foregroundColor(.orange)
+                                    Text("Failed to load profile")
+                                        .font(.headline)
+                                    Text(loadError ?? "Unknown error")
+                                        .font(.subheadline)
+                                        .foregroundColor(.secondary)
+                                        .multilineTextAlignment(.center)
+                                        .padding(.horizontal, 40)
+                                    Button("Retry") {
+                                        loadCurrentUser()
+                                    }
+                                    .buttonStyle(.borderedProminent)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .frame(minHeight: 400)
+                                .padding(.top, 100)
                             }
-                            .frame(maxWidth: .infinity)
-                            .frame(minHeight: 400)
-                            .padding(.top, 100)
+                        }
+                    }
+                    .scrollIndicators(.hidden)
+                    .scrollClipDisabled()
+                    .ignoresSafeArea(edges: .top)
+                    .conditionalRefreshable(isEnabled: isSheetFullyExpanded) {
+                        await refreshProfile()
+                    }
+                }
+            }
+            .onChange(of: isSheetFullyExpanded) { _, isExpanded in
+                if isExpanded {
+                    // Load feed data when expanded
+                    Task {
+                        if selectedTab == .posts {
+                            await feedViewModel.loadUserPosts()
+                        } else {
+                            await feedViewModel.loadUserLikedPosts()
                         }
                     }
                 }
-                .scrollIndicators(.hidden)
-                .scrollClipDisabled()
-                .ignoresSafeArea(edges: .top)
-                .conditionalRefreshable(isEnabled: isSheetFullyExpanded) {
-                    await refreshProfile()
+            }
+            .onChange(of: selectedTab) { _, newTab in
+                // Load data when tab changes
+                if isSheetFullyExpanded {
+                    Task {
+                        if newTab == .posts {
+                            await feedViewModel.loadUserPosts()
+                        } else {
+                            await feedViewModel.loadUserLikedPosts()
+                        }
+                    }
                 }
             }
             .navigationTitle("")
@@ -1061,6 +1118,179 @@ struct ProfileView: View {
             try Auth.auth().signOut()
         } catch {
             print("Error signing out: \(error.localizedDescription)")
+        }
+    }
+    
+    // MARK: - Expanded Profile Views
+    
+    private var profileHeaderCompact: some View {
+        VStack(spacing: 0) {
+            if let user = currentUser {
+                // Compact banner
+                bannerContent
+                    .frame(height: 120)
+                
+                // Compact profile info
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        avatarView
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        
+                        Spacer()
+                    }
+                    .padding(.leading, avatarLeadingPadding)
+                    .offset(y: avatarOverlapOffset)
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        displayNameView
+                        
+                        usernameView
+                        
+                        // Follower counts
+                        HStack(spacing: 16) {
+                            HStack(spacing: 4) {
+                                Text("\(user.followerCount)")
+                                    .font(.callout)
+                                    .fontWeight(.heavy)
+                                    .foregroundColor(.primary)
+                                Text("Followers")
+                                    .font(.callout)
+                                    .fontWeight(.regular)
+                                    .foregroundStyle(.secondary)
+                            }
+                            
+                            HStack(spacing: 4) {
+                                Text("\(user.followingCount)")
+                                    .font(.callout)
+                                    .fontWeight(.heavy)
+                                    .foregroundColor(.primary)
+                                Text("Following")
+                                    .font(.callout)
+                                    .fontWeight(.regular)
+                                    .foregroundStyle(.secondary)
+                            }
+                            
+                            Spacer()
+                        }
+                        
+                        // Bio
+                        if let bio = user.bio, !bio.isEmpty {
+                            Text(bio)
+                                .font(.callout)
+                                .foregroundStyle(.primary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+                }
+                .padding(.bottom, 16)
+            }
+        }
+        .background(Color(.systemBackground))
+    }
+    
+    private var profileTabs: some View {
+        HStack(spacing: 0) {
+            ForEach(ProfileTab.allCases, id: \.self) { tab in
+                Button {
+                    selectedTab = tab
+                } label: {
+                    VStack(spacing: 8) {
+                        Text(tab.rawValue)
+                            .font(.headline)
+                            .foregroundColor(selectedTab == tab ? .primary : .secondary)
+                        
+                        Rectangle()
+                            .fill(selectedTab == tab ? Color.primary : Color.clear)
+                            .frame(height: 2)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .background(Color(.systemBackground))
+    }
+    
+    private var profilePostsTab: some View {
+        profileFeedView(loops: feedViewModel.posts, isLoading: feedViewModel.isLoadingPosts, onRefresh: {
+            await feedViewModel.refreshPosts()
+        })
+    }
+    
+    private var profileLikesTab: some View {
+        profileFeedView(loops: feedViewModel.likedPosts, isLoading: feedViewModel.isLoadingLikes, onRefresh: {
+            await feedViewModel.refreshLikedPosts()
+        })
+    }
+    
+    private func profileFeedView(loops: [Loop], isLoading: Bool, onRefresh: @escaping () async -> Void) -> some View {
+        Group {
+            if isLoading && loops.isEmpty {
+                VStack(spacing: 16) {
+                    ProgressView()
+                    Text("Loading...")
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(.top, 100)
+            } else if loops.isEmpty {
+                VStack(spacing: 16) {
+                    Image(systemName: selectedTab == .posts ? "square.and.pencil" : "heart")
+                        .font(.system(size: 50))
+                        .foregroundColor(.secondary)
+                    Text(selectedTab == .posts ? "No posts yet" : "No likes yet")
+                        .font(.headline)
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(.top, 100)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 16) {
+                        ForEach(loops) { loop in
+                            PostCard(
+                                loop: loop,
+                                isLiked: feedViewModel.isLikedByCurrentUser(loop),
+                                onLike: {
+                                    Task {
+                                        let wasLiked = feedViewModel.isLikedByCurrentUser(loop)
+                                        
+                                        do {
+                                            if wasLiked {
+                                                try await FirebaseService.shared.unlikeLoop(loop.id)
+                                                // Update local state after successful unlike
+                                                feedViewModel.updateLoopLikeState(loopId: loop.id, isLiked: false)
+                                            } else {
+                                                try await FirebaseService.shared.likeLoop(loop.id)
+                                                // Update local state after successful like
+                                                feedViewModel.updateLoopLikeState(loopId: loop.id, isLiked: true)
+                                            }
+                                        } catch {
+                                            print("❌ Error toggling like: \(error.localizedDescription)")
+                                        }
+                                    }
+                                },
+                                onComment: {
+                                    // Handle comment tap
+                                },
+                                onDelete: feedViewModel.canDeleteLoop(loop) ? {
+                                    Task {
+                                        await feedViewModel.deleteLoop(loop)
+                                    }
+                                } : nil,
+                                onAvatarTap: nil
+                            )
+                            .padding(.horizontal, 16)
+                        }
+                    }
+                    .padding(.vertical, 16)
+                }
+                .refreshable {
+                    await onRefresh()
+                }
+            }
         }
     }
 }
