@@ -93,9 +93,9 @@ struct ReplyCardView: View {
     var showAsMainPost: Bool = false // Show comment/share buttons instead of reply button
     var applyInternalPadding: Bool = true // Whether to apply internal padding (false when in thread container)
     
+    @Environment(PhotoViewerManager.self) private var photoViewerManager
+    
     @State private var showingFullText = false
-    @State private var showPhotoViewer = false
-    @State private var selectedPhotoIndex: Int = 0
     @State private var currentMediaIndex: Int = 0
     
     // Debug overlay
@@ -229,14 +229,6 @@ struct ReplyCardView: View {
                     .padding(.bottom, CardLayoutConstants.bottomPadding)
             }
         }
-        .fullScreenCover(isPresented: $showPhotoViewer) {
-            FullScreenPhotoViewer(
-                allMedia: reply.media,
-                startingIndex: selectedPhotoIndex,
-                isPresented: $showPhotoViewer
-            )
-            .presentationBackground(.clear)
-        }
     }
     
     // MARK: - Reusable Components
@@ -282,8 +274,7 @@ struct ReplyCardView: View {
                 SingleReplyMediaView(
                     media: firstMedia,
                     onPhotoTap: {
-                        selectedPhotoIndex = 0
-                        showPhotoViewer = true
+                        photoViewerManager.show(media: reply.media, startingAt: 0)
                     },
                     showDebugOverlay: showDebugOverlay
                 )
@@ -293,8 +284,7 @@ struct ReplyCardView: View {
                     media: reply.media,
                     currentIndex: $currentMediaIndex,
                     onPhotoTap: { index in
-                        selectedPhotoIndex = index
-                        showPhotoViewer = true
+                        photoViewerManager.show(media: reply.media, startingAt: index)
                     },
                     showDebugOverlay: showDebugOverlay
                 )
@@ -331,13 +321,13 @@ struct SingleReplyMediaView: View {
                         .frame(width: geometry.size.width, height: mediaHeight)
                         .clipped()
                 } placeholder: {
-                    RoundedRectangle(cornerRadius: CardLayoutConstants.mediaCornerRadius)
-                        .fill(Color(.systemGray5))
-                        .frame(width: geometry.size.width, height: mediaHeight)
-                        .overlay(
-                            ProgressView()
-                                .scaleEffect(1.0)
-                        )
+                    ZStack {
+                        RoundedRectangle(cornerRadius: CardLayoutConstants.mediaCornerRadius)
+                            .fill(Color(.systemGray5))
+                        ProgressView()
+                            .scaleEffect(1.0)
+                    }
+                    .frame(width: geometry.size.width, height: mediaHeight)
                 }
                 .frame(width: geometry.size.width, height: mediaHeight)
                 .clipShape(RoundedRectangle(cornerRadius: CardLayoutConstants.mediaCornerRadius))
@@ -445,13 +435,13 @@ struct ReplyCarouselPhotoView: View {
                     .frame(width: geometry.size.width, height: height)
                     .clipped()
             } placeholder: {
-                RoundedRectangle(cornerRadius: CardLayoutConstants.mediaCornerRadius)
-                    .fill(Color(.systemGray5))
-                    .frame(width: geometry.size.width, height: height)
-                    .overlay(
-                        ProgressView()
-                            .scaleEffect(1.0)
-                    )
+                ZStack {
+                    RoundedRectangle(cornerRadius: CardLayoutConstants.mediaCornerRadius)
+                        .fill(Color(.systemGray5))
+                    ProgressView()
+                        .scaleEffect(1.0)
+                }
+                .frame(width: geometry.size.width, height: height)
             }
         }
         .frame(height: height)

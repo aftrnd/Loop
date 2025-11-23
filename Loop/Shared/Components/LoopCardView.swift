@@ -90,11 +90,9 @@ struct LoopCardView: View {
     // Animation state persists across view re-renders
     @StateObject private var animationState = LoopCardAnimationState()
     
-    @State private var showingFullText = false
+    @Environment(PhotoViewerManager.self) private var photoViewerManager
     
-    // Photo viewer state
-    @State private var showPhotoViewer = false
-    @State private var selectedPhotoIndex: Int = 0
+    @State private var showingFullText = false
     
     // Carousel state for page indicators
     @State private var currentCarouselIndex: Int = 0
@@ -126,14 +124,6 @@ struct LoopCardView: View {
                             .allowsHitTesting(false)
                         }
                         .zIndex(Double(1000 - cardIndex)) // Higher z-index for earlier posts
-                    }
-                    .fullScreenCover(isPresented: $showPhotoViewer) {
-                        FullScreenPhotoViewer(
-                            allMedia: loop.media,
-                            startingIndex: selectedPhotoIndex,
-                            isPresented: $showPhotoViewer
-                        )
-                        .presentationBackground(.clear)
                     }
             }
         }
@@ -212,8 +202,7 @@ struct LoopCardView: View {
                         media: loop.media,
                         currentIndex: $currentCarouselIndex,
                         onPhotoTap: { index in
-                            selectedPhotoIndex = index
-                            showPhotoViewer = true
+                            photoViewerManager.show(media: loop.media, startingAt: index)
                         },
                         showDebugOverlay: showDebugOverlay
                     )
@@ -321,9 +310,7 @@ struct LoopCardView: View {
             onReply: onCardTap,
             onDelete: onDelete,
             onAvatarTap: onAvatarTap,
-            onCardTap: onCardTap,
-            showPhotoViewer: $showPhotoViewer,
-            selectedPhotoIndex: $selectedPhotoIndex
+            onCardTap: onCardTap
         )
     }
 }
@@ -338,8 +325,8 @@ struct ReplyThreadWithLineView: View {
     let onDelete: (() -> Void)?
     let onAvatarTap: (() -> Void)?
     let onCardTap: (() -> Void)?
-    @Binding var showPhotoViewer: Bool
-    @Binding var selectedPhotoIndex: Int
+    
+    @Environment(PhotoViewerManager.self) private var photoViewerManager
     
     @State private var mainPostHeight: CGFloat = 0
     @State private var replyHeight: CGFloat = 0
@@ -453,14 +440,6 @@ struct ReplyThreadWithLineView: View {
                 connectingLine
             }
             .concentricCard(cornerRadius: CardLayoutConstants.cornerRadius)
-            .fullScreenCover(isPresented: $showPhotoViewer) {
-                FullScreenPhotoViewer(
-                    allMedia: loop.media,
-                    startingIndex: selectedPhotoIndex,
-                    isPresented: $showPhotoViewer
-                )
-                .presentationBackground(.clear)
-            }
         }
     }
 }
@@ -528,13 +507,13 @@ struct SingleMediaView: View {
                         .frame(width: geometry.size.width, height: displayMode.height)
                         .clipped()
                 } placeholder: {
-                    RoundedRectangle(cornerRadius: cornerRadius)
-                        .fill(Color.secondary.opacity(0.2))
-                        .frame(width: geometry.size.width, height: displayMode.height)
-                        .overlay(
-                            ProgressView()
-                                .scaleEffect(1.0)
-                        )
+                    ZStack {
+                        RoundedRectangle(cornerRadius: cornerRadius)
+                            .fill(Color.secondary.opacity(0.2))
+                        ProgressView()
+                            .scaleEffect(1.0)
+                    }
+                    .frame(width: geometry.size.width, height: displayMode.height)
                 }
                 .frame(width: geometry.size.width, height: displayMode.height)
                 .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
@@ -705,13 +684,13 @@ struct CarouselPhotoView: View {
                         .aspectRatio(contentMode: .fill)
                         .frame(width: geometry.size.width, height: height)
                 } placeholder: {
-                    RoundedRectangle(cornerRadius: cornerRadius)
-                        .fill(Color.secondary.opacity(0.2))
-                        .frame(width: geometry.size.width, height: height)
-                        .overlay(
-                            ProgressView()
-                                .scaleEffect(1.0)
-                        )
+                    ZStack {
+                        RoundedRectangle(cornerRadius: cornerRadius)
+                            .fill(Color.secondary.opacity(0.2))
+                        ProgressView()
+                            .scaleEffect(1.0)
+                    }
+                    .frame(width: geometry.size.width, height: height)
                 }
             }
             .frame(height: height)

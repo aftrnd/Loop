@@ -1,32 +1,47 @@
 import SwiftUI
 
+// MARK: - Photo Background Overlay
+/// Separate component that handles the background fade animation
+/// Goes from transparent to black as photo opens, and back to transparent on close
+struct PhotoViewerBackgroundOverlay: View {
+    @Binding var opacity: Double
+    
+    var body: some View {
+        Color.black
+            .opacity(opacity)
+            .ignoresSafeArea()
+            .allowsHitTesting(false) // Don't intercept gestures
+    }
+}
+
+// MARK: - Full Screen Photo Viewer
+/// Clean photo viewer component that only handles the photo display and interactions
+/// Background is handled separately by PhotoViewerBackgroundOverlay
 struct FullScreenPhotoViewer: View {
     let allMedia: [LoopMedia]
     let startingIndex: Int
     @Binding var isPresented: Bool
+    @Binding var backgroundOpacity: Double
     
     @State private var currentIndex: Int
     @State private var scale: CGFloat = 1.0
     @State private var lastScale: CGFloat = 1.0
     @State private var dragOffset: CGSize = .zero
     @State private var isDragging = false
-    @State private var backgroundOpacity: Double = 0
+    @State private var contentOpacity: Double = 0.0 // Start invisible
+    @State private var contentScale: CGFloat = 0.85 // Start slightly smaller
+    @State private var cornerRadius: CGFloat = 0 // Rounds as we dismiss
     
-    init(allMedia: [LoopMedia], startingIndex: Int, isPresented: Binding<Bool>) {
+    init(allMedia: [LoopMedia], startingIndex: Int, isPresented: Binding<Bool>, backgroundOpacity: Binding<Double>) {
         self.allMedia = allMedia
         self.startingIndex = startingIndex
         self._isPresented = isPresented
+        self._backgroundOpacity = backgroundOpacity
         self._currentIndex = State(initialValue: startingIndex)
     }
     
     var body: some View {
         ZStack {
-            // Animated background
-            Color.black
-                .opacity(backgroundOpacity)
-                .ignoresSafeArea()
-            
-            // Photo Gallery
             TabView(selection: $currentIndex) {
                 ForEach(Array(allMedia.enumerated()), id: \.element.id) { index, media in
                     if media.type == .image {
@@ -35,13 +50,56 @@ struct FullScreenPhotoViewer: View {
                     }
                 }
             }
-            .tabViewStyle(.page(indexDisplayMode: allMedia.count > 1 ? .automatic : .never))
+            .tabViewStyle(.page(indexDisplayMode: .never)) // Hide default indicators
+            .onTapGesture {
+                // Single tap to dismiss (only works when not zoomed)
+                if scale <= 1.0 && !isDragging {
+                    dismissViewer()
+                }
+            }
+            
+            // Custom page indicator - matches home tab size exactly
+            if allMedia.count > 1 {
+                VStack {
+                    Spacer()
+                    HStack(spacing: 4) {
+                        ForEach(0..<allMedia.count, id: \.self) { index in
+                            Circle()
+                                .fill(currentIndex == index ? Color.white : Color.white.opacity(0.5))
+                                .frame(width: 4, height: 4)
+                        }
+                    }
+                    .padding(.bottom, 20)
+                }
+            }
         }
+        .scaleEffect(contentScale)
+        .opacity(contentOpacity)
         .ignoresSafeArea()
         .onAppear {
-            withAnimation(.easeOut(duration: 0.25)) {
+            // Buttery smooth entrance animation
+            withAnimation(.smooth(duration: 0.45, extraBounce: 0)) {
+                contentOpacity = 1.0
+                contentScale = 1.0
+            }
+            withAnimation(.easeOut(duration: 0.4)) {
                 backgroundOpacity = 1.0
             }
+        }
+    }
+    
+    private func dismissViewer() {
+        withAnimation(.smooth(duration: 0.4, extraBounce: 0)) {
+            contentOpacity = 0
+            contentScale = 0.85
+            cornerRadius = 30 // Max 30pts as requested
+        }
+        withAnimation(.easeIn(duration: 0.35)) {
+            backgroundOpacity = 0
+        }
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+            isPresented = false
         }
     }
     
@@ -49,13 +107,14 @@ struct FullScreenPhotoViewer: View {
         GeometryReader { geometry in
             CachedAsyncImage(url: URL(string: media.url)) { image in
                 let dragProgress = min(abs(dragOffset.height) / 300, 1.0)
-                let dismissScale = 1.0 - (dragProgress * 0.3) // Scale down to 0.7 when fully dragged
+                let dragDismissScale = 1.0 - (dragProgress * 0.15) // Subtle scale down
                 
                 image
                     .resizable()
                     .aspectRatio(contentMode: .fit)
                     .frame(width: geometry.size.width, height: geometry.size.height)
-                    .scaleEffect(scale * dismissScale)
+                    .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)) // Round the photo itself
+                    .scaleEffect(scale * dragDismissScale)
                     .offset(dragOffset)
                     .gesture(
                         // Pinch to zoom
@@ -65,9 +124,9 @@ struct FullScreenPhotoViewer: View {
                             }
                             .onEnded { _ in
                                 lastScale = scale
-                                // Reset if zoomed out too much
+                                // Reset if zoomed out too much - buttery smooth
                                 if scale < 1.0 {
-                                    withAnimation(.spring(response: 0.3)) {
+                                    withAnimation(.smooth(duration: 0.4, extraBounce: 0)) {
                                         scale = 1.0
                                         lastScale = 1.0
                                     }
@@ -92,9 +151,15 @@ struct FullScreenPhotoViewer: View {
                                             height: value.translation.height
                                         )
                                         
-                                        // Fade background as we drag
-                                        let newOpacity = max(0.3, 1.0 - dragProgress * 0.7)
-                                        backgroundOpacity = newOpacity
+                                        // Interactive spring for buttery smooth updates
+                                        withAnimation(.interactiveSpring(duration: 0.15)) {
+                                            // Fade background based on drag progress
+                                            let newOpacity = max(0, 1.0 - dragProgress * 0.9)
+                                            backgroundOpacity = newOpacity
+                                            
+                                            // Round corners progressively - max 30pt radius
+                                            cornerRadius = min(dragProgress * 50, 30)
+                                        }
                                     }
                                 } else {
                                     // Allow free drag when zoomed
@@ -113,39 +178,34 @@ struct FullScreenPhotoViewer: View {
                                         
                                         // Dismiss if dragged far enough OR with high velocity
                                         if verticalAmount > threshold || abs(velocity) > 400 {
-                                            // Animate background to transparent before dismissing
-                                            withAnimation(.easeOut(duration: 0.2)) {
-                                                backgroundOpacity = 0
-                                            }
-                                            
-                                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                                                isPresented = false
-                                            }
+                                            dismissViewer()
                                         } else {
-                                            // Bounce back with spring
-                                            withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
+                                            // Buttery smooth bounce back
+                                            withAnimation(.smooth(duration: 0.5, extraBounce: 0.1)) {
                                                 dragOffset = .zero
                                                 backgroundOpacity = 1.0
+                                                cornerRadius = 0
                                             }
                                             
-                                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                                                 isDragging = false
                                             }
                                         }
                                     } else {
                                         // Reset on horizontal swipe
-                                        withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
+                                        withAnimation(.smooth(duration: 0.5, extraBounce: 0.1)) {
                                             dragOffset = .zero
                                             backgroundOpacity = 1.0
+                                            cornerRadius = 0
                                         }
                                         
-                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                                             isDragging = false
                                         }
                                     }
                                 } else {
                                     // Reset when zoomed
-                                    withAnimation(.spring(response: 0.3)) {
+                                    withAnimation(.smooth(duration: 0.4)) {
                                         dragOffset = .zero
                                     }
                                     
@@ -156,8 +216,8 @@ struct FullScreenPhotoViewer: View {
                             }
                     )
                     .onTapGesture(count: 2) {
-                        // Double tap to zoom
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
+                        // Double tap to zoom - buttery smooth
+                        withAnimation(.smooth(duration: 0.4, extraBounce: 0)) {
                             if scale > 1.0 {
                                 // Zoom out
                                 scale = 1.0
@@ -171,9 +231,13 @@ struct FullScreenPhotoViewer: View {
                         }
                     }
             } placeholder: {
-                ProgressView()
-                    .scaleEffect(1.5)
-                    .tint(.white)
+                ZStack {
+                    Color.clear
+                    ProgressView()
+                        .scaleEffect(1.5)
+                        .tint(.white)
+                }
+                .frame(width: geometry.size.width, height: geometry.size.height)
             }
         }
     }
@@ -181,14 +245,24 @@ struct FullScreenPhotoViewer: View {
 
 #Preview {
     @Previewable @State var isPresented = true
+    @Previewable @State var backgroundOpacity: Double = 1.0
     
-    FullScreenPhotoViewer(
-        allMedia: [
-            LoopMedia(type: .image, url: "https://picsum.photos/800/600", width: 800, height: 600),
-            LoopMedia(type: .image, url: "https://picsum.photos/600/800", width: 600, height: 800)
-        ],
-        startingIndex: 0,
-        isPresented: $isPresented
-    )
+    ZStack {
+        // Background overlay
+        PhotoViewerBackgroundOverlay(opacity: $backgroundOpacity)
+        
+        // Photo viewer
+        if isPresented {
+            FullScreenPhotoViewer(
+                allMedia: [
+                    LoopMedia(type: .image, url: "https://picsum.photos/800/600", width: 800, height: 600),
+                    LoopMedia(type: .image, url: "https://picsum.photos/600/800", width: 600, height: 800)
+                ],
+                startingIndex: 0,
+                isPresented: $isPresented,
+                backgroundOpacity: $backgroundOpacity
+            )
+        }
+    }
 }
 

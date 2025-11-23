@@ -9,10 +9,10 @@ struct PostContent: View {
     let maxPreviewLength: Int
     let showDebugOverlay: Bool
     
+    @Environment(PhotoViewerManager.self) private var photoViewerManager
+    
     @State private var showingFullText = false
     @State private var currentMediaIndex: Int = 0
-    @State private var showPhotoViewer = false
-    @State private var selectedPhotoIndex: Int = 0
     
     // MARK: - Initializer
     init(
@@ -60,14 +60,6 @@ struct PostContent: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .fullScreenCover(isPresented: $showPhotoViewer) {
-            FullScreenPhotoViewer(
-                allMedia: media,
-                startingIndex: selectedPhotoIndex,
-                isPresented: $showPhotoViewer
-            )
-            .presentationBackground(.clear)
-        }
     }
     
     // MARK: - Computed Properties
@@ -117,8 +109,7 @@ struct PostContent: View {
                 media: firstMedia,
                 cornerRadius: CardLayoutConstants.mediaCornerRadius,
                 onPhotoTap: {
-                    selectedPhotoIndex = 0
-                    showPhotoViewer = true
+                    photoViewerManager.show(media: media, startingAt: 0)
                 },
                 showDebugOverlay: showDebugOverlay
             )
@@ -128,8 +119,7 @@ struct PostContent: View {
                 cornerRadius: CardLayoutConstants.mediaCornerRadius,
                 currentIndex: $currentMediaIndex,
                 onPhotoTap: { index in
-                    selectedPhotoIndex = index
-                    showPhotoViewer = true
+                    photoViewerManager.show(media: media, startingAt: index)
                 },
                 showDebugOverlay: showDebugOverlay
             )
@@ -139,6 +129,8 @@ struct PostContent: View {
 
 // MARK: - Preview
 #Preview {
+    @Previewable @State var photoViewerManager = PhotoViewerManager()
+    
     ScrollView {
         VStack(spacing: 20) {
             // Text only
@@ -184,5 +176,6 @@ struct PostContent: View {
         .padding()
     }
     .background(Color(.systemGroupedBackground))
+    .environment(photoViewerManager)
 }
 
