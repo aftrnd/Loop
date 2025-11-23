@@ -7,13 +7,34 @@ struct FeedListView<Content: View>: View {
     @Binding var scrollOffset: CGFloat
     @Binding var contentHeight: CGFloat
     @Binding var scrollViewHeight: CGFloat
+    let topContentMargin: CGFloat
     @ViewBuilder let content: () -> Content
+    
+    init(
+        coordinateSpaceName: String,
+        onRefresh: (() async -> Void)?,
+        scrollOffset: Binding<CGFloat>,
+        contentHeight: Binding<CGFloat>,
+        scrollViewHeight: Binding<CGFloat>,
+        topContentMargin: CGFloat? = nil,
+        @ViewBuilder content: @escaping () -> Content
+    ) {
+        self.coordinateSpaceName = coordinateSpaceName
+        self.onRefresh = onRefresh
+        _scrollOffset = scrollOffset
+        _contentHeight = contentHeight
+        _scrollViewHeight = scrollViewHeight
+        self.topContentMargin = topContentMargin ?? AppConstants.Layout.listContentTopMargin
+        self.content = content
+    }
     
     var body: some View {
         GeometryReader { scrollGeometry in
             List {
-                // Scroll sentinel for tracking
-                scrollSentinel
+                // Scroll sentinel for tracking - skip when topContentMargin is 0 (profile view doesn't need it)
+                if topContentMargin != 0 {
+                    scrollSentinel
+                }
                 
                 // Dynamic content
                 content()
@@ -21,9 +42,10 @@ struct FeedListView<Content: View>: View {
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .listSectionSeparator(.hidden)
+            .listSectionSpacing(0) // Remove default section spacing
             .coordinateSpace(name: coordinateSpaceName)
             .scrollIndicators(.hidden)
-            .contentMargins(.top, AppConstants.Layout.listContentTopMargin)
+            .contentMargins(.top, topContentMargin)
             .refreshable {
                 if let onRefresh = onRefresh {
                     await onRefresh()

@@ -1186,7 +1186,7 @@ struct ProfileView: View {
         .overlay(debugPaddingLine())
         .padding(.top, CardLayoutConstants.topPadding)
         .background(showLayoutDebugOverlays ? Color.purple.opacity(0.05) : Color.clear)
-        .padding(.bottom, !isOwnProfile && !isEditing ? 24 : CardLayoutConstants.bottomPadding) // Extra spacing before tabs when buttons are shown
+        .padding(.bottom, !isOwnProfile && !isEditing ? 8 : CardLayoutConstants.bottomPadding) // Match VStack spacing (8pt) between buttons and tabs
         .background(showLayoutDebugOverlays ? Color.cyan.opacity(0.05) : Color.clear)
         .background(Color(.systemBackground))
         .clipShape(RoundedRectangle(cornerRadius: CardLayoutConstants.cornerRadius))
@@ -1499,7 +1499,17 @@ struct ProfileView: View {
             }
             .frame(height: CardLayoutConstants.dividerHeight)
         }
+        .padding(.top, 5 + CardLayoutConstants.dividerHeight + 5) // Match post-to-post spacing: bottom padding + divider + top padding
+        .padding(.bottom, 5 + CardLayoutConstants.dividerHeight + 5) // Match post-to-post spacing: bottom padding + divider + top padding
         .background(showLayoutDebugOverlays ? Color.yellow.opacity(0.05) : Color(.systemBackground))
+        .overlay(
+            Group {
+                if showLayoutDebugOverlays {
+                    RoundedRectangle(cornerRadius: 0)
+                        .stroke(Color.red, lineWidth: 2)
+                }
+            }
+        )
     }
     
     private var profilePostsTab: some View {
@@ -1539,12 +1549,14 @@ struct ProfileView: View {
                 .background(Color(.systemBackground))
             } else {
                 // Use FeedListView for consistency with HomeView
+                // Pass 0 for topContentMargin since we don't have a nav bar - content should start naturally below tabs
                 FeedListView(
                     coordinateSpaceName: "profileFeed",
                     onRefresh: onRefresh,
                     scrollOffset: .constant(0),
                     contentHeight: .constant(0),
-                    scrollViewHeight: .constant(0)
+                    scrollViewHeight: .constant(0),
+                    topContentMargin: 0
                 ) {
                     // Posts section with dividers (exact same structure as HomeView)
                     ForEach(Array(loops.enumerated()), id: \.element.id) { index, loop in
