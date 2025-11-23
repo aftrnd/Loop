@@ -29,6 +29,9 @@ struct ProfileView: View {
     @State private var showLogoutConfirmation = false
     @Environment(\.dismiss) private var dismiss
     
+    // Debug settings
+    @AppStorage("showLayoutDebugOverlays") private var showLayoutDebugOverlays = false
+    
     // Avatar editing with native PhotosPicker
     @State private var avatarPickerItem: PhotosPickerItem?
     @State private var selectedImage: UIImage?
@@ -63,7 +66,9 @@ struct ProfileView: View {
     // Layout constants
     private let avatarMaskSize: CGFloat = 110
     private let avatarImageSize: CGFloat = 100
-    private let avatarLeadingPadding: CGFloat = 16
+    // Match post card padding: 10pt list inset + 10pt card padding = 20pt total
+    private let profileContentPadding: CGFloat = CardLayoutConstants.horizontalPadding + 10 // 20pt total (matches posts)
+    private let avatarLeadingPadding: CGFloat = 10 // Matches list inset (avatar mask aligns with post card left edge)
     private let avatarOverlapOffset: CGFloat = -55
     
     // Computed property to determine if viewing own profile
@@ -111,25 +116,29 @@ struct ProfileView: View {
                 let bannerHeight: CGFloat = 180
                 
                 if isSheetFullyExpanded && currentUser != nil {
-                    // Show tabs when fully expanded
+                    // Show tabs when fully expanded (hide when editing)
                     VStack(spacing: 0) {
-                        // Profile header (compact when expanded) - maintains exact same positioning
+                        // Profile header (compact when expanded) - maintains exact same positioning and banner height
                         if let user = currentUser {
                             profileHeaderCompact(for: user, bannerHeight: bannerHeight, geometry: geometry)
                         }
                         
-                        // Tabs
-                        profileTabs
-                        
-                        // Tab content
-                        Group {
-                            if selectedTab == .posts {
-                                profilePostsTab
-                            } else {
-                                profileLikesTab
+                        // Tabs - hide when editing
+                        if !isEditing {
+                            profileTabs
+                            
+                            // Tab content
+                            Group {
+                                if selectedTab == .posts {
+                                    profilePostsTab
+                                } else {
+                                    profileLikesTab
+                                }
                             }
                         }
                     }
+                    .background(Color(.systemBackground)) // Ensure feed area has background
+                    .ignoresSafeArea(edges: .top) // Allow banner to extend to top edge
                 } else {
                     // Show normal scroll view when not fully expanded
                     ScrollView {
@@ -238,10 +247,12 @@ struct ProfileView: View {
                             }
                             .disabled(isSaving)
                         } else {
-                            Button("Edit") {
+                            Button {
                                 startEditing()
+                            } label: {
+                                Image(systemName: "gear")
+                                    .font(.body.weight(.medium))
                             }
-                            .fontWeight(.medium)
                         }
                     }
                 }
@@ -492,26 +503,19 @@ struct ProfileView: View {
                     }
             } else {
                 HStack(spacing: 6) {
-                    HStack(spacing: 6) {
-                        Text(currentUser?.displayName ?? "Display Name")
-                            .font(.title)
-                            .fontWeight(.bold)
-                            .foregroundStyle(.primary)
-                        
-                        // Badge inline with name
-                        if let badgeType = currentUser?.badgeType {
-                            Image(systemName: badgeType.iconName)
-                                .foregroundStyle(badgeType.color)
-                                .font(.title3)
-                        }
+                    Text(currentUser?.displayName ?? "Display Name")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .foregroundStyle(.primary)
+                    
+                    // Badge inline with name
+                    if let badgeType = currentUser?.badgeType {
+                        Image(systemName: badgeType.iconName)
+                            .foregroundStyle(badgeType.color)
+                            .font(.title3)
                     }
                     
                     Spacer()
-                    
-                    // Follow button inline with name (only for other users)
-                    if !isOwnProfile {
-                        compactFollowButton
-                    }
                 }
             }
         }
@@ -647,6 +651,15 @@ struct ProfileView: View {
             avatarView
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.leading, avatarLeadingPadding)
+                .background(showLayoutDebugOverlays ? Color.yellow.opacity(0.1) : Color.clear)
+                .overlay(
+                    Group {
+                        if showLayoutDebugOverlays {
+                            Rectangle()
+                                .stroke(Color.red, lineWidth: 1)
+                        }
+                    }
+                )
             
             // Profile info
             VStack(alignment: .leading, spacing: 8) {
@@ -700,9 +713,9 @@ struct ProfileView: View {
                     .frame(minHeight: 44) // Minimum height for two lines
                     .fixedSize(horizontal: false, vertical: true) // Allow vertical expansion
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 8)
-            .padding(.bottom, 16) // Reduced bottom padding
+            .padding(.horizontal, profileContentPadding) // Match post content padding (20pt total)
+            .padding(.top, CardLayoutConstants.topPadding)
+            .padding(.bottom, CardLayoutConstants.bottomPadding)
         }
         .offset(y: avatarOverlapOffset)
         .padding(.bottom, avatarOverlapOffset)
@@ -1125,14 +1138,135 @@ struct ProfileView: View {
     
     // MARK: - Expanded Profile Views
     
+    // MARK: - Debug Overlay Helpers
+    
+    @ViewBuilder
+    private func profileInfoContent(for user: User) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            displayNameView
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(debugBackground(color: .green))
+                .overlay(debugStrokeOverlay())
+            
+            usernameView
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(debugBackground(color: .blue))
+                .overlay(debugStrokeOverlay())
+            
+            // Follower counts - hide when editing
+            if !isEditing {
+                followerCountsView(for: user)
+            }
+            
+            // Bio
+            bioView
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(minHeight: 44) // Same as original
+                .fixedSize(horizontal: false, vertical: true)
+                .background(debugBackground(color: .orange))
+                .overlay(debugStrokeOverlay())
+            
+            // Action buttons (Follow and Message) - below bio, above tabs - hide when editing
+            if !isOwnProfile && !isEditing {
+                actionButtons
+                    .background(debugBackground(color: .cyan))
+                    .overlay(debugStrokeOverlay())
+            }
+            
+            // Settings section when editing (only for own profile)
+            if isEditing && isOwnProfile {
+                settingsSection
+                    .frame(height: 250)
+                    .background(debugBackground(color: .yellow))
+                    .overlay(debugStrokeOverlay())
+            }
+        }
+        .padding(.horizontal, profileContentPadding) // Match post content padding (20pt total)
+        .background(showLayoutDebugOverlays ? Color.pink.opacity(0.05) : Color.clear)
+        .overlay(debugPaddingLine())
+        .padding(.top, CardLayoutConstants.topPadding)
+        .background(showLayoutDebugOverlays ? Color.purple.opacity(0.05) : Color.clear)
+        .padding(.bottom, CardLayoutConstants.bottomPadding)
+        .background(showLayoutDebugOverlays ? Color.cyan.opacity(0.05) : Color.clear)
+    }
+    
+    @ViewBuilder
+    private func followerCountsView(for user: User) -> some View {
+        HStack(spacing: 16) {
+            HStack(spacing: 4) {
+                Text("\(user.followerCount)")
+                    .font(.callout)
+                    .fontWeight(.heavy)
+                    .foregroundColor(.primary)
+                Text("Followers")
+                    .font(.callout)
+                    .fontWeight(.regular)
+                    .foregroundStyle(.secondary)
+            }
+            
+            HStack(spacing: 4) {
+                Text("\(user.followingCount)")
+                    .font(.callout)
+                    .fontWeight(.heavy)
+                    .foregroundColor(.primary)
+                Text("Following")
+                    .font(.callout)
+                    .fontWeight(.regular)
+                    .foregroundStyle(.secondary)
+            }
+            
+            Spacer()
+        }
+        .background(debugBackground(color: .purple))
+        .overlay(debugStrokeOverlay())
+    }
+    
+    @ViewBuilder
+    private func debugStrokeOverlay() -> some View {
+        if showLayoutDebugOverlays {
+            Rectangle()
+                .stroke(Color.red, lineWidth: 1)
+        }
+    }
+    
+    @ViewBuilder
+    private func debugBackground(color: Color) -> some View {
+        if showLayoutDebugOverlays {
+            color.opacity(0.1)
+        } else {
+            Color.clear
+        }
+    }
+    
+    @ViewBuilder
+    private func debugPaddingLine() -> some View {
+        if showLayoutDebugOverlays {
+            VStack {
+                Rectangle()
+                    .fill(Color.green)
+                    .frame(width: 1)
+                Spacer()
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.leading, profileContentPadding)
+        }
+    }
+    
     @ViewBuilder
     private func profileHeaderCompact(for user: User, bannerHeight: CGFloat, geometry: GeometryProxy) -> some View {
         VStack(spacing: 0) {
-            // Banner - extends to top edge (EXACT same as original profileContent)
+            // Banner - fixed height (same as half-opened state, doesn't expand)
+            // Extends all the way to top edge with no white space
             bannerContent
-                .frame(height: bannerHeight + geometry.safeAreaInsets.top)
+                .frame(
+                    width: geometry.size.width,
+                    height: bannerHeight + geometry.safeAreaInsets.top,
+                    alignment: .top
+                )
                 .offset(y: -geometry.safeAreaInsets.top)
                 .padding(.bottom, -geometry.safeAreaInsets.top)
+                .clipped()
+                .ignoresSafeArea(edges: .top) // Extend to very top edge
             
             // Avatar and profile info - moves up to overlap banner (EXACT same positioning as original)
             VStack(alignment: .leading, spacing: 0) {
@@ -1141,78 +1275,214 @@ struct ProfileView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.leading, avatarLeadingPadding)
                 
-                // Profile info
-                VStack(alignment: .leading, spacing: 8) {
-                    displayNameView
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    
-                    usernameView
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    
-                    // Follower counts
-                    HStack(spacing: 16) {
-                        HStack(spacing: 4) {
-                            Text("\(user.followerCount)")
-                                .font(.callout)
-                                .fontWeight(.heavy)
-                                .foregroundColor(.primary)
-                            Text("Followers")
-                                .font(.callout)
-                                .fontWeight(.regular)
-                                .foregroundStyle(.secondary)
-                        }
-                        
-                        HStack(spacing: 4) {
-                            Text("\(user.followingCount)")
-                                .font(.callout)
-                                .fontWeight(.heavy)
-                                .foregroundColor(.primary)
-                            Text("Following")
-                                .font(.callout)
-                                .fontWeight(.regular)
-                                .foregroundStyle(.secondary)
-                        }
-                        
-                        Spacer()
-                    }
-                    
-                    // Bio
-                    bioView
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .frame(minHeight: 44) // Same as original
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
-                .padding(.bottom, 16)
+                // Profile info - consistent spacing throughout
+                profileInfoContent(for: user)
             }
             .offset(y: avatarOverlapOffset)
             .padding(.bottom, avatarOverlapOffset)
         }
         .background(Color(.systemBackground))
+        .overlay(
+            Group {
+                if showLayoutDebugOverlays {
+                    Rectangle()
+                        .stroke(Color.blue, lineWidth: 2)
+                }
+            }
+        )
+    }
+    
+    private var actionButtons: some View {
+        // Buttons container - no padding here, padding is applied by parent VStack
+        HStack(spacing: 12) {
+            // Follow button - perfectly centered, equal width
+            Button(action: {
+                // Haptic feedback
+                let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
+                impactFeedback.impactOccurred()
+                
+                Task {
+                    await toggleFollow()
+                }
+            }) {
+                HStack(spacing: 6) {
+                    if isFollowLoading {
+                        ProgressView()
+                            .scaleEffect(0.7)
+                            .tint(isFollowing ? Color.primary : Color(.systemBackground))
+                    } else {
+                        Image(systemName: isFollowing ? "checkmark" : "plus")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(isFollowing ? Color.primary : Color(.systemBackground))
+                    }
+                    
+                    Text(isFollowing ? "Following" : "Follow")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundColor(isFollowing ? Color.primary : Color(.systemBackground))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 11)
+                .background {
+                    if isFollowing {
+                        // When following: white background with black outline (opposite for dark mode)
+                        RoundedRectangle(cornerRadius: 18)
+                            .fill(Color(.systemBackground))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 18)
+                                    .stroke(Color.primary, lineWidth: 1.5)
+                            }
+                    } else {
+                        // When not following: black background
+                        RoundedRectangle(cornerRadius: 18)
+                            .fill(Color.primary)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .disabled(isFollowLoading)
+            .overlay {
+                SparkleAnimation()
+                    .opacity(triggerSparkles ? 1 : 0)
+                    .allowsHitTesting(false)
+                    .onChange(of: triggerSparkles) { _, newValue in
+                        if newValue {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                                triggerSparkles = false
+                            }
+                        }
+                    }
+            }
+            
+            // Message button - perfectly centered, equal width
+            Button(action: {
+                // Haptic feedback
+                let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
+                impactFeedback.impactOccurred()
+                
+                Task {
+                    await startMessage()
+                }
+            }) {
+                HStack(spacing: 6) {
+                    Image(systemName: "message.fill")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(Color(.systemBackground))
+                    
+                    Text("Message")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundColor(Color(.systemBackground))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 11)
+                .background {
+                    // Black background (opposite for dark mode)
+                    RoundedRectangle(cornerRadius: 18)
+                        .fill(Color.primary)
+                }
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .background(debugBackground(color: .cyan))
+        .overlay(debugStrokeOverlay())
+    }
+    
+    private func startMessage() async {
+        guard let targetUserId = userId else { return }
+        
+        do {
+            // Get the target user to get their display name for the chat title
+            guard let targetUser = try await FirebaseService.shared.getUser(withId: targetUserId) else {
+                print("❌ Could not find user to message")
+                return
+            }
+            
+            let chatTitle = targetUser.displayName ?? "User"
+            
+            // Create or find existing chat
+            _ = try await FirebaseService.shared.createChat(withUserId: targetUserId, title: chatTitle)
+            
+            // Note: Navigation to chat would typically be handled by the parent view
+            // For now, we'll just create the chat and the user can navigate to it from the chats tab
+            print("✅ Chat created successfully")
+        } catch {
+            print("❌ Error creating chat: \(error.localizedDescription)")
+        }
     }
     
     private var profileTabs: some View {
-        HStack(spacing: 0) {
-            ForEach(ProfileTab.allCases, id: \.self) { tab in
-                Button {
-                    selectedTab = tab
-                } label: {
-                    VStack(spacing: 8) {
-                        Text(tab.rawValue)
-                            .font(.headline)
-                            .foregroundColor(selectedTab == tab ? .primary : .secondary)
-                        
-                        Rectangle()
-                            .fill(selectedTab == tab ? Color.primary : Color.clear)
-                            .frame(height: 2)
+        VStack(spacing: 0) {
+            // Tab buttons container with padding
+            HStack(spacing: 0) {
+                ForEach(ProfileTab.allCases, id: \.self) { tab in
+                    Button {
+                        selectedTab = tab
+                    } label: {
+                        VStack(spacing: 8) {
+                            Text(tab.rawValue)
+                                .font(.headline)
+                                .foregroundColor(selectedTab == tab ? .primary : .secondary)
+                            
+                            // Spacer for indicator line - maintains consistent height
+                            Rectangle()
+                                .fill(Color.clear)
+                                .frame(height: CardLayoutConstants.dividerHeight)
+                        }
+                        .frame(maxWidth: .infinity)
                     }
-                    .frame(maxWidth: .infinity)
                 }
             }
+            .padding(.horizontal, profileContentPadding) // Match post content padding (20pt total)
+            .background(showLayoutDebugOverlays ? Color.pink.opacity(0.05) : Color.clear)
+            .overlay(debugPaddingLine())
+            
+            // Tab indicator line - matches button container exactly with same padding
+            HStack(spacing: 0) {
+                // Left padding - matches button container
+                Spacer()
+                    .frame(width: profileContentPadding)
+                
+                // Indicator lines container - same width as the button container content area
+                HStack(spacing: 0) {
+                    if selectedTab == .posts {
+                        Rectangle()
+                            .fill(CardLayoutConstants.dividerColor)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: CardLayoutConstants.dividerHeight)
+                        Rectangle()
+                            .fill(Color.clear)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: CardLayoutConstants.dividerHeight)
+                    } else {
+                        Rectangle()
+                            .fill(Color.clear)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: CardLayoutConstants.dividerHeight)
+                        Rectangle()
+                            .fill(CardLayoutConstants.dividerColor)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: CardLayoutConstants.dividerHeight)
+                    }
+                }
+                .background(showLayoutDebugOverlays ? Color.red.opacity(0.2) : Color.clear)
+                
+                // Right padding - matches button container
+                Spacer()
+                    .frame(width: profileContentPadding)
+            }
+            .frame(height: CardLayoutConstants.dividerHeight)
+            .overlay(debugStrokeOverlay())
+            
+            // Debug overlay for tab bar
+            if showLayoutDebugOverlays {
+                Rectangle()
+                    .stroke(Color.red, lineWidth: 1)
+                    .frame(height: 1)
+                    .padding(.horizontal, profileContentPadding)
+            }
         }
-        .padding(.horizontal, 16)
-        .background(Color(.systemBackground))
+        .background(showLayoutDebugOverlays ? Color.yellow.opacity(0.05) : Color(.systemBackground))
     }
     
     private var profilePostsTab: some View {
@@ -1237,6 +1507,7 @@ struct ProfileView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(.top, 100)
+                .background(Color(.systemBackground))
             } else if loops.isEmpty {
                 VStack(spacing: 16) {
                     Image(systemName: selectedTab == .posts ? "square.and.pencil" : "heart")
@@ -1248,6 +1519,7 @@ struct ProfileView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(.top, 100)
+                .background(Color(.systemBackground))
             } else {
                 // Use FeedListView for consistency with HomeView
                 FeedListView(
@@ -1291,7 +1563,8 @@ struct ProfileView: View {
                                         await feedViewModel.deleteLoop(loop)
                                     }
                                 } : nil,
-                                onAvatarTap: nil
+                                onAvatarTap: nil,
+                                showDebugOverlays: showLayoutDebugOverlays
                             )
                             .padding(.top, index == 0 ? 0 : 5)
                             .padding(.bottom, index == loops.count - 1 ? 0 : 5)
@@ -1306,6 +1579,7 @@ struct ProfileView: View {
                         .listRowInsets(EdgeInsets(top: 0, leading: 10, bottom: 0, trailing: 10))
                     }
                 }
+                .background(Color(.systemBackground))
             }
         }
     }
