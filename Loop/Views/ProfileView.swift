@@ -113,8 +113,10 @@ struct ProfileView: View {
                 if isSheetFullyExpanded && currentUser != nil {
                     // Show tabs when fully expanded
                     VStack(spacing: 0) {
-                        // Profile header (compact when expanded)
-                        profileHeaderCompact
+                        // Profile header (compact when expanded) - maintains exact same positioning
+                        if let user = currentUser {
+                            profileHeaderCompact(for: user, bannerHeight: bannerHeight, geometry: geometry)
+                        }
                         
                         // Tabs
                         profileTabs
@@ -1123,69 +1125,69 @@ struct ProfileView: View {
     
     // MARK: - Expanded Profile Views
     
-    private var profileHeaderCompact: some View {
+    @ViewBuilder
+    private func profileHeaderCompact(for user: User, bannerHeight: CGFloat, geometry: GeometryProxy) -> some View {
         VStack(spacing: 0) {
-            if let user = currentUser {
-                // Compact banner
-                bannerContent
-                    .frame(height: 120)
+            // Banner - extends to top edge (EXACT same as original profileContent)
+            bannerContent
+                .frame(height: bannerHeight + geometry.safeAreaInsets.top)
+                .offset(y: -geometry.safeAreaInsets.top)
+                .padding(.bottom, -geometry.safeAreaInsets.top)
+            
+            // Avatar and profile info - moves up to overlap banner (EXACT same positioning as original)
+            VStack(alignment: .leading, spacing: 0) {
+                // Avatar
+                avatarView
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.leading, avatarLeadingPadding)
                 
-                // Compact profile info
+                // Profile info
                 VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        avatarView
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                    displayNameView
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    
+                    usernameView
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    
+                    // Follower counts
+                    HStack(spacing: 16) {
+                        HStack(spacing: 4) {
+                            Text("\(user.followerCount)")
+                                .font(.callout)
+                                .fontWeight(.heavy)
+                                .foregroundColor(.primary)
+                            Text("Followers")
+                                .font(.callout)
+                                .fontWeight(.regular)
+                                .foregroundStyle(.secondary)
+                        }
+                        
+                        HStack(spacing: 4) {
+                            Text("\(user.followingCount)")
+                                .font(.callout)
+                                .fontWeight(.heavy)
+                                .foregroundColor(.primary)
+                            Text("Following")
+                                .font(.callout)
+                                .fontWeight(.regular)
+                                .foregroundStyle(.secondary)
+                        }
                         
                         Spacer()
                     }
-                    .padding(.leading, avatarLeadingPadding)
-                    .offset(y: avatarOverlapOffset)
                     
-                    VStack(alignment: .leading, spacing: 4) {
-                        displayNameView
-                        
-                        usernameView
-                        
-                        // Follower counts
-                        HStack(spacing: 16) {
-                            HStack(spacing: 4) {
-                                Text("\(user.followerCount)")
-                                    .font(.callout)
-                                    .fontWeight(.heavy)
-                                    .foregroundColor(.primary)
-                                Text("Followers")
-                                    .font(.callout)
-                                    .fontWeight(.regular)
-                                    .foregroundStyle(.secondary)
-                            }
-                            
-                            HStack(spacing: 4) {
-                                Text("\(user.followingCount)")
-                                    .font(.callout)
-                                    .fontWeight(.heavy)
-                                    .foregroundColor(.primary)
-                                Text("Following")
-                                    .font(.callout)
-                                    .fontWeight(.regular)
-                                    .foregroundStyle(.secondary)
-                            }
-                            
-                            Spacer()
-                        }
-                        
-                        // Bio
-                        if let bio = user.bio, !bio.isEmpty {
-                            Text(bio)
-                                .font(.callout)
-                                .foregroundStyle(.primary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 8)
+                    // Bio
+                    bioView
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .frame(minHeight: 44) // Same as original
+                        .fixedSize(horizontal: false, vertical: true)
                 }
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
                 .padding(.bottom, 16)
             }
+            .offset(y: avatarOverlapOffset)
+            .padding(.bottom, avatarOverlapOffset)
         }
         .background(Color(.systemBackground))
     }
@@ -1247,9 +1249,18 @@ struct ProfileView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(.top, 100)
             } else {
-                ScrollView {
-                    LazyVStack(spacing: 16) {
-                        ForEach(loops) { loop in
+                // Use FeedListView for consistency with HomeView
+                FeedListView(
+                    coordinateSpaceName: "profileFeed",
+                    onRefresh: onRefresh,
+                    scrollOffset: .constant(0),
+                    contentHeight: .constant(0),
+                    scrollViewHeight: .constant(0)
+                ) {
+                    // Posts section with dividers (exact same structure as HomeView)
+                    ForEach(Array(loops.enumerated()), id: \.element.id) { index, loop in
+                        VStack(spacing: 0) {
+                            // PostCard with same padding as HomeView
                             PostCard(
                                 loop: loop,
                                 isLiked: feedViewModel.isLikedByCurrentUser(loop),
@@ -1282,13 +1293,18 @@ struct ProfileView: View {
                                 } : nil,
                                 onAvatarTap: nil
                             )
-                            .padding(.horizontal, 16)
+                            .padding(.top, index == 0 ? 0 : 5)
+                            .padding(.bottom, index == loops.count - 1 ? 0 : 5)
+                            
+                            // Divider between posts (exact same as HomeView)
+                            if index < loops.count - 1 {
+                                PostDivider()
+                            }
                         }
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets(top: 0, leading: 10, bottom: 0, trailing: 10))
                     }
-                    .padding(.vertical, 16)
-                }
-                .refreshable {
-                    await onRefresh()
                 }
             }
         }
