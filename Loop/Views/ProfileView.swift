@@ -48,6 +48,7 @@ struct ProfileView: View {
     // Dynamic sheet height
     @State private var contentHeight: CGFloat = 0
     @State private var currentDetent: PresentationDetent = .height(366)
+    @State private var actualSheetHeight: CGFloat = 0
     
     // Profile feed
     @StateObject private var feedViewModel: ProfileFeedViewModel
@@ -56,6 +57,24 @@ struct ProfileView: View {
     // Computed property to check if sheet is fully expanded
     private var isSheetFullyExpanded: Bool {
         currentDetent == .large
+    }
+    
+    // Calculate expansion progress (0.0 to 1.0) for fade-in animations
+    // Use actual height if available, otherwise base on detent state
+    private var expansionProgress: CGFloat {
+        // If we have actual height, use it for smooth animation
+        if actualSheetHeight > 0 {
+            guard actualSheetHeight > minimumProfileHeight else { return 0 }
+            // Use a reasonable estimate for max height (90% of typical screen)
+            let maxHeight: CGFloat = 900 // Approximate max sheet height
+            let range = maxHeight - minimumProfileHeight
+            guard range > 0 else { return 1 }
+            let progress = min(max((actualSheetHeight - minimumProfileHeight) / range, 0), 1)
+            // Start fading in at 50% expansion, fully visible at 80% - earlier fade for better UX
+            return max(0, min(1, (progress - 0.5) / 0.3))
+        }
+        // Fallback: use detent state (discrete but works)
+        return isSheetFullyExpanded ? 1.0 : 0.0
     }
     
     enum ProfileTab: String, CaseIterable {
@@ -110,106 +129,106 @@ struct ProfileView: View {
         print("🎯 ProfileView.init(userId: \(userId ?? "nil"))")
     }
     
-    var body: some View {
-        NavigationStack {
-            GeometryReader { geometry in
-                let bannerHeight: CGFloat = 180
-                
-                if isSheetFullyExpanded && currentUser != nil {
-                    // Show tabs when fully expanded (hide when editing)
-                    VStack(spacing: 0) {
-                        // Profile header (compact when expanded) - maintains exact same positioning and banner height
-                        if let user = currentUser {
-                            profileHeaderCompact(for: user, bannerHeight: bannerHeight, geometry: geometry)
-                        }
-                        
-                        // Tabs - hide when editing
-                        if !isEditing {
-                            profileTabs
-                            
-                            // Tab content
-                            Group {
-                                if selectedTab == .posts {
-                                    profilePostsTab
-                                } else {
-                                    profileLikesTab
-                                }
-                            }
-                        }
-                    }
-                    .background(Color(.systemBackground)) // Ensure feed area has background
-                    .ignoresSafeArea(edges: .top) // Allow banner to extend to top edge
-                } else {
-                    // Show normal scroll view when not fully expanded
-                    ScrollView {
-                        VStack(spacing: 0) {
-                            if let user = currentUser {
-                                // Profile content - show when user is loaded
-                                profileContent(for: user, bannerHeight: bannerHeight, geometry: geometry)
-                            } else if isLoading {
-                                // Loading state - show while fetching
-                                VStack(spacing: 20) {
-                                    ProgressView()
-                                        .scaleEffect(1.5)
-                                        .padding(.top, 100)
-                                    Text("Loading profile...")
-                                        .foregroundColor(.secondary)
-                                }
-                                .frame(maxWidth: .infinity)
-                                .frame(minHeight: 400)
-                            } else if loadError != nil {
-                                // Error state
-                                VStack(spacing: 20) {
-                                    Image(systemName: "exclamationmark.triangle")
-                                        .font(.system(size: 50))
-                                        .foregroundColor(.orange)
-                                    Text("Failed to load profile")
-                                        .font(.headline)
-                                    Text(loadError ?? "Unknown error")
-                                        .font(.subheadline)
-                                        .foregroundColor(.secondary)
-                                        .multilineTextAlignment(.center)
-                                        .padding(.horizontal, 40)
-                                    Button("Retry") {
-                                        loadCurrentUser()
-                                    }
-                                    .buttonStyle(.borderedProminent)
-                                }
-                                .frame(maxWidth: .infinity)
-                                .frame(minHeight: 400)
-                                .padding(.top, 100)
-                            }
-                        }
-                    }
-                    .scrollIndicators(.hidden)
-                    .scrollClipDisabled()
-                    .ignoresSafeArea(edges: .top)
-                    .conditionalRefreshable(isEnabled: isSheetFullyExpanded) {
-                        await refreshProfile()
-                    }
-                }
+    @ViewBuilder
+    private func profileContent(geometry: GeometryProxy) -> some View {
+        let bannerHeight: CGFloat = 180
+        
+        // Track actual sheet height for expansion progress
+        Color.clear
+            .frame(width: geometry.size.width, height: geometry.size.height)
+            .preference(key: SheetHeightKey.self, value: geometry.size.height)
+        
+        // Unified view structure - always the same, components fade in/out
+        if currentUser != nil {
+            profileMainContent(bannerHeight: bannerHeight, geometry: geometry)
+        } else if isLoading {
+            loadingView
+        } else if loadError != nil {
+            errorView
+        }
+    }
+    
+    @ViewBuilder
+    private func profileMainContent(bannerHeight: CGFloat, geometry: GeometryProxy) -> some View {
+        VStack(spacing: 0) {
+            // Profile header - always rendered with same structure
+            if let user = currentUser {
+                profileHeaderCompact(for: user, bannerHeight: bannerHeight, geometry: geometry, showProfileInfo: true)
             }
-            .onChange(of: isSheetFullyExpanded) { _, isExpanded in
-                if isExpanded {
-                    // Load feed data when expanded
-                    Task {
-                        if selectedTab == .posts {
-                            await feedViewModel.loadUserPosts()
-                        } else {
-                            await feedViewModel.loadUserLikedPosts()
-                        }
+            
+            // Tabs and feed - always rendered, fade in during swipe
+            if !isEditing {
+                profileTabs
+                    .opacity(expansionProgress)
+                    .animation(.easeInOut(duration: 0.2), value: expansionProgress)
+                    .allowsHitTesting(expansionProgress > 0.5)
+                
+                // Tab content - fade in as sheet expands
+                Group {
+                    if selectedTab == .posts {
+                        profilePostsTab
+                    } else {
+                        profileLikesTab
                     }
                 }
+                .opacity(expansionProgress)
+                .animation(.easeInOut(duration: 0.2), value: expansionProgress)
+                .allowsHitTesting(expansionProgress > 0.5)
+            }
+        }
+        .background(Color(.systemBackground))
+        .ignoresSafeArea(edges: .top)
+    }
+    
+    private var loadingView: some View {
+        VStack(spacing: 20) {
+            ProgressView()
+                .scaleEffect(1.5)
+                .padding(.top, 100)
+            Text("Loading profile...")
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(minHeight: 400)
+    }
+    
+    private var errorView: some View {
+        VStack(spacing: 20) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 50))
+                .foregroundColor(.orange)
+            Text("Failed to load profile")
+                .font(.headline)
+            Text(loadError ?? "Unknown error")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 40)
+            Button("Retry") {
+                loadCurrentUser()
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(minHeight: 400)
+        .padding(.top, 100)
+    }
+    
+    var body: some View {
+        return NavigationStack {
+            GeometryReader { geometry in
+                profileContent(geometry: geometry)
+            }
+            .onPreferenceChange(SheetHeightKey.self) { height in
+                actualSheetHeight = height
             }
             .onChange(of: selectedTab) { _, newTab in
-                // Load data when tab changes
-                if isSheetFullyExpanded {
-                    Task {
-                        if newTab == .posts {
-                            await feedViewModel.loadUserPosts()
-                        } else {
-                            await feedViewModel.loadUserLikedPosts()
-                        }
+                // Load data when tab changes (always, not just when expanded)
+                Task {
+                    if newTab == .posts {
+                        await feedViewModel.loadUserPosts()
+                    } else {
+                        await feedViewModel.loadUserLikedPosts()
                     }
                 }
             }
@@ -263,6 +282,17 @@ struct ProfileView: View {
                 // Using task ensures it's properly cancelled/restarted
                 print("📋 .task(id: \(userId ?? "nil")) triggered")
                 await loadCurrentUserAsync()
+                
+                // Load feed data immediately when profile loads (don't wait for expansion)
+                if currentUser != nil {
+                    Task {
+                        if selectedTab == .posts {
+                            await feedViewModel.loadUserPosts()
+                        } else {
+                            await feedViewModel.loadUserLikedPosts()
+                        }
+                    }
+                }
             }
             .onAppear {
                 print("👀 ProfileView.onAppear - userId: \(userId ?? "nil"), currentUser: \(currentUser?.displayName ?? "nil"), isLoading: \(isLoading)")
@@ -652,8 +682,9 @@ struct ProfileView: View {
     
     @ViewBuilder
     private func profileContent(for user: User, bannerHeight: CGFloat, geometry: GeometryProxy) -> some View {
-        // Banner - extends to top edge
+        // Banner - extends to top edge (use same banner instance to prevent flashing)
         bannerContent
+            .id("profile-banner") // Consistent ID across all states
             .frame(height: bannerHeight + geometry.safeAreaInsets.top)
             .offset(y: -geometry.safeAreaInsets.top)
             .padding(.bottom, -geometry.safeAreaInsets.top)
@@ -1179,9 +1210,11 @@ struct ProfileView: View {
                 .background(debugBackground(color: .orange))
                 .overlay(debugStrokeOverlay())
             
-            // Action buttons (Follow and Message) - below bio, above tabs - hide when editing
+            // Action buttons (Follow and Message) - below bio, above tabs - fade in as sheet expands
             if !isOwnProfile && !isEditing {
                 actionButtons
+                    .opacity(expansionProgress)
+                    .animation(.easeInOut(duration: 0.2), value: expansionProgress)
                     .background(debugBackground(color: .cyan))
                     .overlay(debugStrokeOverlay())
             }
@@ -1276,11 +1309,12 @@ struct ProfileView: View {
     }
     
     @ViewBuilder
-    private func profileHeaderCompact(for user: User, bannerHeight: CGFloat, geometry: GeometryProxy) -> some View {
+    private func profileHeaderCompact(for user: User, bannerHeight: CGFloat, geometry: GeometryProxy, showProfileInfo: Bool = true) -> some View {
         VStack(spacing: 0) {
             // Banner - fixed height (same as half-opened state, doesn't expand)
-            // Extends all the way to top edge with no white space
+            // Extends all the way to top edge with no white space (use same banner instance to prevent flashing)
             bannerContent
+                .id("profile-banner") // Consistent ID across all states
                 .frame(
                     width: geometry.size.width,
                     height: bannerHeight + geometry.safeAreaInsets.top,
@@ -1292,17 +1326,20 @@ struct ProfileView: View {
                 .ignoresSafeArea(edges: .top) // Extend to very top edge
             
             // Avatar and profile info - moves up to overlap banner
-            VStack(alignment: .leading, spacing: 0) {
-                // Avatar - left edge aligns with content padding
-                avatarView
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.leading, profileContentPadding)
-                
-                // Profile info - consistent spacing throughout
-                profileInfoContent(for: user)
+            // Only show when expanded to prevent text duplication
+            if showProfileInfo {
+                VStack(alignment: .leading, spacing: 0) {
+                    // Avatar - left edge aligns with content padding
+                    avatarView
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.leading, profileContentPadding)
+                    
+                    // Profile info - consistent spacing throughout
+                    profileInfoContent(for: user)
+                }
+                .offset(y: avatarOverlapOffset)
+                .padding(.bottom, avatarOverlapOffset)
             }
-            .offset(y: avatarOverlapOffset)
-            .padding(.bottom, avatarOverlapOffset)
         }
         .background(Color(.systemBackground))
         .overlay(
@@ -1656,6 +1693,14 @@ struct ProfileView: View {
                 .background(Color(.systemBackground))
             }
         }
+    }
+}
+
+// Preference key to track sheet height for expansion animations
+private struct SheetHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
     }
 }
 
