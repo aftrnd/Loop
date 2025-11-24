@@ -45,6 +45,9 @@ struct ProfileView: View {
     @State private var isFollowLoading = false
     @State private var triggerSparkles = false
     
+    // Message system
+    @State private var isMessageLoading = false
+    
     // Dynamic sheet height
     @State private var contentHeight: CGFloat = 0
     @State private var currentDetent: PresentationDetent = .height(366)
@@ -53,6 +56,9 @@ struct ProfileView: View {
     // Profile feed
     @StateObject private var feedViewModel: ProfileFeedViewModel
     @State private var selectedTab: ProfileTab = .posts
+    
+    // Navigation for messages
+    @State private var navigationPath = NavigationPath()
     
     // Computed property to check if sheet is fully expanded
     private var isSheetFullyExpanded: Bool {
@@ -221,7 +227,7 @@ struct ProfileView: View {
     }
     
     var body: some View {
-        return NavigationStack {
+        return NavigationStack(path: $navigationPath) {
             GeometryReader { geometry in
                 profileContent(geometry: geometry)
             }
@@ -311,6 +317,12 @@ struct ProfileView: View {
             }
             .navigationDestination(isPresented: $showSettings) {
                 SettingsView()
+            }
+            .navigationDestination(for: ChatsRoute.self) { route in
+                switch route {
+                case .conversation(let chat):
+                    ConversationView(chat: chat)
+                }
             }
             .onChange(of: avatarPickerItem) { _, newItem in
                 Task {
@@ -985,22 +997,31 @@ struct ProfileView: View {
     // MARK: - Follow Methods
     
     private func toggleFollow() async {
-        guard let targetUserId = userId else { return }
+        guard let targetUserId = userId else {
+            print("⚠️ toggleFollow: No target user ID provided")
+            return
+        }
         
-        isFollowLoading = true
+        await MainActor.run {
+            isFollowLoading = true
+        }
         
         do {
             if isFollowing {
+                print("📤 Unfollowing user: \(targetUserId)")
                 try await FirebaseService.shared.unfollowUser(targetUserId)
                 await MainActor.run {
                     isFollowing = false
+                    print("✅ Successfully unfollowed user")
                 }
             } else {
+                print("📤 Following user: \(targetUserId)")
                 try await FirebaseService.shared.followUser(targetUserId)
                 await MainActor.run {
                     isFollowing = true
                     // Trigger sparkle animation on follow
                     triggerSparkles = true
+                    print("✅ Successfully followed user")
                 }
             }
             
@@ -1008,7 +1029,9 @@ struct ProfileView: View {
             await loadCurrentUserAsync()
             
         } catch {
-            print("❌ Error toggling follow: \(error)")
+            print("❌ Error toggling follow for user \(targetUserId): \(error.localizedDescription)")
+            print("   Error details: \(error)")
+            // Optionally show user-facing error here if needed
         }
         
         await MainActor.run {
@@ -1017,15 +1040,21 @@ struct ProfileView: View {
     }
     
     private func checkFollowStatus() async {
-        guard let targetUserId = userId else { return }
+        guard let targetUserId = userId else {
+            print("⚠️ checkFollowStatus: No target user ID provided")
+            return
+        }
         
         do {
+            print("🔍 Checking follow status for user: \(targetUserId)")
             let following = try await FirebaseService.shared.isFollowing(targetUserId)
             await MainActor.run {
                 isFollowing = following
+                print("✅ Follow status: \(following ? "Following" : "Not following")")
             }
         } catch {
-            print("❌ Error checking follow status: \(error)")
+            print("❌ Error checking follow status for user \(targetUserId): \(error.localizedDescription)")
+            print("   Error details: \(error)")
         }
     }
     
@@ -1401,9 +1430,11 @@ struct ProfileView: View {
             }) {
                 HStack(spacing: 6) {
                     if isFollowLoading {
-                        ProgressView()
-                            .scaleEffect(0.7)
-                            .tint(isFollowing ? Color.primary : Color(.systemBackground))
+                        // Use a simple opacity approach instead of ProgressView to avoid icon issues
+                        Image(systemName: isFollowing ? "checkmark" : "plus")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(isFollowing ? Color.primary : Color(.systemBackground))
+                            .opacity(0.5)
                     } else {
                         Image(systemName: isFollowing ? "checkmark" : "plus")
                             .font(.system(size: 12, weight: .bold))
@@ -1416,7 +1447,7 @@ struct ProfileView: View {
                         .foregroundColor(isFollowing ? Color.primary : Color(.systemBackground))
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 13) // Increased from 11 to make buttons taller
+                .padding(.vertical, 12)
                 .background {
                     if isFollowing {
                         // When following: white background with black outline (opposite for dark mode)
@@ -1465,9 +1496,17 @@ struct ProfileView: View {
                 }
             }) {
                 HStack(spacing: 6) {
-                    Image(systemName: "message.fill")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundColor(Color(.systemBackground))
+                    if isMessageLoading {
+                        // Use a simple opacity approach instead of ProgressView to avoid icon issues
+                        Image(systemName: "message.fill")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(Color(.systemBackground))
+                            .opacity(0.5)
+                    } else {
+                        Image(systemName: "message.fill")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(Color(.systemBackground))
+                    }
                     
                     Text("Message")
                         .font(.caption)
@@ -1475,7 +1514,7 @@ struct ProfileView: View {
                         .foregroundColor(Color(.systemBackground))
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 13) // Increased from 11 to make buttons taller
+                .padding(.vertical, 12)
                 .background {
                     // Black background (opposite for dark mode)
                     RoundedRectangle(cornerRadius: 18)
@@ -1484,6 +1523,8 @@ struct ProfileView: View {
             }
             .frame(maxWidth: .infinity)
             .buttonStyle(.plain) // Prevent automatic disabled styling
+            .disabled(isMessageLoading) // Disable while loading
+            .saturation(isMessageLoading ? 0.4 : 1.0) // Use saturation for loading state
             .opacity(1.0) // Force full opacity regardless of sheet state
         }
         .background(debugBackground(color: .cyan))
@@ -1491,25 +1532,62 @@ struct ProfileView: View {
     }
     
     private func startMessage() async {
-        guard let targetUserId = userId else { return }
+        guard let targetUserId = userId else {
+            print("⚠️ startMessage: No target user ID provided")
+            return
+        }
+        
+        guard let currentUserId = Auth.auth().currentUser?.uid else {
+            print("⚠️ startMessage: User not authenticated")
+            await MainActor.run {
+                isMessageLoading = false
+            }
+            return
+        }
+        
+        // Use already-loaded user data (much faster than fetching again!)
+        let targetUser = currentUser
+        let chatTitle = targetUser?.displayName ?? "User"
+        
+        print("💬 Starting message with user: \(targetUserId)")
+        await MainActor.run {
+            isMessageLoading = true
+        }
         
         do {
-            // Get the target user to get their display name for the chat title
-            guard let targetUser = try await FirebaseService.shared.getUser(withId: targetUserId) else {
-                print("❌ Could not find user to message")
-                return
+            // Optimize: Use createChat which already checks for existing chats internally
+            // This is faster than calling findExistingChat + createChat separately
+            print("🔍 Finding or creating chat...")
+            var chat = try await FirebaseService.shared.createChat(withUserId: targetUserId, title: chatTitle)
+            
+            // Populate user data from already-loaded currentUser (no extra fetch needed!)
+            chat = Chat(
+                id: chat.id,
+                title: chat.title,
+                lastMessagePreview: chat.lastMessagePreview,
+                unreadCount: chat.unreadCount,
+                messages: chat.messages,
+                lastMessageTime: chat.lastMessageTime,
+                participants: chat.participants,
+                otherParticipantId: targetUserId,
+                otherParticipantDisplayName: targetUser?.displayName ?? chat.otherParticipantDisplayName,
+                otherParticipantAvatarURL: targetUser?.avatarURL ?? chat.otherParticipantAvatarURL,
+                otherParticipantBadgeType: targetUser?.badgeType ?? chat.otherParticipantBadgeType
+            )
+            
+            print("✅ Chat ready: \(chat.id.uuidString) with \(chatTitle)")
+            
+            // Navigate immediately
+            await MainActor.run {
+                navigationPath.append(ChatsRoute.conversation(chat))
+                isMessageLoading = false
             }
-            
-            let chatTitle = targetUser.displayName ?? "User"
-            
-            // Create or find existing chat
-            _ = try await FirebaseService.shared.createChat(withUserId: targetUserId, title: chatTitle)
-            
-            // Note: Navigation to chat would typically be handled by the parent view
-            // For now, we'll just create the chat and the user can navigate to it from the chats tab
-            print("✅ Chat created successfully")
         } catch {
-            print("❌ Error creating chat: \(error.localizedDescription)")
+            print("❌ Error starting message with user \(targetUserId): \(error.localizedDescription)")
+            print("   Error type: \(type(of: error))")
+            await MainActor.run {
+                isMessageLoading = false
+            }
         }
     }
     
