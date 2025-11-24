@@ -65,12 +65,11 @@ struct ProfileView: View {
     
     // Layout constants
     private let avatarImageSize: CGFloat = 100
-    private let avatarSpacing: CGFloat = 8 // Match vertical spacing in profile (8pt)
-    private var avatarMaskSize: CGFloat { avatarImageSize + (avatarSpacing * 2) } // 116pt: avatar + 8pt spacing on each side
+    private let avatarSpacing: CGFloat = 6 // Spacing around avatar for mask (reduced from 8pt for tighter mask)
+    private var avatarMaskSize: CGFloat { avatarImageSize + (avatarSpacing * 2) } // 112pt: avatar + 6pt spacing on each side
     // Match post card padding: 10pt list inset + 10pt card padding = 20pt total
     private let profileContentPadding: CGFloat = CardLayoutConstants.horizontalPadding + 10 // 20pt total (matches posts)
-    private let avatarLeadingPadding: CGFloat = 10 // Matches list inset (avatar left edge aligns with post card left edge)
-    private var avatarOverlapOffset: CGFloat { -(avatarMaskSize / 2) } // -58pt: half of mask size to center overlap
+    private var avatarOverlapOffset: CGFloat { -(avatarMaskSize / 2) } // -56pt: half of mask size to center overlap
     
     // Computed property to determine if viewing own profile
     private var isOwnProfile: Bool {
@@ -339,14 +338,15 @@ struct ProfileView: View {
     
     private var bannerContent: some View {
         GeometryReader { bannerGeometry in
-            // Calculate avatar center position based on actual layout
-            // Avatar is in VStack with .frame(maxWidth: .infinity, alignment: .leading)
-            // Then .padding(.leading, avatarLeadingPadding) positions the avatar
-            // Avatar left edge = avatarLeadingPadding from screen left
-            // Avatar center X = avatarLeadingPadding + (avatarImageSize / 2)
+            // Calculate avatar image center position based on actual layout
+            // Avatar image is left-aligned within its frame, with left edge at content padding (20pt)
+            // Avatar image left edge = profileContentPadding (20pt) from screen left
+            // Avatar image center X = profileContentPadding + (avatarImageSize / 2) = 20pt + 50pt = 70pt
+            // Avatar overlaps banner, mask must be centered on avatar (not aligned at top)
+            // If mask top = avatar top, mask center is 6pt too low (mask is 112pt, avatar is 100pt, difference is 12pt/2 = 6pt)
             // Banner GeometryReader coordinate space matches screen width, so we can use the same calculation
-            let avatarCenterX = avatarLeadingPadding + (avatarImageSize / 2)
-            let avatarCenterY = bannerGeometry.size.height
+            let avatarCenterX = profileContentPadding + (avatarImageSize / 2)
+            let avatarCenterY = bannerGeometry.size.height - 6
             
             ZStack(alignment: .bottomTrailing) {
                 Group {
@@ -382,13 +382,15 @@ struct ProfileView: View {
                 .mask {
                     ZStack {
                         Rectangle()
-                        // Position mask circle center at exact avatar center using bannerGeometry coordinates
-                        // Avatar center X: avatarLeadingPadding + (avatarImageSize / 2) = 60pt from screen left
-                        // Avatar center Y: at bottom of banner = bannerGeometry.size.height
+                        // Position mask circle center at exact avatar image center using bannerGeometry coordinates
+                        // Avatar image left edge: profileContentPadding (20pt) - aligns with content padding
+                        // Avatar image center X: profileContentPadding + (avatarImageSize / 2) = 20pt + 50pt = 70pt
+                        // Avatar center Y: adjusted to center mask on avatar (mask is 112pt, avatar is 100pt)
+                        // The mask circle is avatarMaskSize (112pt) to create even spacing around the 100pt avatar image
                         Circle()
                             .frame(width: avatarMaskSize, height: avatarMaskSize)
                             .position(
-                                x: avatarCenterX, // Avatar center X: calculated from avatarLeadingPadding + avatarImageSize/2
+                                x: avatarCenterX, // Avatar image center X: profileContentPadding + avatarImageSize/2 = 70pt
                                 y: avatarCenterY // Avatar center Y: at bottom of banner
                             )
                             .blendMode(.destinationOut)
@@ -493,7 +495,7 @@ struct ProfileView: View {
                 .offset(x: avatarImageSize / 2 - 8, y: avatarImageSize / 2 - 8)
             }
         }
-        .frame(width: avatarMaskSize, height: avatarMaskSize) // Keep the overall frame for layout
+        .frame(width: avatarImageSize, height: avatarImageSize)
     }
     
     // MARK: - User Info
@@ -658,10 +660,10 @@ struct ProfileView: View {
         
         // Avatar and profile info - moves up to overlap banner
         VStack(alignment: .leading, spacing: 0) {
-            // Avatar
+            // Avatar - left edge aligns with content padding
             avatarView
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.leading, avatarLeadingPadding)
+                .padding(.leading, profileContentPadding)
                 .background(showLayoutDebugOverlays ? Color.yellow.opacity(0.1) : Color.clear)
                 .overlay(
                     Group {
@@ -1289,12 +1291,12 @@ struct ProfileView: View {
                 .clipped()
                 .ignoresSafeArea(edges: .top) // Extend to very top edge
             
-            // Avatar and profile info - moves up to overlap banner (EXACT same positioning as original)
+            // Avatar and profile info - moves up to overlap banner
             VStack(alignment: .leading, spacing: 0) {
-                // Avatar
+                // Avatar - left edge aligns with content padding
                 avatarView
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.leading, avatarLeadingPadding)
+                    .padding(.leading, profileContentPadding)
                 
                 // Profile info - consistent spacing throughout
                 profileInfoContent(for: user)
