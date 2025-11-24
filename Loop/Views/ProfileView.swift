@@ -1232,12 +1232,12 @@ struct ProfileView: View {
         let content = VStack(alignment: .leading, spacing: CardLayoutConstants.headerBottomSpacing) { // Match PostCard internal spacing: 12pt between components (header->content->actions)
             displayNameView
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(debugBackground(color: .green))
+                .background(debugSectionBackground(.content))
                 .overlay(debugStrokeOverlay())
             
             usernameView
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(debugBackground(color: .blue))
+                .background(debugSectionBackground(.content))
                 .overlay(debugStrokeOverlay())
             
             // Follower counts - hide when editing
@@ -1250,7 +1250,7 @@ struct ProfileView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .frame(minHeight: 44) // Same as original
                 .fixedSize(horizontal: false, vertical: true)
-                .background(debugBackground(color: .orange))
+                .background(debugSectionBackground(.content))
                 .overlay(debugStrokeOverlay())
             
             // Action buttons (Follow and Message) - below bio, above tabs
@@ -1258,7 +1258,7 @@ struct ProfileView: View {
             if !isOwnProfile && !isEditing {
                 actionButtons
                     .drawingGroup() // Isolate rendering to prevent automatic styling from sheet state
-                    .background(debugBackground(color: .cyan))
+                    .background(debugSectionBackground(.actions))
                     .overlay(debugStrokeOverlay())
             }
             
@@ -1266,15 +1266,15 @@ struct ProfileView: View {
             if isEditing && isOwnProfile {
                 settingsSection
                     .frame(height: 250)
-                    .background(debugBackground(color: .yellow))
+                    .background(debugSectionBackground(.content))
                     .overlay(debugStrokeOverlay())
             }
         }
         .padding(.horizontal, profileContentPadding) // Match post content padding (20pt total)
-        .background(showLayoutDebugOverlays ? Color.pink.opacity(0.05) : Color.clear)
+        .background(showLayoutDebugOverlays ? Color.yellow.opacity(0.05) : Color.clear)
         .overlay(debugPaddingLine())
         .padding(.top, CardLayoutConstants.topPadding) // Match PostCard top padding: 8pt
-        .background(showLayoutDebugOverlays ? Color.purple.opacity(0.05) : Color.clear)
+        .background(showLayoutDebugOverlays ? Color.pink.opacity(0.05) : Color.clear)
         .padding(.bottom, CardLayoutConstants.bottomPadding) // Match PostCard bottom padding: 8pt (consistent top/bottom)
         .background(showLayoutDebugOverlays ? Color.cyan.opacity(0.05) : Color.clear)
         
@@ -1290,12 +1290,7 @@ struct ProfileView: View {
                     .clipShape(RoundedRectangle(cornerRadius: CardLayoutConstants.cornerRadius))
             }
         }
-        .overlay {
-            if showLayoutDebugOverlays {
-                RoundedRectangle(cornerRadius: CardLayoutConstants.cornerRadius)
-                    .stroke(Color.red, lineWidth: 2)
-            }
-        }
+        .overlay(debugCardOutline())
     }
     
     @ViewBuilder
@@ -1336,8 +1331,13 @@ struct ProfileView: View {
             
             Spacer()
         }
-        .background(debugBackground(color: .purple))
+        .background(debugSectionBackground(.content))
         .overlay(debugStrokeOverlay())
+    }
+    
+    private enum ProfileDebugSection {
+        case content
+        case actions
     }
     
     @ViewBuilder
@@ -1349,11 +1349,31 @@ struct ProfileView: View {
     }
     
     @ViewBuilder
-    private func debugBackground(color: Color) -> some View {
+    private func debugSectionBackground(_ section: ProfileDebugSection = .content) -> some View {
         if showLayoutDebugOverlays {
-            color.opacity(0.1)
+            switch section {
+            case .content:
+                Color.green.opacity(0.1)
+            case .actions:
+                Color.orange.opacity(0.1)
+            }
         } else {
             Color.clear
+        }
+    }
+    
+    @ViewBuilder
+    private func debugCardOutline(horizontalInset: CGFloat = CardLayoutConstants.horizontalPadding) -> some View {
+        if showLayoutDebugOverlays {
+            GeometryReader { proxy in
+                let outlineWidth = max(proxy.size.width - (horizontalInset * 2), 1)
+                
+                RoundedRectangle(cornerRadius: CardLayoutConstants.cornerRadius)
+                    .stroke(Color.red, lineWidth: 2)
+                    .frame(width: outlineWidth, height: proxy.size.height)
+                    .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
+            }
+            .allowsHitTesting(false)
         }
     }
     
@@ -1362,7 +1382,7 @@ struct ProfileView: View {
         if showLayoutDebugOverlays {
             VStack {
                 Rectangle()
-                    .fill(Color.green)
+                    .fill(Color.yellow)
                     .frame(width: 1)
                 Spacer()
             }
@@ -1405,14 +1425,6 @@ struct ProfileView: View {
             }
         }
         .background(isSheetFullyExpanded ? Color(.systemBackground) : Color.clear)
-        .overlay(
-            Group {
-                if showLayoutDebugOverlays {
-                    Rectangle()
-                        .stroke(Color.blue, lineWidth: 2)
-                }
-            }
-        )
     }
     
     private var actionButtons: some View {
@@ -1527,7 +1539,7 @@ struct ProfileView: View {
             .saturation(isMessageLoading ? 0.4 : 1.0) // Use saturation for loading state
             .opacity(1.0) // Force full opacity regardless of sheet state
         }
-        .background(debugBackground(color: .cyan))
+        .background(debugSectionBackground(.actions))
         .overlay(debugStrokeOverlay())
     }
     
