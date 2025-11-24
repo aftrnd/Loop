@@ -249,9 +249,12 @@ struct ProfileView: View {
                         }
                         .fontWeight(.medium)
                     } else {
-                        Button(action: { dismiss() }) {
-                            Image(systemName: "xmark")
-                                .font(.body.weight(.medium))
+                        // Only show close button when fully expanded
+                        if isSheetFullyExpanded {
+                            Button(action: { dismiss() }) {
+                                Image(systemName: "xmark")
+                                    .font(.body.weight(.medium))
+                            }
                         }
                     }
                 }
@@ -272,11 +275,14 @@ struct ProfileView: View {
                             }
                             .disabled(isSaving)
                         } else {
-                            Button {
-                                startEditing()
-                            } label: {
-                                Image(systemName: "gear")
-                                    .font(.body.weight(.medium))
+                            // Only show gear button when fully expanded
+                            if isSheetFullyExpanded {
+                                Button {
+                                    startEditing()
+                                } label: {
+                                    Image(systemName: "gear")
+                                        .font(.body.weight(.medium))
+                                }
                             }
                         }
                     }
