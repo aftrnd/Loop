@@ -182,7 +182,7 @@ struct ProfileView: View {
                 .allowsHitTesting(expansionProgress > 0.5)
             }
         }
-        .background(Color(.systemBackground))
+        .background(isSheetFullyExpanded ? Color(.systemBackground) : Color.clear)
         .ignoresSafeArea(edges: .top)
     }
     
@@ -367,6 +367,8 @@ struct ProfileView: View {
             }
             .presentationDetents([.height(minimumProfileHeight), .large], selection: $currentDetent)
             .presentationDragIndicator(.visible)
+            // iOS 26 automatically applies liquid glass effect when sheet is half-opened
+            // No presentationBackground needed - system handles it automatically
         }
     }
     
@@ -1192,7 +1194,7 @@ struct ProfileView: View {
     
     @ViewBuilder
     private func profileInfoContent(for user: User) -> some View {
-        VStack(alignment: .leading, spacing: CardLayoutConstants.headerBottomSpacing) { // Match PostCard internal spacing: 12pt between components (header->content->actions)
+        let content = VStack(alignment: .leading, spacing: CardLayoutConstants.headerBottomSpacing) { // Match PostCard internal spacing: 12pt between components (header->content->actions)
             displayNameView
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(debugBackground(color: .green))
@@ -1240,16 +1242,36 @@ struct ProfileView: View {
         .background(showLayoutDebugOverlays ? Color.purple.opacity(0.05) : Color.clear)
         .padding(.bottom, CardLayoutConstants.bottomPadding) // Match PostCard bottom padding: 8pt (consistent top/bottom)
         .background(showLayoutDebugOverlays ? Color.cyan.opacity(0.05) : Color.clear)
-        .background(Color(.systemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: CardLayoutConstants.cornerRadius))
-        .overlay(
-            Group {
-                if showLayoutDebugOverlays {
-                    RoundedRectangle(cornerRadius: CardLayoutConstants.cornerRadius)
-                        .stroke(Color.red, lineWidth: 2)
-                }
+        
+        // Apply background only when fully expanded - let iOS 26 handle liquid glass when half-opened
+        Group {
+            if isSheetFullyExpanded {
+                content
+                    .background(Color(.systemBackground))
+                    .clipShape(RoundedRectangle(cornerRadius: CardLayoutConstants.cornerRadius))
+            } else {
+                // No background modifier at all when half-opened - let sheet's native liquid glass show through
+                content
+                    .clipShape(RoundedRectangle(cornerRadius: CardLayoutConstants.cornerRadius))
             }
-        )
+        }
+        .overlay {
+            if showLayoutDebugOverlays {
+                RoundedRectangle(cornerRadius: CardLayoutConstants.cornerRadius)
+                    .stroke(Color.red, lineWidth: 2)
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private var profileInfoBackground: some View {
+        // Use solid background when fully expanded, clear when half-opened to let sheet's native liquid glass show through
+        if isSheetFullyExpanded {
+            Color(.systemBackground)
+        } else {
+            // No background - let iOS 26 sheet automatically apply liquid glass effect
+            Color.clear
+        }
     }
     
     @ViewBuilder
@@ -1347,7 +1369,7 @@ struct ProfileView: View {
                 .padding(.bottom, avatarOverlapOffset)
             }
         }
-        .background(Color(.systemBackground))
+        .background(isSheetFullyExpanded ? Color(.systemBackground) : Color.clear)
         .overlay(
             Group {
                 if showLayoutDebugOverlays {
