@@ -111,10 +111,16 @@ struct ProfileView: View {
         let usernameHeight: CGFloat = 18 // Username/location line
         let followersHeight: CGFloat = 18 // Followers/following line
         let bioMinHeight: CGFloat = 44 // Minimum 2 lines for bio
+        let actionButtonsHeight: CGFloat = 50 // Follow/Message buttons (only for other users' profiles)
         let spacing: CGFloat = 8 * 3 // 3 gaps of 8px each
+        let spacingAfterBio: CGFloat = 12 // Spacing after bio before action buttons
         let padding: CGFloat = 24 // Reduced bottom padding
         
-        return bannerHeight + avatarSection + nameHeight + usernameHeight + followersHeight + bioMinHeight + spacing + padding
+        // Include action buttons height when viewing someone else's profile
+        // Use isOwnProfile (which works with userId) to avoid sheet resizing when currentUser loads
+        let buttonsHeight = !isOwnProfile ? actionButtonsHeight + spacingAfterBio : 0
+        
+        return bannerHeight + avatarSection + nameHeight + usernameHeight + followersHeight + bioMinHeight + buttonsHeight + spacing + padding
     }
     
     init(userId: String? = nil) {
@@ -1210,11 +1216,11 @@ struct ProfileView: View {
                 .background(debugBackground(color: .orange))
                 .overlay(debugStrokeOverlay())
             
-            // Action buttons (Follow and Message) - below bio, above tabs - fade in as sheet expands
+            // Action buttons (Follow and Message) - below bio, above tabs
+            // Always visible in preview (not just when fully expanded)
             if !isOwnProfile && !isEditing {
                 actionButtons
-                    .opacity(expansionProgress)
-                    .animation(.easeInOut(duration: 0.2), value: expansionProgress)
+                    .drawingGroup() // Isolate rendering to prevent automatic styling from sheet state
                     .background(debugBackground(color: .cyan))
                     .overlay(debugStrokeOverlay())
             }
@@ -1382,25 +1388,31 @@ struct ProfileView: View {
                         .foregroundColor(isFollowing ? Color.primary : Color(.systemBackground))
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 11)
+                .padding(.vertical, 13) // Increased from 11 to make buttons taller
                 .background {
                     if isFollowing {
                         // When following: white background with black outline (opposite for dark mode)
                         RoundedRectangle(cornerRadius: 18)
                             .fill(Color(.systemBackground))
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 18)
-                                    .stroke(Color.primary, lineWidth: 1.5)
-                            }
                     } else {
                         // When not following: black background
                         RoundedRectangle(cornerRadius: 18)
                             .fill(Color.primary)
                     }
                 }
+                .overlay {
+                    if isFollowing {
+                        // Stroke overlay outside the background to prevent clipping
+                        RoundedRectangle(cornerRadius: 18)
+                            .strokeBorder(Color.primary, lineWidth: 1.5)
+                    }
+                }
             }
             .frame(maxWidth: .infinity)
+            .buttonStyle(.plain) // Prevent automatic disabled styling
             .disabled(isFollowLoading)
+            .saturation(isFollowLoading ? 0.4 : 1.0) // Use saturation for loading state instead of opacity
+            .opacity(1.0) // Force full opacity regardless of sheet state
             .overlay {
                 SparkleAnimation()
                     .opacity(triggerSparkles ? 1 : 0)
@@ -1435,7 +1447,7 @@ struct ProfileView: View {
                         .foregroundColor(Color(.systemBackground))
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 11)
+                .padding(.vertical, 13) // Increased from 11 to make buttons taller
                 .background {
                     // Black background (opposite for dark mode)
                     RoundedRectangle(cornerRadius: 18)
@@ -1443,6 +1455,8 @@ struct ProfileView: View {
                 }
             }
             .frame(maxWidth: .infinity)
+            .buttonStyle(.plain) // Prevent automatic disabled styling
+            .opacity(1.0) // Force full opacity regardless of sheet state
         }
         .background(debugBackground(color: .cyan))
         .overlay(debugStrokeOverlay())
