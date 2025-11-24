@@ -148,6 +148,11 @@ class HomeFeedViewModel: ObservableObject {
             withTransaction(transaction) {
                 loops.append(contentsOf: newLoops)
             }
+            
+            lastDocument = documents.last
+            
+            // Fetch reply previews for the newly appended loops
+            await fetchReplyPreviewsForLoops(newLoops)
         } else {
             // When replacing, preserve optimistic updates for loops with pending operations
             var mergedLoops: [Loop] = []
@@ -172,6 +177,12 @@ class HomeFeedViewModel: ObservableObject {
                 }
             }
             
+            lastDocument = documents.last
+            
+            // Fetch reply previews for all loops in the final merged array
+            // This ensures reply previews are fetched for all loops that will be displayed
+            await fetchReplyPreviewsForLoops(mergedLoops)
+            
             // Disable animations to prevent flickering during state updates
             var transaction = Transaction()
             transaction.disablesAnimations = true
@@ -179,11 +190,6 @@ class HomeFeedViewModel: ObservableObject {
                 loops = mergedLoops
             }
         }
-        
-        lastDocument = documents.last
-        
-        // Fetch reply previews for loops with replies
-        await fetchReplyPreviewsForLoops(newLoops)
     }
     
     private func fetchReplyPreviewsForLoops(_ loops: [Loop]) async {
