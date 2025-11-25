@@ -52,6 +52,7 @@ struct ProfileView: View {
     @State private var contentHeight: CGFloat = 0
     @State private var currentDetent: PresentationDetent = .height(366)
     @State private var actualSheetHeight: CGFloat = 0
+    @State private var otherProfileHeaderHeight: CGFloat = 0
     
     // Profile feed
     @StateObject private var feedViewModel: ProfileFeedViewModel
@@ -95,6 +96,8 @@ struct ProfileView: View {
     // Match post card padding: 10pt list inset + 10pt card padding = 20pt total
     private let profileContentPadding: CGFloat = CardLayoutConstants.horizontalPadding + 10 // 20pt total (matches posts)
     private var avatarOverlapOffset: CGFloat { -(avatarMaskSize / 2) } // -56pt: half of mask size to center overlap
+    private var profileCardBottomPadding: CGFloat { CardLayoutConstants.bottomPadding }
+    private var actionButtonCornerRadius: CGFloat { CardLayoutConstants.cornerRadius * 1.5 }
     
     // Computed property to determine if viewing own profile
     private var isOwnProfile: Bool {
@@ -109,8 +112,8 @@ struct ProfileView: View {
         return formatter
     }
     
-    // Calculate minimum height needed for profile content
-    private var minimumProfileHeight: CGFloat {
+    // Calculate baseline minimum height needed for profile content
+    private var baseProfileHeight: CGFloat {
         let bannerHeight: CGFloat = 180
         let avatarSection: CGFloat = 30 // Avatar overlap area (reduced)
         let nameHeight: CGFloat = 28 // Display name
@@ -127,6 +130,18 @@ struct ProfileView: View {
         let buttonsHeight = !isOwnProfile ? actionButtonsHeight + spacingAfterBio : 0
         
         return bannerHeight + avatarSection + nameHeight + usernameHeight + followersHeight + bioMinHeight + buttonsHeight + spacing + padding
+    }
+    
+    private var minimumProfileHeight: CGFloat {
+        if isOwnProfile {
+            return baseProfileHeight
+        }
+        
+        if otherProfileHeaderHeight > 0 {
+            return otherProfileHeaderHeight
+        }
+        
+        return baseProfileHeight
     }
     
     init(userId: String? = nil) {
@@ -190,6 +205,20 @@ struct ProfileView: View {
         }
         .background(isSheetFullyExpanded ? Color(.systemBackground) : Color.clear)
         .ignoresSafeArea(edges: .top)
+        .onPreferenceChange(ProfileHeaderHeightKey.self) { height in
+            guard !isOwnProfile else { return }
+            let clampedHeight = max(height, 1)
+            guard clampedHeight > 1 else { return }
+            
+            let delta = abs(otherProfileHeaderHeight - clampedHeight)
+            guard delta > 0.5 else { return }
+            
+            otherProfileHeaderHeight = clampedHeight
+            
+            if !isSheetFullyExpanded {
+                currentDetent = .height(clampedHeight)
+            }
+        }
     }
     
     private var loadingView: some View {
@@ -1275,7 +1304,7 @@ struct ProfileView: View {
         .overlay(debugPaddingLine())
         .padding(.top, CardLayoutConstants.topPadding) // Match PostCard top padding: 8pt
         .background(showLayoutDebugOverlays ? Color.pink.opacity(0.05) : Color.clear)
-        .padding(.bottom, CardLayoutConstants.bottomPadding) // Match PostCard bottom padding: 8pt (consistent top/bottom)
+        .padding(.bottom, profileCardBottomPadding) // Extend non-own profiles to align with sheet corners
         .background(showLayoutDebugOverlays ? Color.cyan.opacity(0.05) : Color.clear)
         
         // Apply background only when fully expanded - let iOS 26 handle liquid glass when half-opened
@@ -1363,17 +1392,16 @@ struct ProfileView: View {
     }
     
     @ViewBuilder
-    private func debugCardOutline(horizontalInset: CGFloat = CardLayoutConstants.horizontalPadding) -> some View {
+    private func debugCardOutline(
+        horizontalInset: CGFloat = CardLayoutConstants.horizontalPadding,
+        verticalInset: CGFloat = 0
+    ) -> some View {
         if showLayoutDebugOverlays {
-            GeometryReader { proxy in
-                let outlineWidth = max(proxy.size.width - (horizontalInset * 2), 1)
-                
-                RoundedRectangle(cornerRadius: CardLayoutConstants.cornerRadius)
-                    .stroke(Color.red, lineWidth: 2)
-                    .frame(width: outlineWidth, height: proxy.size.height)
-                    .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
-            }
-            .allowsHitTesting(false)
+            RoundedRectangle(cornerRadius: CardLayoutConstants.cornerRadius)
+                .stroke(Color.red, lineWidth: 2)
+                .padding(.horizontal, horizontalInset)
+                .padding(.vertical, verticalInset)
+                .allowsHitTesting(false)
         }
     }
     
@@ -1425,6 +1453,12 @@ struct ProfileView: View {
             }
         }
         .background(isSheetFullyExpanded ? Color(.systemBackground) : Color.clear)
+        .background(
+            GeometryReader { proxy in
+                Color.clear
+                    .preference(key: ProfileHeaderHeightKey.self, value: proxy.size.height)
+            }
+        )
     }
     
     private var actionButtons: some View {
@@ -1459,22 +1493,15 @@ struct ProfileView: View {
                         .foregroundColor(isFollowing ? Color.primary : Color(.systemBackground))
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
+                .frame(height: 52)
+                .padding(.horizontal, 4)
                 .background {
-                    if isFollowing {
-                        // When following: white background with black outline (opposite for dark mode)
-                        RoundedRectangle(cornerRadius: 18)
-                            .fill(Color(.systemBackground))
-                    } else {
-                        // When not following: black background
-                        RoundedRectangle(cornerRadius: 18)
-                            .fill(Color.primary)
-                    }
+                    RoundedRectangle(cornerRadius: actionButtonCornerRadius, style: .continuous)
+                        .fill(isFollowing ? Color.clear : Color.primary)
                 }
                 .overlay {
                     if isFollowing {
-                        // Stroke overlay outside the background to prevent clipping
-                        RoundedRectangle(cornerRadius: 18)
+                        RoundedRectangle(cornerRadius: actionButtonCornerRadius, style: .continuous)
                             .strokeBorder(Color.primary, lineWidth: 1.5)
                     }
                 }
@@ -1526,10 +1553,11 @@ struct ProfileView: View {
                         .foregroundColor(Color(.systemBackground))
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
+                .frame(height: 52)
+                .padding(.horizontal, 4)
                 .background {
                     // Black background (opposite for dark mode)
-                    RoundedRectangle(cornerRadius: 18)
+                    RoundedRectangle(cornerRadius: actionButtonCornerRadius, style: .continuous)
                         .fill(Color.primary)
                 }
             }
@@ -1605,13 +1633,6 @@ struct ProfileView: View {
     
     private var profileTabs: some View {
         VStack(spacing: 0) {
-            // Top padding - only when viewing someone else's profile (when buttons are shown)
-            if !isOwnProfile && !isEditing {
-                Color.clear
-                    .frame(height: CardLayoutConstants.bottomPadding)
-                    .background(showLayoutDebugOverlays ? Color.purple.opacity(0.3) : Color.clear)
-            }
-            
             tabButtonsContainer
             tabIndicatorArea
         }
@@ -1830,6 +1851,13 @@ struct ProfileView: View {
 
 // Preference key to track sheet height for expansion animations
 private struct SheetHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
+private struct ProfileHeaderHeightKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = nextValue()
