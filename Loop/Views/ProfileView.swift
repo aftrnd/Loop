@@ -53,6 +53,8 @@ struct ProfileView: View {
     @State private var currentDetent: PresentationDetent = .height(366)
     @State private var actualSheetHeight: CGFloat = 0
     @State private var otherProfileHeaderHeight: CGFloat = 0
+    @State private var ownershipHintOpacity: Double = 0
+    @State private var ownershipHintMeasuredHeight: CGFloat = 0
     
     // Profile feed
     @StateObject private var feedViewModel: ProfileFeedViewModel
@@ -98,6 +100,18 @@ struct ProfileView: View {
     private var avatarOverlapOffset: CGFloat { -(avatarMaskSize / 2) } // -56pt: half of mask size to center overlap
     private var profileCardBottomPadding: CGFloat { CardLayoutConstants.bottomPadding }
     private var actionButtonCornerRadius: CGFloat { CardLayoutConstants.cornerRadius * 1.5 }
+    private var ownershipHintHeight: CGFloat {
+        if ownershipHintMeasuredHeight > 0 {
+            return ownershipHintMeasuredHeight
+        }
+        return CardLayoutConstants.topPadding + profileCardBottomPadding + 24
+    }
+    private var tabVerticalPadding: CGFloat {
+        (!isOwnProfile && !isEditing) ? CardLayoutConstants.headerBottomSpacing : 0
+    }
+    private var shouldShowOwnershipHint: Bool {
+        isOwnProfile && !isEditing && !isSheetFullyExpanded
+    }
     
     // Computed property to determine if viewing own profile
     private var isOwnProfile: Bool {
@@ -134,7 +148,7 @@ struct ProfileView: View {
     
     private var minimumProfileHeight: CGFloat {
         if isOwnProfile {
-            return baseProfileHeight
+            return baseProfileHeight + (shouldShowOwnershipHint ? ownershipHintHeight : 0)
         }
         
         if otherProfileHeaderHeight > 0 {
@@ -1258,68 +1272,69 @@ struct ProfileView: View {
     
     @ViewBuilder
     private func profileInfoContent(for user: User) -> some View {
-        let content = VStack(alignment: .leading, spacing: CardLayoutConstants.headerBottomSpacing) { // Match PostCard internal spacing: 12pt between components (header->content->actions)
-            displayNameView
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(debugSectionBackground(.content))
-                .overlay(debugStrokeOverlay())
-            
-            usernameView
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(debugSectionBackground(.content))
-                .overlay(debugStrokeOverlay())
-            
-            // Follower counts - hide when editing
-            if !isEditing {
-                followerCountsView(for: user)
-            }
-            
-            // Bio
-            bioView
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .frame(minHeight: 44) // Same as original
-                .fixedSize(horizontal: false, vertical: true)
-                .background(debugSectionBackground(.content))
-                .overlay(debugStrokeOverlay())
-            
-            // Action buttons (Follow and Message) - below bio, above tabs
-            // Always visible in preview (not just when fully expanded)
-            if !isOwnProfile && !isEditing {
-                actionButtons
-                    .drawingGroup() // Isolate rendering to prevent automatic styling from sheet state
-                    .background(debugSectionBackground(.actions))
-                    .overlay(debugStrokeOverlay())
-            }
-            
-            // Settings section when editing (only for own profile)
-            if isEditing && isOwnProfile {
-                settingsSection
-                    .frame(height: 250)
-                    .background(debugSectionBackground(.content))
-                    .overlay(debugStrokeOverlay())
+        profileCardContainer {
+            VStack(alignment: .leading, spacing: CardLayoutConstants.headerBottomSpacing) {
+                VStack(alignment: .leading, spacing: CardLayoutConstants.headerBottomSpacing) {
+                    displayNameView
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(debugSectionBackground(.content))
+                        .overlay(debugStrokeOverlay())
+                    
+                    usernameView
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(debugSectionBackground(.content))
+                        .overlay(debugStrokeOverlay())
+                    
+                    if !isEditing {
+                        followerCountsView(for: user)
+                    }
+                    
+                    bioView
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .frame(minHeight: 44)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .background(debugSectionBackground(.content))
+                        .overlay(debugStrokeOverlay())
+                    
+                    if !isOwnProfile && !isEditing {
+                        actionButtons
+                            .drawingGroup()
+                            .background(debugSectionBackground(.actions))
+                            .overlay(debugStrokeOverlay())
+                    }
+                    
+                    if isEditing && isOwnProfile {
+                        settingsSection
+                            .frame(height: 250)
+                            .background(debugSectionBackground(.content))
+                            .overlay(debugStrokeOverlay())
+                    }
+                }
+                
+                if shouldShowOwnershipHint {
+                    ownershipHintLabel()
+                        .opacity(ownershipHintOpacity * max(0, 1 - expansionProgress))
+                        .animation(.easeInOut(duration: 0.25), value: expansionProgress)
+                        .transition(.opacity)
+                        .onAppear {
+                            ownershipHintOpacity = 0
+                            withAnimation(.easeInOut(duration: 0.35)) {
+                                ownershipHintOpacity = 1
+                            }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                                guard shouldShowOwnershipHint else { return }
+                                withAnimation(.easeInOut(duration: 0.5)) {
+                                    ownershipHintOpacity = 0.65
+                                }
+                            }
+                        }
+                        .onDisappear {
+                            ownershipHintOpacity = 0
+                        }
+                        .allowsHitTesting(false)
+                }
             }
         }
-        .padding(.horizontal, profileContentPadding) // Match post content padding (20pt total)
-        .background(showLayoutDebugOverlays ? Color.yellow.opacity(0.05) : Color.clear)
-        .overlay(debugPaddingLine())
-        .padding(.top, CardLayoutConstants.topPadding) // Match PostCard top padding: 8pt
-        .background(showLayoutDebugOverlays ? Color.pink.opacity(0.05) : Color.clear)
-        .padding(.bottom, profileCardBottomPadding) // Extend non-own profiles to align with sheet corners
-        .background(showLayoutDebugOverlays ? Color.cyan.opacity(0.05) : Color.clear)
-        
-        // Apply background only when fully expanded - let iOS 26 handle liquid glass when half-opened
-        Group {
-            if isSheetFullyExpanded {
-                content
-                    .background(Color(.systemBackground))
-                    .clipShape(RoundedRectangle(cornerRadius: CardLayoutConstants.cornerRadius))
-            } else {
-                // No background modifier at all when half-opened - let sheet's native liquid glass show through
-                content
-                    .clipShape(RoundedRectangle(cornerRadius: CardLayoutConstants.cornerRadius))
-            }
-        }
-        .overlay(debugCardOutline())
     }
     
     @ViewBuilder
@@ -1416,6 +1431,54 @@ struct ProfileView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.leading, profileContentPadding)
+        }
+    }
+    
+    @ViewBuilder
+    private func profileCardContainer<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        let base = content()
+            .padding(.horizontal, profileContentPadding)
+            .background(showLayoutDebugOverlays ? Color.yellow.opacity(0.05) : Color.clear)
+            .overlay(debugPaddingLine())
+            .padding(.top, CardLayoutConstants.topPadding)
+            .background(showLayoutDebugOverlays ? Color.pink.opacity(0.05) : Color.clear)
+            .padding(.bottom, profileCardBottomPadding)
+            .background(showLayoutDebugOverlays ? Color.cyan.opacity(0.05) : Color.clear)
+        
+        Group {
+            if isSheetFullyExpanded {
+                base
+                    .background(Color(.systemBackground))
+                    .clipShape(RoundedRectangle(cornerRadius: CardLayoutConstants.cornerRadius))
+            } else {
+                base
+                    .clipShape(RoundedRectangle(cornerRadius: CardLayoutConstants.cornerRadius))
+            }
+        }
+        .overlay(debugCardOutline())
+    }
+    
+    @ViewBuilder
+    private func ownershipHintLabel() -> some View {
+        Text("This is your profile")
+            .font(.footnote.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .center)
+            .padding(.vertical, 6)
+            .background(debugSectionBackground(.content))
+            .overlay(debugStrokeOverlay())
+        .background(
+            GeometryReader { proxy in
+                Color.clear
+                    .preference(key: OwnershipHintHeightKey.self, value: proxy.size.height)
+            }
+        )
+        .onPreferenceChange(OwnershipHintHeightKey.self) { height in
+            guard height > 0 else { return }
+            let delta = abs(ownershipHintMeasuredHeight - height)
+            if delta > 0.5 {
+                ownershipHintMeasuredHeight = height
+            }
         }
     }
     
@@ -1577,7 +1640,7 @@ struct ProfileView: View {
             return
         }
         
-        guard let currentUserId = Auth.auth().currentUser?.uid else {
+        guard Auth.auth().currentUser?.uid != nil else {
             print("⚠️ startMessage: User not authenticated")
             await MainActor.run {
                 isMessageLoading = false
@@ -1633,8 +1696,20 @@ struct ProfileView: View {
     
     private var profileTabs: some View {
         VStack(spacing: 0) {
+            if tabVerticalPadding > 0 {
+                Color.clear
+                    .frame(height: tabVerticalPadding)
+                    .background(showLayoutDebugOverlays ? Color.purple.opacity(0.3) : Color.clear)
+            }
+            
             tabButtonsContainer
             tabIndicatorArea
+            
+            if tabVerticalPadding > 0 {
+                Color.clear
+                    .frame(height: tabVerticalPadding)
+                    .background(showLayoutDebugOverlays ? Color.purple.opacity(0.3) : Color.clear)
+            }
         }
         .allowsHitTesting(true)
         .background(Color(.systemBackground).opacity(0.01)) // Minimal background for hit testing
@@ -1649,7 +1724,8 @@ struct ProfileView: View {
                 } label: {
                     VStack(spacing: 8) {
                         Text(tab.rawValue)
-                            .font(.headline)
+                            .font(.system(.body, design: .default))
+                            .fontWeight(.semibold)
                             .foregroundColor(selectedTab == tab ? .primary : .secondary)
                         
                         Rectangle()
@@ -1683,10 +1759,6 @@ struct ProfileView: View {
             .frame(height: CardLayoutConstants.dividerHeight)
             .background(Color(.systemBackground))
             
-            // Bottom padding with purple background for visibility
-            Color.clear
-                .frame(height: CardLayoutConstants.bottomPadding)
-                .background(showLayoutDebugOverlays ? Color.purple.opacity(0.3) : Color.clear)
         }
     }
     
@@ -1858,6 +1930,13 @@ private struct SheetHeightKey: PreferenceKey {
 }
 
 private struct ProfileHeaderHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
+private struct OwnershipHintHeightKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = nextValue()
