@@ -106,8 +106,13 @@ struct ProfileView: View {
         }
         return CardLayoutConstants.topPadding + profileCardBottomPadding + 24
     }
-    private var tabVerticalPadding: CGFloat {
+    private var tabTopPadding: CGFloat {
         (!isOwnProfile && !isEditing) ? CardLayoutConstants.headerBottomSpacing : 0
+    }
+    
+    private var tabBottomPadding: CGFloat {
+        // Add bottom padding for ALL profiles (both own and others)
+        !isEditing ? CardLayoutConstants.headerBottomSpacing : 0
     }
     private var shouldShowOwnershipHint: Bool {
         isOwnProfile && !isEditing && !isSheetFullyExpanded
@@ -1696,18 +1701,20 @@ struct ProfileView: View {
     
     private var profileTabs: some View {
         VStack(spacing: 0) {
-            if tabVerticalPadding > 0 {
+            // Top padding - only for other users' profiles
+            if tabTopPadding > 0 {
                 Color.clear
-                    .frame(height: tabVerticalPadding)
+                    .frame(height: tabTopPadding)
                     .background(showLayoutDebugOverlays ? Color.purple.opacity(0.3) : Color.clear)
             }
             
             tabButtonsContainer
             tabIndicatorArea
             
-            if tabVerticalPadding > 0 {
+            // Bottom padding - for all profiles (both own and others)
+            if tabBottomPadding > 0 {
                 Color.clear
-                    .frame(height: tabVerticalPadding)
+                    .frame(height: tabBottomPadding)
                     .background(showLayoutDebugOverlays ? Color.purple.opacity(0.3) : Color.clear)
             }
         }
