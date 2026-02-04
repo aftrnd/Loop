@@ -406,7 +406,7 @@ struct ReplyThreadWithLineView: View {
                                     print("🟢 MAIN POST HEIGHT MEASURED: \(geo.size.height)")
                                     mainPostHeight = geo.size.height
                                 }
-                                .onChange(of: geo.size.height) { newHeight in
+                                .onChange(of: geo.size.height) { _, newHeight in
                                     print("🟢 MAIN POST HEIGHT CHANGED: \(newHeight)")
                                     mainPostHeight = newHeight
                                 }

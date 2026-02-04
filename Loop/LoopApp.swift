@@ -171,20 +171,6 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         completionHandler(.noData)
     }
     
-    // Handle custom scheme redirects for reCAPTCHA verification
-    func application(_ application: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey : Any] = [:]) -> Bool {
-        print("🔍 DEBUG: Received URL: \(url)")
-        
-        if Auth.auth().canHandle(url) {
-            print("🔍 DEBUG: ✅ Firebase Auth can handle this URL")
-            return true
-        }
-        
-        print("🔍 DEBUG: ❌ Firebase Auth cannot handle this URL")
-        // URL not auth related; handle separately if needed
-        return false
-    }
-    
     // MARK: - UNUserNotificationCenterDelegate
     
     // Handle incoming notifications while app is in foreground
@@ -246,6 +232,14 @@ struct LoopApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .onOpenURL { url in
+                    print("🔍 DEBUG: Received URL: \(url)")
+                    if Auth.auth().canHandle(url) {
+                        print("🔍 DEBUG: ✅ Firebase Auth can handle this URL")
+                    } else {
+                        print("🔍 DEBUG: ❌ Firebase Auth cannot handle this URL")
+                    }
+                }
         }
     }
 }

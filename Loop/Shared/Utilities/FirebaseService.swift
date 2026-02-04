@@ -606,7 +606,7 @@ class FirebaseService {
                 let functions = Functions.functions()
                 let sendNotification = functions.httpsCallable("sendNotification")
                 
-                let result = try await sendNotification.call([
+                _ = try await sendNotification.call([
                     "fcmToken": fcmToken,
                     "title": senderName,
                     "body": content,
@@ -786,7 +786,7 @@ class FirebaseService {
         // Get chat participants to determine who to notify
         let chatDoc = try await db.collection("chats").document(chatId).getDocument()
         guard let chatData = chatDoc.data(),
-              let participants = chatData["participants"] as? [String] else {
+              let _ = chatData["participants"] as? [String] else {
             return
         }
         
@@ -827,7 +827,7 @@ class FirebaseService {
             // Truncate message content for notification
             let truncatedContent = messageContent.prefix(50) + (messageContent.count > 50 ? "..." : "")
             
-            let result = try await sendNotification.call([
+            _ = try await sendNotification.call([
                 "fcmToken": fcmToken,
                 "title": "\(likerName) liked your message",
                 "body": "\"\(truncatedContent)\"",

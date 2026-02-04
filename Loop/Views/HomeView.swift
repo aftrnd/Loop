@@ -218,7 +218,7 @@ struct HomeView: View {
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
         }
-        .frame(height: UIScreen.main.bounds.height - 200)
+        .frame(height: 600)
         .listRowSeparator(.hidden)
         .listRowBackground(Color.clear)
         .listRowInsets(EdgeInsets())

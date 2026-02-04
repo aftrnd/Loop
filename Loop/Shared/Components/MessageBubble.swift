@@ -100,7 +100,7 @@ struct MessageBubble: View {
                         .transition(.move(edge: .leading).combined(with: .opacity))
                 }
             }
-            .frame(maxWidth: UIScreen.main.bounds.width * 0.66, alignment: .leading)
+            .frame(maxWidth: 250, alignment: .leading)
             
             Spacer(minLength: 0)
         }
@@ -181,7 +181,7 @@ struct MessageBubble: View {
                         }
                     }
             }
-            .frame(maxWidth: UIScreen.main.bounds.width * 0.66, alignment: .trailing)
+            .frame(maxWidth: 250, alignment: .trailing)
         }
         .animation(.easeInOut(duration: 0.2), value: showTimestamp)
         .frame(maxWidth: .infinity, alignment: .trailing)

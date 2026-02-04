@@ -77,9 +77,9 @@ struct FeedListView<Content: View>: View {
 }
 
 #Preview {
-    @State var scrollOffset: CGFloat = 0
-    @State var contentHeight: CGFloat = 0
-    @State var scrollViewHeight: CGFloat = 0
+    @Previewable @State var scrollOffset: CGFloat = 0
+    @Previewable @State var contentHeight: CGFloat = 0
+    @Previewable @State var scrollViewHeight: CGFloat = 0
     
     return FeedListView(
         coordinateSpaceName: "preview",

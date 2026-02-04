@@ -204,7 +204,7 @@ final class ChatsListViewModel {
     // MARK: - Public Methods
 
     func createChat(with phoneNumber: String, displayName: String) async throws {
-        guard let currentUserId = FirebaseService.shared.getCurrentUser()?.id else {
+        guard FirebaseService.shared.getCurrentUser()?.id != nil else {
             throw NSError(domain: "ChatsListViewModel", code: 1, userInfo: [NSLocalizedDescriptionKey: "User not authenticated"])
         }
 
@@ -220,7 +220,7 @@ final class ChatsListViewModel {
         let chatTitle = otherUser.displayName ?? displayName
 
         // Create the chat with the other user's ID
-        let chat = try await FirebaseService.shared.createChat(withUserId: otherUser.id, title: chatTitle)
+        _ = try await FirebaseService.shared.createChat(withUserId: otherUser.id, title: chatTitle)
 
         // Don't immediately add to local state - let the real-time listener handle it
         // This prevents duplicates and ensures consistency with database state

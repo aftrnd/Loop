@@ -385,8 +385,8 @@ struct MultipleMediaPreview: View {
 }
 
 #Preview {
-    @State var draft = LoopDraft()
-    @State var isPresented = true
+    @Previewable @State var draft = LoopDraft()
+    @Previewable @State var isPresented = true
     
     return ComposeLoopView(
         draft: $draft,

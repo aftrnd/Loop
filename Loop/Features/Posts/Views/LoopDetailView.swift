@@ -209,12 +209,12 @@ struct LoopDetailView: View {
                                         .overlay(
                                             GeometryReader { geo in
                                                 Color.clear
-                                                    .onAppear {
-                                                        replyHeights[threadedReply.reply.id] = geo.size.height
-                                                    }
-                                                    .onChange(of: geo.size.height) { newHeight in
-                                                        replyHeights[threadedReply.reply.id] = newHeight
-                                                    }
+                                                .onAppear {
+                                                    replyHeights[threadedReply.reply.id] = geo.size.height
+                                                }
+                                                .onChange(of: geo.size.height) { _, newHeight in
+                                                    replyHeights[threadedReply.reply.id] = newHeight
+                                                }
                                             }
                                         )
                                         
@@ -260,12 +260,12 @@ struct LoopDetailView: View {
                                                     .overlay(
                                                         GeometryReader { geo in
                                                             Color.clear
-                                                                .onAppear {
-                                                                    replyHeights[nestedReply.id] = geo.size.height
-                                                                }
-                                                                .onChange(of: geo.size.height) { newHeight in
-                                                                    replyHeights[nestedReply.id] = newHeight
-                                                                }
+                                                            .onAppear {
+                                                                replyHeights[nestedReply.id] = geo.size.height
+                                                            }
+                                                            .onChange(of: geo.size.height) { _, newHeight in
+                                                                replyHeights[nestedReply.id] = newHeight
+                                                            }
                                                         }
                                                     )
                                                     // 12pt spacing before each nested reply (matches contentToActionsSpacing)
@@ -421,7 +421,7 @@ struct ConversationLinesView: View {
     var body: some View {
         let lineWidth = CardLayoutConstants.conversationLineWidth
         let lineX = CardLayoutConstants.horizontalPadding + CardLayoutConstants.avatarSize / 2 - lineWidth / 2
-        let externalTopPadding: CGFloat = parentIndex == 0 ? 0 : 5
+        let _ = parentIndex == 0 ? 0 : 5
         
         // Draw individual lines between each consecutive pair
         ForEach(Array(lineSegments.enumerated()), id: \.offset) { _, segment in
@@ -472,7 +472,7 @@ struct ConversationLinesView: View {
                 let prevReply = threadedReply.nestedReplies[i - 1]
                 let currentReply = threadedReply.nestedReplies[i]
                 
-                if let prevHeight = replyHeights[prevReply.id], let currentHeight = replyHeights[currentReply.id] {
+                if let prevHeight = replyHeights[prevReply.id], let _ = replyHeights[currentReply.id] {
                     // Previous avatar bottom + gap
                     let prevAvatarBottom = cumulativeHeight + CardLayoutConstants.topPadding + CardLayoutConstants.avatarSize
                     let lineStart = prevAvatarBottom + CardLayoutConstants.avatarLineGap

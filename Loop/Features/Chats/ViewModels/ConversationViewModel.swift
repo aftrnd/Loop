@@ -204,7 +204,7 @@ final class ConversationViewModel {
                 )
                 
                 await MainActor.run {
-                    messages[index] = updatedMessage
+                    self.messages[index] = updatedMessage
                 }
             }
             
@@ -240,7 +240,7 @@ final class ConversationViewModel {
                     )
                     
                     await MainActor.run {
-                        messages[index] = revertedMessage
+                        self.messages[index] = revertedMessage
                     }
                 }
             }

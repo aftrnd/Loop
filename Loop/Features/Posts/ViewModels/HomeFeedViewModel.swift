@@ -41,7 +41,7 @@ class HomeFeedViewModel: ObservableObject {
     // MARK: - Feed Management
     
     func startListening() {
-        guard let currentUserId = Auth.auth().currentUser?.uid else { return }
+        guard Auth.auth().currentUser?.uid != nil else { return }
         
         // Only show loading spinner if not currently refreshing and list is empty
         if !isRefreshing && loops.isEmpty {
@@ -370,7 +370,7 @@ class HomeFeedViewModel: ObservableObject {
                 print("❌ DEBUG: No replies found, clearing preview")
                 var transaction = Transaction()
                 transaction.disablesAnimations = true
-                withTransaction(transaction) {
+                _ = withTransaction(transaction) {
                     replyPreviews.removeValue(forKey: loopId)
                 }
                 return
@@ -403,7 +403,7 @@ class HomeFeedViewModel: ObservableObject {
                 print("❌ DEBUG: No relevant replies to show, clearing preview")
                 var transaction = Transaction()
                 transaction.disablesAnimations = true
-                withTransaction(transaction) {
+                _ = withTransaction(transaction) {
                     replyPreviews.removeValue(forKey: loopId)
                 }
             }
