@@ -11,6 +11,7 @@ struct ProfileView: View {
     @State private var currentUser: User?
     @State private var isLoading = false
     @State private var showSettings = false
+    @State private var showEditProfile = false
     @State private var isEditing = false
     @State private var loadError: String?
     
@@ -67,6 +68,14 @@ struct ProfileView: View {
     private var isSheetFullyExpanded: Bool {
         currentDetent == .large
     }
+
+    private var supportedDetents: Set<PresentationDetent> {
+        let minDetent = PresentationDetent.height(minimumProfileHeight)
+        if currentDetent == .large || currentDetent == minDetent {
+            return [minDetent, .large]
+        }
+        return [minDetent, currentDetent, .large]
+    }
     
     // Calculate expansion progress (0.0 to 1.0) for fade-in animations
     // Use actual height if available, otherwise base on detent state
@@ -99,7 +108,7 @@ struct ProfileView: View {
     private let profileContentPadding: CGFloat = CardLayoutConstants.horizontalPadding + 10 // 20pt total (matches posts)
     private var avatarOverlapOffset: CGFloat { -(avatarMaskSize / 2) } // -56pt: half of mask size to center overlap
     private var profileCardBottomPadding: CGFloat { CardLayoutConstants.bottomPadding }
-    private var actionButtonCornerRadius: CGFloat { CardLayoutConstants.cornerRadius * 1.5 }
+    private var actionButtonCornerRadius: CGFloat { 26 } // Half the button height (52/2) for perfect capsule shape with circular ends
     private var ownershipHintHeight: CGFloat {
         if ownershipHintMeasuredHeight > 0 {
             return ownershipHintMeasuredHeight
@@ -193,35 +202,46 @@ struct ProfileView: View {
             errorView
         }
     }
+
+    private func syncDetentIfNeeded() {
+        let minDetent = PresentationDetent.height(minimumProfileHeight)
+        guard currentDetent != .large else { return }
+        if currentDetent != minDetent {
+            currentDetent = minDetent
+        }
+    }
     
     @ViewBuilder
     private func profileMainContent(bannerHeight: CGFloat, geometry: GeometryProxy) -> some View {
-        VStack(spacing: 0) {
-            // Profile header - always rendered with same structure
-            if let user = currentUser {
-                profileHeaderCompact(for: user, bannerHeight: bannerHeight, geometry: geometry, showProfileInfo: true)
-            }
-            
-            // Tabs and feed - always rendered, fade in during swipe
-            if !isEditing {
-                profileTabs
+        ScrollView {
+            VStack(spacing: 0) {
+                // Profile header - always rendered with same structure
+                if let user = currentUser {
+                    profileHeaderCompact(for: user, bannerHeight: bannerHeight, geometry: geometry, showProfileInfo: true)
+                }
+                
+                // Tabs and feed - always rendered, fade in during swipe
+                if !isEditing {
+                    profileTabs
+                        .opacity(expansionProgress)
+                        .animation(.easeInOut(duration: 0.2), value: expansionProgress)
+                        .allowsHitTesting(expansionProgress > 0.5)
+                    
+                    // Tab content - fade in as sheet expands
+                    Group {
+                        if selectedTab == .posts {
+                            profilePostsTabUnified
+                        } else {
+                            profileLikesTabUnified
+                        }
+                    }
                     .opacity(expansionProgress)
                     .animation(.easeInOut(duration: 0.2), value: expansionProgress)
                     .allowsHitTesting(expansionProgress > 0.5)
-                
-                // Tab content - fade in as sheet expands
-                Group {
-                    if selectedTab == .posts {
-                        profilePostsTab
-                    } else {
-                        profileLikesTab
-                    }
                 }
-                .opacity(expansionProgress)
-                .animation(.easeInOut(duration: 0.2), value: expansionProgress)
-                .allowsHitTesting(expansionProgress > 0.5)
             }
         }
+        .scrollIndicators(.hidden)
         .background(isSheetFullyExpanded ? Color(.systemBackground) : Color.clear)
         .ignoresSafeArea(edges: .top)
         .onPreferenceChange(ProfileHeaderHeightKey.self) { height in
@@ -275,166 +295,71 @@ struct ProfileView: View {
     }
     
     var body: some View {
-        return NavigationStack(path: $navigationPath) {
-            GeometryReader { geometry in
-                profileContent(geometry: geometry)
-            }
-            .onPreferenceChange(SheetHeightKey.self) { height in
-                actualSheetHeight = height
-            }
-            .onChange(of: selectedTab) { _, newTab in
-                // Load data when tab changes (always, not just when expanded)
-                Task {
-                    if newTab == .posts {
-                        await feedViewModel.loadUserPosts()
-                    } else {
-                        await feedViewModel.loadUserLikedPosts()
-                    }
+        profileNavigationStack
+    }
+
+    private var profileNavigationStack: some View {
+        NavigationStack(path: $navigationPath) {
+            profileGeometryContent
+                .modifier(ProfileNavigationModifiers(
+                    isEditing: isEditing,
+                    isOwnProfile: isOwnProfile,
+                    isSaving: isSaving,
+                    isSheetFullyExpanded: isSheetFullyExpanded,
+                    showSettings: $showSettings,
+                    showEditProfile: $showEditProfile,
+                    cancelAction: cancelEditing,
+                    saveAction: saveProfile,
+                    startEditingAction: startEditing,
+                    dismissAction: { dismiss() }
+                ))
+                .modifier(ProfileTaskModifiers(
+                    userId: userId,
+                    selectedTab: selectedTab,
+                    feedViewModel: feedViewModel,
+                    loadCurrentUserAsync: loadCurrentUserAsync
+                ))
+                .modifier(ProfileImagePickerModifiers(
+                    showAvatarPicker: $showAvatarPicker,
+                    showBannerPicker: $showBannerPicker,
+                    avatarPickerItem: $avatarPickerItem,
+                    bannerPickerItem: $bannerPickerItem,
+                    selectedImage: $selectedImage,
+                    selectedBanner: $selectedBanner,
+                    currentUser: $currentUser
+                ))
+                .modifier(ProfileAlertModifiers(
+                    showLogoutConfirmation: $showLogoutConfirmation,
+                    showSaveError: $showSaveError,
+                    saveErrorMessage: saveErrorMessage,
+                    logoutAction: logout
+                ))
+                .presentationDetents(supportedDetents, selection: $currentDetent)
+                .presentationDragIndicator(.visible)
+                .onAppear {
+                    syncDetentIfNeeded()
+                }
+                .onChange(of: minimumProfileHeight) { _, _ in
+                    syncDetentIfNeeded()
+                }
+        }
+    }
+    
+    private var profileGeometryContent: some View {
+        GeometryReader { geometry in
+            profileContent(geometry: geometry)
+        }
+        .onPreferenceChange(SheetHeightKey.self) { height in
+            actualSheetHeight = height
+        }
+        .onChange(of: selectedTab) { _, newTab in
+            Task {
+                if newTab == .posts {
+                    await feedViewModel.loadUserPosts()
+                } else {
+                    await feedViewModel.loadUserLikedPosts()
                 }
             }
-            .navigationTitle("")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.hidden, for: .navigationBar)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    if isEditing {
-                        Button("Cancel") {
-                            cancelEditing()
-                        }
-                        .fontWeight(.medium)
-                    } else {
-                        // Only show close button when fully expanded
-                        if isSheetFullyExpanded {
-                            Button(action: { dismiss() }) {
-                                Image(systemName: "xmark")
-                                    .font(.body.weight(.medium))
-                            }
-                        }
-                    }
-                }
-                
-                ToolbarItem(placement: .topBarTrailing) {
-                    if isOwnProfile {
-                        if isEditing {
-                            Button {
-                                if isSaving { return }
-                                saveProfile()
-                            } label: {
-                                if isSaving {
-                                    ProgressView()
-                                } else {
-                                    Text("Done")
-                                        .fontWeight(.medium)
-                                }
-                            }
-                            .disabled(isSaving)
-                        } else {
-                            // Only show gear button when fully expanded
-                            if isSheetFullyExpanded {
-                                Button {
-                                    startEditing()
-                                } label: {
-                                    Image(systemName: "gear")
-                                        .font(.body.weight(.medium))
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            .navigationBarBackButtonHidden(true)
-            .task(id: userId) {
-                // Load profile immediately when view appears or userId changes
-                // Using task ensures it's properly cancelled/restarted
-                print("📋 .task(id: \(userId ?? "nil")) triggered")
-                await loadCurrentUserAsync()
-                
-                // Load feed data immediately when profile loads (don't wait for expansion)
-                if currentUser != nil {
-                    Task {
-                        if selectedTab == .posts {
-                            await feedViewModel.loadUserPosts()
-                        } else {
-                            await feedViewModel.loadUserLikedPosts()
-                        }
-                    }
-                }
-            }
-            .onAppear {
-                print("👀 ProfileView.onAppear - userId: \(userId ?? "nil"), currentUser: \(currentUser?.displayName ?? "nil"), isLoading: \(isLoading)")
-            }
-            .navigationDestination(isPresented: $showSettings) {
-                SettingsView()
-            }
-            .navigationDestination(for: ChatsRoute.self) { route in
-                switch route {
-                case .conversation(let chat):
-                    ConversationView(chat: chat)
-                }
-            }
-            .onChange(of: avatarPickerItem) { _, newItem in
-                Task {
-                    if let data = try? await newItem?.loadTransferable(type: Data.self),
-                       let image = UIImage(data: data) {
-                        selectedImage = image
-                        // Upload to Firebase Storage
-                        do {
-                            _ = try await FirebaseService.shared.uploadAvatarImage(image)
-                            // Reload user to get updated avatar URL
-                            if let firebaseUser = Auth.auth().currentUser {
-                                currentUser = try await FirebaseService.shared.getUser(withId: firebaseUser.uid)
-                            }
-                        } catch {
-                            print("Error uploading avatar: \(error.localizedDescription)")
-                        }
-                    }
-                }
-            }
-            .onChange(of: bannerPickerItem) { _, newItem in
-                Task {
-                    if let data = try? await newItem?.loadTransferable(type: Data.self),
-                       let image = UIImage(data: data) {
-                        selectedBanner = image
-                        // Upload to Firebase Storage
-                        do {
-                            _ = try await FirebaseService.shared.uploadBannerImage(image)
-                            // Reload user to get updated banner URL
-                            if let firebaseUser = Auth.auth().currentUser {
-                                currentUser = try await FirebaseService.shared.getUser(withId: firebaseUser.uid)
-                            }
-                        } catch {
-                            print("Error uploading banner: \(error.localizedDescription)")
-                        }
-                    }
-                }
-            }
-            .photosPicker(
-                isPresented: $showAvatarPicker,
-                selection: $avatarPickerItem,
-                matching: .images
-            )
-            .photosPicker(
-                isPresented: $showBannerPicker,
-                selection: $bannerPickerItem,
-                matching: .images
-            )
-            .alert("Log Out", isPresented: $showLogoutConfirmation) {
-                Button("Cancel", role: .cancel) { }
-                Button("Log Out", role: .destructive) {
-                    logout()
-                }
-            } message: {
-                Text("Are you sure you want to log out?")
-            }
-            .alert("Error Saving Profile", isPresented: $showSaveError) {
-                Button("OK", role: .cancel) { }
-            } message: {
-                Text(saveErrorMessage)
-            }
-            .presentationDetents([.height(minimumProfileHeight), .large], selection: $currentDetent)
-            .presentationDragIndicator(.visible)
-            // iOS 26 automatically applies liquid glass effect when sheet is half-opened
-            // No presentationBackground needed - system handles it automatically
         }
     }
     
@@ -607,17 +532,20 @@ struct ProfileView: View {
     private var displayNameView: some View {
         Group {
             if isEditing && isOwnProfile {
-                TextField("Display Name", text: $editDisplayName)
-                    .font(.title2)
-                    .fontWeight(.bold)
-                    .textFieldStyle(.plain)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .frame(height: 40)
-                    .background {
-                        Color.clear
-                            .glassEffect(.regular, in: .rect(cornerRadius: 12))
-                    }
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("DISPLAY NAME")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.secondary)
+                        .textCase(.uppercase)
+                    
+                    TextField("Display Name", text: $editDisplayName)
+                        .font(.body)
+                        .fontWeight(.regular)
+                        .padding(18)
+                        .background(Color(.tertiarySystemGroupedBackground))
+                        .cornerRadius(16)
+                }
             } else {
                 HStack(spacing: 6) {
                     Text(currentUser?.displayName ?? "Display Name")
@@ -639,68 +567,76 @@ struct ProfileView: View {
     }
     
     private var usernameView: some View {
-        HStack(spacing: 8) {
+        Group {
             if isEditing && isOwnProfile {
-                HStack(spacing: 4) {
-                    Text("@")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                    TextField("username", text: $editUsername)
-                        .font(.callout)
-                        .textFieldStyle(.plain)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .onChange(of: editUsername) { oldValue, newValue in
-                            editUsername = sanitizeUsername(newValue)
-                        }
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .frame(maxWidth: .infinity, maxHeight: 36)
-                .background {
-                    Color.clear
-                        .glassEffect(.regular, in: .rect(cornerRadius: 12))
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("USERNAME")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.secondary)
+                        .textCase(.uppercase)
+                    
+                    HStack(spacing: 8) {
+                        Text("@")
+                            .font(.body)
+                            .fontWeight(.regular)
+                            .foregroundStyle(.secondary)
+                        
+                        TextField("username", text: $editUsername)
+                            .font(.body)
+                            .fontWeight(.regular)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .onChange(of: editUsername) { oldValue, newValue in
+                                editUsername = sanitizeUsername(newValue)
+                            }
+                    }
+                    .padding(18)
+                    .background(Color(.tertiarySystemGroupedBackground))
+                    .cornerRadius(16)
                 }
             } else {
-                // Username
-                HStack(spacing: 4) {
-                    Image(systemName: "at")
-                        .font(.callout)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.secondary)
-                    Text(currentUser?.username ?? "username")
-                        .font(.callout)
-                        .fontWeight(.regular)
-                        .foregroundStyle(.secondary)
-                }
-                
-                // Location - only show if exists, with consistent styling
-                if let location = currentUser?.location, !location.isEmpty {
+                HStack(spacing: 8) {
+                    // Username
                     HStack(spacing: 4) {
-                        Image(systemName: "location")
+                        Image(systemName: "at")
                             .font(.callout)
                             .fontWeight(.semibold)
                             .foregroundStyle(.secondary)
-                        
-                        Text(location)
+                        Text(currentUser?.username ?? "username")
                             .font(.callout)
                             .fontWeight(.regular)
                             .foregroundStyle(.secondary)
                     }
-                }
-                
-                // Joined date - with calendar icon, styled exactly like username and location
-                if let user = currentUser {
-                    HStack(spacing: 4) {
-                        Image(systemName: "calendar")
-                            .font(.callout)
-                            .fontWeight(.semibold)
-                            .foregroundStyle(.secondary)
-                        
-                        Text(joinedDateFormatter.string(from: user.createdAt))
-                            .font(.callout)
-                            .fontWeight(.regular)
-                            .foregroundStyle(.secondary)
+                    
+                    // Location - only show if exists, with consistent styling
+                    if let location = currentUser?.location, !location.isEmpty {
+                        HStack(spacing: 4) {
+                            Image(systemName: "location")
+                                .font(.callout)
+                                .fontWeight(.semibold)
+                                .foregroundStyle(.secondary)
+                            
+                            Text(location)
+                                .font(.callout)
+                                .fontWeight(.regular)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    
+                    // Joined date - with calendar icon, styled exactly like username and location
+                    if let user = currentUser {
+                        HStack(spacing: 4) {
+                            Image(systemName: "calendar")
+                                .font(.callout)
+                                .fontWeight(.semibold)
+                                .foregroundStyle(.secondary)
+                            
+                            Text(joinedDateFormatter.string(from: user.createdAt))
+                                .font(.callout)
+                                .fontWeight(.regular)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
             }
@@ -708,39 +644,49 @@ struct ProfileView: View {
     }
     
     private var locationView: some View {
-        HStack(spacing: 4) {
-            Image(systemName: "location")
-                .font(.callout)
+        VStack(alignment: .leading, spacing: 8) {
+            Text("LOCATION")
+                .font(.caption)
                 .fontWeight(.semibold)
-                .foregroundStyle(.secondary)
+                .foregroundColor(.secondary)
+                .textCase(.uppercase)
             
-            TextField("Add location...", text: $editLocation)
-                .font(.callout)
-                .textFieldStyle(.plain)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .frame(maxWidth: .infinity, maxHeight: 36)
-        .background {
-            Color.clear
-                .glassEffect(.regular, in: .rect(cornerRadius: 12))
+            HStack(spacing: 12) {
+                Image(systemName: "location.fill")
+                    .font(.callout)
+                    .fontWeight(.regular)
+                    .foregroundStyle(.secondary)
+                
+                TextField("Add location...", text: $editLocation)
+                    .font(.body)
+                    .fontWeight(.regular)
+                    .textFieldStyle(.plain)
+            }
+            .padding(18)
+            .background(Color(.tertiarySystemGroupedBackground))
+            .cornerRadius(16)
         }
     }
     
     private var bioView: some View {
         Group {
             if isEditing && isOwnProfile {
-                TextField("Add a bio...", text: $editBio, axis: .vertical)
-                    .font(.callout)
-                    .lineLimit(2...4)
-                    .textFieldStyle(.plain)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .frame(maxWidth: .infinity, minHeight: 60, alignment: .topLeading)
-                    .background {
-                        Color.clear
-                            .glassEffect(.regular, in: .rect(cornerRadius: 12))
-                    }
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("BIO")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.secondary)
+                        .textCase(.uppercase)
+                    
+                    TextField("Add a bio...", text: $editBio, axis: .vertical)
+                        .font(.body)
+                        .fontWeight(.regular)
+                        .lineLimit(2...6)
+                        .padding(18)
+                        .frame(maxWidth: .infinity, minHeight: 100, alignment: .topLeading)
+                        .background(Color(.tertiarySystemGroupedBackground))
+                        .cornerRadius(16)
+                }
             } else {
                 // Always show bio area, even if empty
                 Text(currentUser?.bio ?? "")
@@ -762,6 +708,7 @@ struct ProfileView: View {
             .frame(height: bannerHeight + geometry.safeAreaInsets.top)
             .offset(y: -geometry.safeAreaInsets.top)
             .padding(.bottom, -geometry.safeAreaInsets.top)
+            .clipped()
         
         // Avatar and profile info - moves up to overlap banner
         VStack(alignment: .leading, spacing: 0) {
@@ -780,23 +727,24 @@ struct ProfileView: View {
                 )
             
             // Profile info
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: isEditing ? 16 : 8) {
                 displayNameView
                     .frame(maxWidth: .infinity, alignment: .leading)
                 
                 if isEditing && isOwnProfile {
-                    // Username and Location on same line when editing
-                    HStack(spacing: 8) {
-                        usernameView
-                        locationView
-                    }
+                    // Editing Mode - All fields stacked vertically with modern styling
+                    usernameView
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    
+                    locationView
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
-                    // Username and location with consistent spacing
+                    // View Mode - Username and location with consistent spacing
                     usernameView
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 
-                // Follower counts (inline format)
+                // Follower counts (inline format) - only in view mode
                 if !isEditing {
                     HStack(spacing: 16) {
                         HStack(spacing: 4) {
@@ -825,119 +773,24 @@ struct ProfileView: View {
                     }
                 }
                 
-                // Bio - always visible with minimum two-line height
+                // Bio - always visible
                 bioView
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .frame(minHeight: 44) // Minimum height for two lines
                     .fixedSize(horizontal: false, vertical: true) // Allow vertical expansion
             }
             .padding(.horizontal, profileContentPadding) // Match post content padding (20pt total)
-            .padding(.top, CardLayoutConstants.topPadding)
-            .padding(.bottom, CardLayoutConstants.bottomPadding)
+            .padding(.top, isEditing ? 20 : CardLayoutConstants.topPadding)
+            .padding(.bottom, isEditing ? 24 : CardLayoutConstants.bottomPadding)
         }
         .offset(y: avatarOverlapOffset)
         .padding(.bottom, avatarOverlapOffset)
-        
-        // Settings section with fade effect (only for own profile)
-        if !isEditing && isOwnProfile {
-            GeometryReader { settingsGeo in
-                let minY = settingsGeo.frame(in: .global).minY
-                let screenHeight = UIScreen.main.bounds.height
-                let fadeStart = screenHeight * 0.7
-                let fadeEnd = screenHeight * 0.5
-                let opacity = min(max((fadeStart - minY) / (fadeStart - fadeEnd), 0), 1)
-                
-                settingsSection
-                    .opacity(opacity)
-            }
-        }
         
         Spacer(minLength: 20) // Minimal bottom space
     }
     
     // MARK: - Settings
+    // Note: Settings section removed - now accessed via gear button -> EditProfileView
     
-    private var settingsSection: some View {
-        List {
-            // Phone Number Section
-            Section {
-                HStack(spacing: 12) {
-                    Image(systemName: "phone.fill")
-                        .foregroundColor(.green)
-                        .font(.title3)
-                        .frame(width: 30)
-                    
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Phone Number")
-                            .font(.body)
-                        
-                        Text(formattedPhoneNumber)
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    Spacer()
-                    
-                    // Verified badge
-                    Image(systemName: "checkmark.seal.fill")
-                        .foregroundColor(.green)
-                        .font(.title3)
-                }
-                .padding(.vertical, 4)
-                .listRowBackground(colorScheme == .dark ? Color.black : Color(.systemGray6))
-            } footer: {
-                Text("Not public and only visible to you")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            
-            // Settings & Actions Section
-            Section {
-                Button {
-                    showSettings = true
-                } label: {
-                    HStack(spacing: 12) {
-                        Image(systemName: "gear")
-                            .foregroundColor(.gray)
-                            .font(.title3)
-                            .frame(width: 30)
-                        
-                        Text("Settings")
-                            .foregroundColor(.primary)
-                        
-                        Spacer()
-                        
-                        Image(systemName: "chevron.right")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                }
-                .listRowBackground(colorScheme == .dark ? Color.black : Color(.systemGray6))
-                
-                Button {
-                    showLogoutConfirmation = true
-                } label: {
-                    HStack(spacing: 12) {
-                        Image(systemName: "person.crop.circle")
-                            .foregroundColor(.red)
-                            .font(.title3)
-                            .frame(width: 30)
-                        
-                        Text("Log Out")
-                            .foregroundColor(.red)
-                        
-                        Spacer()
-                    }
-                }
-                .listRowBackground(colorScheme == .dark ? Color.black : Color(.systemGray6))
-            }
-        }
-        .listStyle(.insetGrouped)
-        .scrollDisabled(true)
-        .scrollContentBackground(.hidden)
-        .contentMargins(.top, 0, for: .scrollContent)
-        .frame(height: 250)
-    }
     
     // MARK: - Follow Button
     
@@ -1307,13 +1160,6 @@ struct ProfileView: View {
                             .background(debugSectionBackground(.actions))
                             .overlay(debugStrokeOverlay())
                     }
-                    
-                    if isEditing && isOwnProfile {
-                        settingsSection
-                            .frame(height: 250)
-                            .background(debugSectionBackground(.content))
-                            .overlay(debugStrokeOverlay())
-                    }
                 }
                 
                 if shouldShowOwnershipHint {
@@ -1497,7 +1343,7 @@ struct ProfileView: View {
                 .frame(
                     width: geometry.size.width,
                     height: bannerHeight + geometry.safeAreaInsets.top,
-                    alignment: .top
+                    alignment: .center
                 )
                 .offset(y: -geometry.safeAreaInsets.top)
                 .padding(.bottom, -geometry.safeAreaInsets.top)
@@ -1838,6 +1684,14 @@ struct ProfileView: View {
         })
     }
     
+    private var profilePostsTabUnified: some View {
+        profileFeedViewUnified(loops: feedViewModel.posts, isLoading: feedViewModel.isLoadingPosts)
+    }
+    
+    private var profileLikesTabUnified: some View {
+        profileFeedViewUnified(loops: feedViewModel.likedPosts, isLoading: feedViewModel.isLoadingLikes)
+    }
+    
     private func profileFeedView(loops: [Loop], isLoading: Bool, onRefresh: @escaping () async -> Void) -> some View {
         Group {
             if isLoading && loops.isEmpty {
@@ -1926,6 +1780,78 @@ struct ProfileView: View {
             }
         }
     }
+    
+    private func profileFeedViewUnified(loops: [Loop], isLoading: Bool) -> some View {
+        Group {
+            if isLoading && loops.isEmpty {
+                VStack(spacing: 16) {
+                    ProgressView()
+                    Text("Loading...")
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 200)
+                .padding(.top, 50)
+            } else if loops.isEmpty {
+                VStack(spacing: 16) {
+                    Image(systemName: selectedTab == .posts ? "square.and.pencil" : "heart")
+                        .font(.system(size: 50))
+                        .foregroundColor(.secondary)
+                    Text(selectedTab == .posts ? "No posts yet" : "No likes yet")
+                        .font(.headline)
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 200)
+                .padding(.top, 50)
+            } else {
+                LazyVStack(spacing: 0) {
+                    ForEach(Array(loops.enumerated()), id: \.element.id) { index, loop in
+                        VStack(spacing: 0) {
+                            PostCard(
+                                loop: loop,
+                                isLiked: feedViewModel.isLikedByCurrentUser(loop),
+                                onLike: {
+                                    Task {
+                                        let wasLiked = feedViewModel.isLikedByCurrentUser(loop)
+                                        
+                                        do {
+                                            if wasLiked {
+                                                try await FirebaseService.shared.unlikeLoop(loop.id)
+                                                feedViewModel.updateLoopLikeState(loopId: loop.id, isLiked: false)
+                                            } else {
+                                                try await FirebaseService.shared.likeLoop(loop.id)
+                                                feedViewModel.updateLoopLikeState(loopId: loop.id, isLiked: true)
+                                            }
+                                        } catch {
+                                            print("❌ Error toggling like: \(error.localizedDescription)")
+                                        }
+                                    }
+                                },
+                                onComment: {
+                                    // Handle comment tap
+                                },
+                                onDelete: feedViewModel.canDeleteLoop(loop) ? {
+                                    Task {
+                                        await feedViewModel.deleteLoop(loop)
+                                    }
+                                } : nil,
+                                onAvatarTap: nil,
+                                showDebugOverlays: showLayoutDebugOverlays
+                            )
+                            .padding(.horizontal, 10)
+                            .padding(.top, index == 0 ? 0 : 5)
+                            .padding(.bottom, index == loops.count - 1 ? 0 : 5)
+                            
+                            if index < loops.count - 1 {
+                                PostDivider()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 // Preference key to track sheet height for expansion animations
@@ -1947,6 +1873,184 @@ private struct OwnershipHintHeightKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = nextValue()
+    }
+}
+
+// MARK: - View Modifiers to reduce type-checking complexity
+
+private struct ProfileNavigationModifiers: ViewModifier {
+    let isEditing: Bool
+    let isOwnProfile: Bool
+    let isSaving: Bool
+    let isSheetFullyExpanded: Bool
+    @Binding var showSettings: Bool
+    @Binding var showEditProfile: Bool
+    let cancelAction: () -> Void
+    let saveAction: () -> Void
+    let startEditingAction: () -> Void
+    let dismissAction: () -> Void
+    
+    func body(content: Content) -> some View {
+        content
+            .navigationTitle("")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    if isEditing {
+                        Button("Cancel") {
+                            cancelAction()
+                        }
+                        .fontWeight(.medium)
+                    } else {
+                        if isSheetFullyExpanded {
+                            Button(action: dismissAction) {
+                                Image(systemName: "xmark")
+                                    .font(.body.weight(.medium))
+                            }
+                        }
+                    }
+                }
+                
+                ToolbarItem(placement: .topBarTrailing) {
+                    if isOwnProfile {
+                        if isEditing {
+                            Button {
+                                if !isSaving {
+                                    saveAction()
+                                }
+                            } label: {
+                                if isSaving {
+                                    ProgressView()
+                                } else {
+                                    Text("Done")
+                                        .fontWeight(.medium)
+                                }
+                            }
+                            .disabled(isSaving)
+                        } else {
+                            if isSheetFullyExpanded {
+                                Button {
+                                    showEditProfile = true
+                                } label: {
+                                    Image(systemName: "gear")
+                                        .font(.body.weight(.medium))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationBarBackButtonHidden(true)
+            .navigationDestination(isPresented: $showSettings) {
+                SettingsView()
+            }
+            .sheet(isPresented: $showEditProfile) {
+                EditProfileView()
+            }
+            .navigationDestination(for: ChatsRoute.self) { route in
+                switch route {
+                case .conversation(let chat):
+                    ConversationView(chat: chat)
+                }
+            }
+    }
+}
+
+private struct ProfileTaskModifiers: ViewModifier {
+    let userId: String?
+    let selectedTab: ProfileView.ProfileTab
+    let feedViewModel: ProfileFeedViewModel
+    let loadCurrentUserAsync: () async -> Void
+    
+    func body(content: Content) -> some View {
+        content
+            .task(id: userId) {
+                print("📋 .task(id: \(userId ?? "nil")) triggered")
+                await loadCurrentUserAsync()
+                
+                // Load feed data after user loads
+                if selectedTab == .posts {
+                    await feedViewModel.loadUserPosts()
+                } else {
+                    await feedViewModel.loadUserLikedPosts()
+                }
+            }
+            .onAppear {
+                print("👀 ProfileView.onAppear - userId: \(userId ?? "nil")")
+            }
+    }
+}
+
+private struct ProfileImagePickerModifiers: ViewModifier {
+    @Binding var showAvatarPicker: Bool
+    @Binding var showBannerPicker: Bool
+    @Binding var avatarPickerItem: PhotosPickerItem?
+    @Binding var bannerPickerItem: PhotosPickerItem?
+    @Binding var selectedImage: UIImage?
+    @Binding var selectedBanner: UIImage?
+    @Binding var currentUser: User?
+    
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: avatarPickerItem) { _, newItem in
+                Task {
+                    if let data = try? await newItem?.loadTransferable(type: Data.self),
+                       let image = UIImage(data: data) {
+                        selectedImage = image
+                        do {
+                            _ = try await FirebaseService.shared.uploadAvatarImage(image)
+                            if let firebaseUser = Auth.auth().currentUser {
+                                currentUser = try await FirebaseService.shared.getUser(withId: firebaseUser.uid)
+                            }
+                        } catch {
+                            print("Error uploading avatar: \(error.localizedDescription)")
+                        }
+                    }
+                }
+            }
+            .onChange(of: bannerPickerItem) { _, newItem in
+                Task {
+                    if let data = try? await newItem?.loadTransferable(type: Data.self),
+                       let image = UIImage(data: data) {
+                        selectedBanner = image
+                        do {
+                            _ = try await FirebaseService.shared.uploadBannerImage(image)
+                            if let firebaseUser = Auth.auth().currentUser {
+                                currentUser = try await FirebaseService.shared.getUser(withId: firebaseUser.uid)
+                            }
+                        } catch {
+                            print("Error uploading banner: \(error.localizedDescription)")
+                        }
+                    }
+                }
+            }
+            .photosPicker(isPresented: $showAvatarPicker, selection: $avatarPickerItem, matching: .images)
+            .photosPicker(isPresented: $showBannerPicker, selection: $bannerPickerItem, matching: .images)
+    }
+}
+
+private struct ProfileAlertModifiers: ViewModifier {
+    @Binding var showLogoutConfirmation: Bool
+    @Binding var showSaveError: Bool
+    let saveErrorMessage: String
+    let logoutAction: () -> Void
+    
+    func body(content: Content) -> some View {
+        content
+            .alert("Log Out", isPresented: $showLogoutConfirmation) {
+                Button("Cancel", role: .cancel) { }
+                Button("Log Out", role: .destructive) {
+                    logoutAction()
+                }
+            } message: {
+                Text("Are you sure you want to log out?")
+            }
+            .alert("Error Saving Profile", isPresented: $showSaveError) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text(saveErrorMessage)
+            }
     }
 }
 

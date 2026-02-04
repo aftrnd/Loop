@@ -193,8 +193,13 @@ class FirebaseService {
             throw NSError(domain: "FirebaseService", code: 2, userInfo: [NSLocalizedDescriptionKey: "No authenticated user"])
         }
         
-        // Compress image to JPEG (0.7 quality for good balance)
-        guard let imageData = image.jpegData(compressionQuality: 0.7) else {
+        // Resize image to max 512x512 for avatars (maintains aspect ratio)
+        guard let resizedImage = image.resizedForAvatar() else {
+            throw NSError(domain: "FirebaseService", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to resize image"])
+        }
+        
+        // Compress resized image to JPEG (0.8 quality for crisp results)
+        guard let imageData = resizedImage.jpegData(compressionQuality: 0.8) else {
             throw NSError(domain: "FirebaseService", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to compress image"])
         }
         
@@ -224,8 +229,13 @@ class FirebaseService {
             throw NSError(domain: "FirebaseService", code: 2, userInfo: [NSLocalizedDescriptionKey: "No authenticated user"])
         }
         
-        // Compress image to JPEG (0.8 quality for banners)
-        guard let imageData = image.jpegData(compressionQuality: 0.8) else {
+        // Resize image to max 1920x1080 for banners (maintains aspect ratio)
+        guard let resizedImage = image.resizedForBanner() else {
+            throw NSError(domain: "FirebaseService", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to resize image"])
+        }
+        
+        // Compress resized image to JPEG (0.85 quality for banners)
+        guard let imageData = resizedImage.jpegData(compressionQuality: 0.85) else {
             throw NSError(domain: "FirebaseService", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to compress image"])
         }
         

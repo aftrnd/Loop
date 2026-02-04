@@ -69,6 +69,7 @@ struct ConversationView: View {
         .sheet(isPresented: $showingProfile) {
             if let otherUserId = chat.otherParticipantId {
                 ProfileView(userId: otherUserId)
+                    .presentationDetents([.large])
             }
         }
     }

@@ -87,6 +87,7 @@ struct ChatsListView: View {
         }
         .sheet(item: $profileUserToShow) { profileUser in
             ProfileView(userId: profileUser.userId)
+                .presentationDetents([.large])
         }
         .sheet(isPresented: $debugManager.isDebugMenuVisible) {
             DebugMenuView()
