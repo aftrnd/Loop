@@ -58,7 +58,7 @@ struct User: Identifiable, Codable, Equatable {
         self.fcmToken = nil // Will be loaded from Firestore
     }
     
-    init(id: String, phoneNumber: String, displayName: String? = nil, username: String? = nil, bio: String? = nil, location: String? = nil, avatarURL: String? = nil, bannerURL: String? = nil, badgeType: BadgeType? = nil, followers: [String] = [], following: [String] = [], fcmToken: String? = nil) {
+    init(id: String, phoneNumber: String, displayName: String? = nil, username: String? = nil, bio: String? = nil, location: String? = nil, avatarURL: String? = nil, bannerURL: String? = nil, badgeType: BadgeType? = nil, followers: [String] = [], following: [String] = [], createdAt: Date = Date(), fcmToken: String? = nil) {
         self.id = id
         self.phoneNumber = phoneNumber
         self.displayName = displayName
@@ -70,7 +70,7 @@ struct User: Identifiable, Codable, Equatable {
         self.badgeType = badgeType
         self.followers = followers
         self.following = following
-        self.createdAt = Date()
+        self.createdAt = createdAt
         self.lastSeen = Date()
         self.fcmToken = fcmToken
     }

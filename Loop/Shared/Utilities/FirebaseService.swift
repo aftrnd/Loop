@@ -87,6 +87,8 @@ class FirebaseService {
             badgeType: badgeType,
             followers: data["followers"] as? [String] ?? [],
             following: data["following"] as? [String] ?? [],
+            // Profiles written before createdAt was stored fall back to now, as before
+            createdAt: (data["createdAt"] as? Timestamp)?.dateValue() ?? Date(),
             fcmToken: data["fcmToken"] as? String
         )
     }
