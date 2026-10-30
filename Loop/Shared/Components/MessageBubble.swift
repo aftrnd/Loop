@@ -205,10 +205,15 @@ struct MessageBubble: View {
         showTimestamp.toggle()
     }
     
-    private func formatTime(_ date: Date) -> String {
+    // Built once rather than per bubble per render
+    private static let timeFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.timeStyle = .short
-        return formatter.string(from: date)
+        return formatter
+    }()
+
+    private func formatTime(_ date: Date) -> String {
+        Self.timeFormatter.string(from: date)
     }
     
     private func handleDoubleTap() {

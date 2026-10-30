@@ -53,19 +53,29 @@ struct ChatRowView: View {
         // Parallax is now applied at the row container level in ChatsListView
     }
     
-    private func formatTime(_ date: Date) -> String {
+    // Built once rather than per row per render
+    private static let timeFormatter: DateFormatter = {
         let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        return formatter
+    }()
+
+    private static let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .short
+        return formatter
+    }()
+
+    private func formatTime(_ date: Date) -> String {
         let calendar = Calendar.current
-        
+
         if calendar.isDateInToday(date) {
-            formatter.timeStyle = .short
+            return Self.timeFormatter.string(from: date)
         } else if calendar.isDateInYesterday(date) {
             return "Yesterday"
         } else {
-            formatter.dateStyle = .short
+            return Self.dateFormatter.string(from: date)
         }
-        
-        return formatter.string(from: date)
     }
 }
 

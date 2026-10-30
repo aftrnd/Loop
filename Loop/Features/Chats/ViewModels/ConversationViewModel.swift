@@ -10,6 +10,8 @@ final class ConversationViewModel {
     private(set) var isLoading = true // Start as loading to prevent empty state flash
     var messageText = ""
     private(set) var isOtherUserTyping = false
+    /// Changes whenever any message's like count changes: a cheap value for the list's like animation.
+    private(set) var likesRevision = 0
 
     /// Readers ignore typing timestamps older than this, left behind by an app that stopped before clearing them.
     private static let typingStaleInterval: TimeInterval = 5
@@ -54,9 +56,7 @@ final class ConversationViewModel {
 
             switch result {
             case .success(let messages):
-                if messages != self.messages {
-                    self.messages = messages
-                }
+                self.setMessages(messages)
             case .failure(let error):
                 self.logger.error("Message listener failed: \(error.localizedDescription, privacy: .public)")
             }
@@ -80,6 +80,14 @@ final class ConversationViewModel {
         activityListener?.remove()
         activityListener = nil
         stopTyping()
+    }
+
+    private func setMessages(_ newMessages: [Message]) {
+        guard newMessages != messages else { return }
+        if newMessages.map(\.likeCount) != messages.map(\.likeCount) {
+            likesRevision &+= 1
+        }
+        messages = newMessages
     }
 
     private func apply(_ activity: ChatActivity) {
@@ -216,5 +224,6 @@ final class ConversationViewModel {
             likedBy.append(userId)
         }
         messages[index].likedBy = likedBy
+        likesRevision &+= 1
     }
 }

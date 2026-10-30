@@ -145,7 +145,7 @@ struct ConversationView: View {
             messagesWithTypingIndicator
         }
         .animation(.spring(), value: viewModel.messages.count)
-        .animation(.spring(), value: viewModel.messages.map { $0.likeCount })
+        .animation(.spring(), value: viewModel.likesRevision)
         .frame(maxWidth: .infinity, alignment: .leading)
         .listRowInsets(EdgeInsets())
         .padding(.horizontal, AppConstants.UI.padding)
@@ -315,14 +315,40 @@ struct ConversationView: View {
         return gap >= 5 * 60 // 5 minutes in seconds
     }
     
+    // MARK: - Date Formatting
+
+    // Built once: creating a DateFormatter is expensive and these run for every visible separator on each render
+    private static let timeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        return formatter
+    }()
+
+    private static let weekdayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEEE" // Full day name
+        return formatter
+    }()
+
+    private static let mediumDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+        return formatter
+    }()
+
+    private static let monthDayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d" // e.g., "Oct 7"
+        return formatter
+    }()
+
     // Format date separator (e.g., "Yesterday 3:45 PM", "Sunday 10:30 AM", "Today 2:30 PM")
     private func formatDateSeparator(_ date: Date) -> AttributedString {
         let calendar = Calendar.current
         let now = Date()
-        let timeFormatter = DateFormatter()
-        timeFormatter.timeStyle = .short
-        let timeString = timeFormatter.string(from: date)
-        
+        let timeString = Self.timeFormatter.string(from: date)
+
         var dayString: String
         if calendar.isDateInToday(date) {
             dayString = "Today"
@@ -330,15 +356,10 @@ struct ConversationView: View {
             dayString = "Yesterday"
         } else if calendar.isDate(date, equalTo: now, toGranularity: .weekOfYear) {
             // This week - show day name
-            let formatter = DateFormatter()
-            formatter.dateFormat = "EEEE" // Full day name
-            dayString = formatter.string(from: date)
+            dayString = Self.weekdayFormatter.string(from: date)
         } else {
             // Older - show full date
-            let formatter = DateFormatter()
-            formatter.dateStyle = .medium
-            formatter.timeStyle = .none
-            dayString = formatter.string(from: date)
+            dayString = Self.mediumDateFormatter.string(from: date)
         }
         
         // Always include time with the day
@@ -364,11 +385,8 @@ struct ConversationView: View {
     private func formatTimestamp(_ date: Date) -> AttributedString {
         let calendar = Calendar.current
         let now = Date()
-        let timeFormatter = DateFormatter()
-        timeFormatter.timeStyle = .short
-        
-        let timeString = timeFormatter.string(from: date)
-        
+        let timeString = Self.timeFormatter.string(from: date)
+
         var dayString: String
         if calendar.isDateInToday(date) {
             dayString = "Today"
@@ -376,14 +394,10 @@ struct ConversationView: View {
             dayString = "Yesterday"
         } else if calendar.isDate(date, equalTo: now, toGranularity: .weekOfYear) {
             // This week - show day name
-            let dayFormatter = DateFormatter()
-            dayFormatter.dateFormat = "EEEE" // Full day name
-            dayString = dayFormatter.string(from: date)
+            dayString = Self.weekdayFormatter.string(from: date)
         } else {
             // Older - show abbreviated date
-            let dateFormatter = DateFormatter()
-            dateFormatter.dateFormat = "MMM d" // e.g., "Oct 7"
-            dayString = dateFormatter.string(from: date)
+            dayString = Self.monthDayFormatter.string(from: date)
         }
         
         // Create attributed string with different font weights
