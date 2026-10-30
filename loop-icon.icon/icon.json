@@ -14,66 +14,46 @@
   ],
   "groups": [
     {
+      "name": "Echo",
       "layers": [
         {
-          "name": "lens",
-          "image-name": "lens.svg",
+          "name": "echo",
+          "image-name": "echo.svg",
           "glass": true,
           "fill-specializations": [
             {
               "value": {
-                "solid": "extended-gray:1.00000,0.08000"
+                "solid": "extended-gray:0.04314,0.16000"
               }
             },
             {
               "appearance": "dark",
               "value": {
-                "solid": "extended-gray:1.00000,0.06000"
+                "solid": "extended-gray:1.00000,0.14000"
               }
             },
             {
               "appearance": "tinted",
               "value": {
-                "solid": "extended-gray:1.00000,1.00000"
+                "solid": "extended-gray:1.00000,0.10000"
               }
             }
-          ],
-          "opacity-specializations": [
-            {
-              "value": 1
-            }
-          ],
-          "position": {
-            "scale": 1.3333333333333333,
-            "translation-in-points": [
-              0,
-              0
-            ]
-          }
+          ]
         }
       ],
-      "lighting": "individual",
-      "shadow": {
-        "kind": "neutral",
-        "opacity": 0.15
-      },
-      "specular": true,
-      "translucency": {
-        "enabled": true,
-        "value": 0.9
-      },
       "refractivity": {
         "enabled": true,
-        "depth": 0.15,
-        "strength": 0.15
+        "depth": 0.4,
+        "strength": 0.25
       }
     },
     {
+      "name": "Said",
       "layers": [
         {
-          "name": "ring",
-          "image-name": "ring.svg",
-          "glass": false,
+          "name": "said",
+          "image-name": "said.svg",
+          "glass": true,
           "fill-specializations": [
             {
               "value": {
@@ -92,81 +72,9 @@
                 "solid": "extended-gray:1.00000,1.00000"
               }
             }
-          ],
-          "opacity-specializations": [
-            {
-              "value": 1
-            }
-          ],
-          "position": {
-            "scale": 1.3333333333333333,
-            "translation-in-points": [
-              0,
-              0
-            ]
-          }
+          ]
         }
-      ],
-      "lighting": "individual",
-      "shadow": {
-        "kind": "none",
-        "opacity": 0
-      },
-      "specular": false,
-      "translucency": {
-        "enabled": false,
-        "value": 0
-      }
-    },
-    {
-      "layers": [
-        {
-          "name": "lines",
-          "image-name": "lines.svg",
-          "glass": false,
-          "fill-specializations": [
-            {
-              "value": {
-                "solid": "extended-gray:0.04314,1.00000"
-              }
-            },
-            {
-              "appearance": "dark",
-              "value": {
-                "solid": "extended-gray:1.00000,1.00000"
-              }
-            },
-            {
-              "appearance": "tinted",
-              "value": {
-                "solid": "extended-gray:1.00000,1.00000"
-              }
-            }
-          ],
-          "opacity-specializations": [
-            {
-              "value": 1
-            }
-          ],
-          "position": {
-            "scale": 1.3333333333333333,
-            "translation-in-points": [
-              0,
-              0
-            ]
-          }
-        }
-      ],
-      "lighting": "individual",
-      "shadow": {
-        "kind": "none",
-        "opacity": 0
-      },
-      "specular": false,
-      "translucency": {
-        "enabled": false,
-        "value": 0
-      }
+      ]
     }
   ],
   "supported-platforms": {
