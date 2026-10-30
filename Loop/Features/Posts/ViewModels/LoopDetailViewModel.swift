@@ -228,30 +228,27 @@ final class LoopDetailViewModel {
         composeDraft = LoopDraft()
     }
 
-    func postReply() async {
+    /// Posts the draft as a reply. Throws instead of setting `errorMessage`, because the compose sheet is still
+    /// open and shows the failure itself.
+    func postReply() async throws {
         guard composeDraft.isValid, composeDraft.isWithinCharacterLimit, !isPosting else { return }
 
         isPosting = true
+        defer { isPosting = false }
 
-        do {
-            try await FirebaseService.shared.createLoop(
-                content: composeDraft.content,
-                media: composeDraft.media,
-                isReply: composeDraft.isReply,
-                parentLoopId: composeDraft.parentLoopId,
-                replyToReplyId: composeDraft.replyToReplyId
-            )
+        try await FirebaseService.shared.createLoop(
+            content: composeDraft.content,
+            media: composeDraft.media,
+            isReply: composeDraft.isReply,
+            parentLoopId: composeDraft.parentLoopId,
+            replyToReplyId: composeDraft.replyToReplyId
+        )
 
-            // Success - clear the compose state. The listener shows the new reply as soon as it is written.
-            hideCompose()
+        // Success - clear the compose state. The listener shows the new reply as soon as it is written.
+        hideCompose()
 
-            // Notify parent that replies changed
-            onRepliesChanged?()
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-
-        isPosting = false
+        // Notify parent that replies changed
+        onRepliesChanged?()
     }
 
     // MARK: - Like Actions

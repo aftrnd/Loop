@@ -2,14 +2,18 @@ import SwiftUI
 import PhotosUI
 import UIKit
 import FirebaseAuth
+import os
 
 struct ComposeLoopView: View {
     @Binding var draft: LoopDraft
     @Binding var isPresented: Bool
-    let onPost: () async -> Void
+    /// Creates the loop. A thrown error keeps the sheet open and is shown here.
+    let onPost: () async throws -> Void
     
     @State private var selectedPhotos: [PhotosPickerItem] = []
     @State private var isUploadingMedia = false
+    @State private var isPosting = false
+    @State private var alert: ComposeAlert?
     @State private var showingImageSourceActionSheet = false
     @State private var showingCamera = false
     @State private var showingPhotoLibraryPicker = false
@@ -39,8 +43,10 @@ struct ComposeLoopView: View {
         }
     }
     
+    private static let logger = Logger(subsystem: "com.nejack.Loop", category: "ComposeLoopView")
+    
     private var canPost: Bool {
-        draft.isValid && draft.isWithinCharacterLimit && !isUploadingMedia
+        draft.isValid && draft.isWithinCharacterLimit && !isUploadingMedia && !isPosting
     }
     
     // Calculate dynamic minimum height based on content
@@ -74,13 +80,21 @@ struct ComposeLoopView: View {
                 }
                 
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Post") {
-                        Task {
-                            await onPost()
-                        }
+                    Button(action: post) {
+                        Text("Post")
+                            // Stays in the layout while posting so the button keeps its size under the spinner
+                            .opacity(isPosting ? 0 : 1)
+                            .overlay {
+                                if isPosting {
+                                    ProgressView()
+                                        .tint(.white)
+                                }
+                            }
                     }
                     .fontWeight(.semibold)
-                    .disabled(!canPost)
+                    // Keeps its prominent look while posting; post() ignores taps until it finishes
+                    .disabled(!canPost && !isPosting)
+                    .accessibilityLabel(isPosting ? "Posting" : "Post")
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
                     .tint(.blue)
@@ -105,7 +119,7 @@ struct ComposeLoopView: View {
                             .font(.system(size: 20, weight: .medium))
                             .foregroundStyle(.blue)
                     }
-                    .disabled(isUploadingMedia)
+                    .disabled(isUploadingMedia || isPosting)
                     .buttonStyle(.plain)
                     
                     Spacer()
@@ -115,17 +129,20 @@ struct ComposeLoopView: View {
                 .padding(.top, 16)
             }
         }
-        .onAppear {
-            // Load current user
-            loadCurrentUser()
-            
+        .task {
             // Don't auto-focus - let user tap to focus
+            await loadCurrentUser()
         }
         .interactiveDismissDisabled(draft.content.count > 0 || !draft.media.isEmpty)
         .onChange(of: selectedPhotos) { _, newPhotos in
             Task {
                 await processSelectedPhotos(newPhotos)
             }
+        }
+        .alert(alert?.title ?? "", isPresented: alertBinding, presenting: alert) { _ in
+            Button("OK", role: .cancel) { }
+        } message: { alert in
+            Text(alert.message)
         }
         .confirmationDialog("Add Photo", isPresented: $showingImageSourceActionSheet) {
             Button("Camera") {
@@ -247,63 +264,118 @@ struct ComposeLoopView: View {
         .scrollDisabled(!isSheetExpanded)
     }
     
-    private func loadCurrentUser() {
-        Task {
-            do {
-                guard let userId = Auth.auth().currentUser?.uid else { return }
-                let user = try await FirebaseService.shared.getUser(withId: userId)
-                await MainActor.run {
-                    currentUser = user
+    private var alertBinding: Binding<Bool> {
+        Binding(
+            get: { alert != nil },
+            set: { isPresented in
+                if !isPresented {
+                    alert = nil
                 }
+            }
+        )
+    }
+    
+    // MARK: - Actions
+    
+    private func post() {
+        guard canPost else { return }
+        
+        isPosting = true
+        Task {
+            defer { isPosting = false }
+            do {
+                try await onPost()
             } catch {
-                print("Error loading current user: \(error)")
+                Self.logger.error("Post failed: \(error.localizedDescription, privacy: .public)")
+                alert = ComposeAlert(
+                    title: draft.isReply ? "Couldn't post your reply" : "Couldn't post your loop",
+                    message: "Please check your connection and try again."
+                )
             }
         }
     }
     
+    private func loadCurrentUser() async {
+        guard let userId = Auth.auth().currentUser?.uid else { return }
+        do {
+            currentUser = try await FirebaseService.shared.getUser(withId: userId)
+        } catch {
+            Self.logger.error("Current user load failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+    
+    /// Uploads the picked photos side by side and adds them to the draft in the order they were picked.
     private func processSelectedPhotos(_ photos: [PhotosPickerItem]) async {
         guard !photos.isEmpty else { return }
         
         isUploadingMedia = true
+        defer {
+            isUploadingMedia = false
+            selectedPhotos = []
+        }
         
-        for photo in photos {
-            do {
-                if let data = try await photo.loadTransferable(type: Data.self) {
-
-                    // Upload to Firebase and get LoopMedia
-                    let loopMedia = try await FirebaseService.shared.uploadLoopMedia(.data(data))
-                    
-                    // Add to draft
-                    await MainActor.run {
-                        draft.media.append(loopMedia)
+        var uploaded = [LoopMedia?](repeating: nil, count: photos.count)
+        var failures: [any Error] = []
+        
+        await withTaskGroup(of: (Int, Result<LoopMedia, any Error>).self) { group in
+            for (index, photo) in photos.enumerated() {
+                // Decoding, scaling and the upload itself run off the main actor inside these calls
+                group.addTask { @MainActor in
+                    do {
+                        guard let data = try await photo.loadTransferable(type: Data.self) else {
+                            throw ImageUploadEncoder.EncodingError.unreadableImage
+                        }
+                        return (index, .success(try await FirebaseService.shared.uploadLoopMedia(.data(data))))
+                    } catch {
+                        return (index, .failure(error))
                     }
                 }
-            } catch {
-                print("Error processing photo: \(error)")
+            }
+            
+            for await (index, result) in group {
+                switch result {
+                case .success(let media):
+                    uploaded[index] = media
+                case .failure(let error):
+                    failures.append(error)
+                }
             }
         }
         
-        isUploadingMedia = false
-        selectedPhotos = []
+        draft.media.append(contentsOf: uploaded.compactMap { $0 })
+        if let error = failures.first {
+            showPhotoFailure(error, count: failures.count)
+        }
     }
     
     private func processCameraImage(_ image: UIImage) async {
         isUploadingMedia = true
+        defer { isUploadingMedia = false }
         
         do {
-            // Upload to Firebase and get LoopMedia
-            let loopMedia = try await FirebaseService.shared.uploadLoopMedia(.image(image))
-            
-            // Add to draft
-            await MainActor.run {
-                draft.media.append(loopMedia)
-            }
+            draft.media.append(try await FirebaseService.shared.uploadLoopMedia(.image(image)))
         } catch {
-            print("Error processing camera image: \(error)")
+            showPhotoFailure(error, count: 1)
         }
-        
-        isUploadingMedia = false
     }
+    
+    private func showPhotoFailure(_ error: any Error, count: Int) {
+        Self.logger.error("Photo upload failed: \(error.localizedDescription, privacy: .public)")
+        
+        // A photo that can't be decoded won't succeed on retry; anything else is most likely the network
+        let message = (error as? ImageUploadEncoder.EncodingError)?.errorDescription
+            ?? "Please check your connection and try again."
+        alert = ComposeAlert(
+            title: count == 1 ? "Couldn't add photo" : "Couldn't add \(count) photos",
+            message: message
+        )
+    }
+}
+
+/// A failure shown over the compose sheet, which stays open so nothing typed is lost.
+private struct ComposeAlert {
+    let title: String
+    let message: String
 }
 
 struct MediaPreviewView: View {

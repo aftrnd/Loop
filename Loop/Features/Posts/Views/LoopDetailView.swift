@@ -334,7 +334,7 @@ struct LoopDetailView: View {
                 draft: $viewModel.composeDraft,
                 isPresented: $viewModel.showingCompose,
                 onPost: {
-                    await viewModel.postReply()
+                    try await viewModel.postReply()
                 }
             )
             .presentationDetents([.fraction(0.40), .large])
