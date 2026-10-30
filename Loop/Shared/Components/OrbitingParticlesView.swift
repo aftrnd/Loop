@@ -48,8 +48,8 @@ struct OrbitingParticlesView: View {
                     let colorRotation = (breathCycle + 1.0) / 2.0 * 0.15  // 0 to 0.15 hue rotation with breath
                     
                     // Focal point parameters based on device tilt
-                    let lightX = max(-1, min(1, CGFloat(tiltX)))  // Clamp to -1 to 1
-                    let lightY = max(-1, min(1, CGFloat(tiltY)))  // Clamp to -1 to 1
+                    let _ = max(-1, min(1, CGFloat(tiltX)))  // Clamp to -1 to 1
+                    let _ = max(-1, min(1, CGFloat(tiltY)))  // Clamp to -1 to 1
                     
                     // Blur parameters - subtle radial blur from center to edges
                     let maxBlurRadius: CGFloat = 6.0     // Maximum blur at outer edges

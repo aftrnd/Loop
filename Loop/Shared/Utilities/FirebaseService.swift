@@ -4,11 +4,16 @@ import FirebaseStorage
 import FirebaseFunctions
 import Foundation
 import UIKit
+import os
 
 class FirebaseService {
     static let shared = FirebaseService()
     private let db = Firestore.firestore()
     private let storage = Storage.storage()
+    private let logger = Logger(subsystem: "com.nejack.Loop", category: "FirebaseService")
+
+    /// Author profiles fetched this session, keyed by user ID. Shared by every feed so a profile is read once.
+    private var userCache: [String: User] = [:]
 
     private init() {}
 
@@ -32,16 +37,46 @@ class FirebaseService {
         
         guard let data = doc.data() else { return nil }
         
-        // Parse badge type from string
-        let badgeType: BadgeType?
-        if let badgeString = data["badgeType"] as? String {
-            badgeType = BadgeType(rawValue: badgeString)
-        } else {
-            badgeType = nil
+        let user = Self.makeUser(id: userId, data: data)
+        userCache[userId] = user
+        return user
+    }
+    
+    /// Returns profiles for `ids`, reading from the session cache and fetching the rest in batched queries.
+    func users(withIds ids: [String]) async -> [String: User] {
+        let uniqueIds = Array(Set(ids))
+        let missingIds = uniqueIds.filter { userCache[$0] == nil }
+        
+        // Firestore allows up to 30 values in an `in` filter
+        for start in stride(from: 0, to: missingIds.count, by: 30) {
+            let batch = Array(missingIds[start..<min(start + 30, missingIds.count)])
+            do {
+                let snapshot = try await db.collection("users")
+                    .whereField(FieldPath.documentID(), in: batch)
+                    .getDocuments()
+                for document in snapshot.documents {
+                    userCache[document.documentID] = Self.makeUser(id: document.documentID, data: document.data())
+                }
+            } catch {
+                logger.error("Author profile fetch failed: \(error.localizedDescription, privacy: .public)")
+            }
         }
-
+        
+        return uniqueIds.reduce(into: [:]) { result, id in
+            result[id] = userCache[id]
+        }
+    }
+    
+    /// Drops cached author profiles so the next fetch reads fresh names and avatars.
+    func invalidateUserCache() {
+        userCache.removeAll()
+    }
+    
+    private static func makeUser(id: String, data: [String: Any]) -> User {
+        let badgeType = (data["badgeType"] as? String).flatMap(BadgeType.init(rawValue:))
+        
         return User(
-            id: userId,
+            id: id,
             phoneNumber: data["phoneNumber"] as? String ?? "",
             displayName: data["displayName"] as? String,
             username: data["username"] as? String,
@@ -52,6 +87,8 @@ class FirebaseService {
             badgeType: badgeType,
             followers: data["followers"] as? [String] ?? [],
             following: data["following"] as? [String] ?? [],
+            // Profiles written before createdAt was stored fall back to now, as before
+            createdAt: (data["createdAt"] as? Timestamp)?.dateValue() ?? Date(),
             fcmToken: data["fcmToken"] as? String
         )
     }
@@ -168,6 +205,7 @@ class FirebaseService {
         
         if !updateData.isEmpty {
             try await userRef.updateData(updateData)
+            userCache[userId] = nil
         }
     }
     
@@ -193,20 +231,18 @@ class FirebaseService {
             throw NSError(domain: "FirebaseService", code: 2, userInfo: [NSLocalizedDescriptionKey: "No authenticated user"])
         }
         
-        // Compress image to JPEG (0.7 quality for good balance)
-        guard let imageData = image.jpegData(compressionQuality: 0.7) else {
-            throw NSError(domain: "FirebaseService", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to compress image"])
-        }
-        
+        // Scaled to fit 512x512 and encoded off the main actor
+        let encoded = try await ImageUploadEncoder.encode(.image(image), as: .avatar)
+
         // Create storage reference
         let storageRef = storage.reference()
         let avatarRef = storageRef.child("users/\(userId)/avatar.jpg")
-        
-        // Upload image
+
+        // Upload image. The path is reused for every new avatar, so it gets no long-lived cache header.
         let metadata = StorageMetadata()
         metadata.contentType = "image/jpeg"
-        
-        _ = try await avatarRef.putDataAsync(imageData, metadata: metadata)
+
+        _ = try await avatarRef.putDataAsync(encoded.data, metadata: metadata)
         
         // Get download URL
         let downloadURL = try await avatarRef.downloadURL()
@@ -214,6 +250,7 @@ class FirebaseService {
         // Update user document with avatar URL
         let userRef = db.collection("users").document(userId)
         try await userRef.updateData(["avatarURL": downloadURL.absoluteString])
+        userCache[userId] = nil
         
         return downloadURL.absoluteString
     }
@@ -224,20 +261,18 @@ class FirebaseService {
             throw NSError(domain: "FirebaseService", code: 2, userInfo: [NSLocalizedDescriptionKey: "No authenticated user"])
         }
         
-        // Compress image to JPEG (0.8 quality for banners)
-        guard let imageData = image.jpegData(compressionQuality: 0.8) else {
-            throw NSError(domain: "FirebaseService", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to compress image"])
-        }
-        
+        // Scaled to fit 1920x1080 and encoded off the main actor
+        let encoded = try await ImageUploadEncoder.encode(.image(image), as: .banner)
+
         // Create storage reference
         let storageRef = storage.reference()
         let bannerRef = storageRef.child("users/\(userId)/banner.jpg")
-        
-        // Upload image
+
+        // Upload image. The path is reused for every new banner, so it gets no long-lived cache header.
         let metadata = StorageMetadata()
         metadata.contentType = "image/jpeg"
-        
-        _ = try await bannerRef.putDataAsync(imageData, metadata: metadata)
+
+        _ = try await bannerRef.putDataAsync(encoded.data, metadata: metadata)
         
         // Get download URL
         let downloadURL = try await bannerRef.downloadURL()
@@ -245,6 +280,7 @@ class FirebaseService {
         // Update user document with banner URL
         let userRef = db.collection("users").document(userId)
         try await userRef.updateData(["bannerURL": downloadURL.absoluteString])
+        userCache[userId] = nil
         
         return downloadURL.absoluteString
     }
@@ -420,164 +456,138 @@ class FirebaseService {
         print("✅ Chat hidden for user: \(currentUserId)")
     }
 
-    func getChats() async throws -> [Chat] {
+    // MARK: - Chat Parsing
+
+    /// Builds a chat from its document. Returns nil for malformed chats and for chats the current user has hidden.
+    /// The other participant's profile fields are filled in by `chats(from:)`.
+    static func parseChat(id documentID: String, data: [String: Any], currentUserId: String) -> Chat? {
+        guard let title = data["title"] as? String else { return nil }
+
+        // Deleting a chat hides it for that user; the conversation stays in Firestore
+        let hiddenFor = data["hiddenFor"] as? [String] ?? []
+        guard !hiddenFor.contains(currentUserId) else { return nil }
+
+        let chatId = data["id"] as? String ?? documentID
+        let participants = data["participants"] as? [String] ?? []
+        let lastMessageTime = data["lastMessageTime"] as? Timestamp
+
+        // `createChat` stores a placeholder preview. Until the first message, lastMessageTime still equals
+        // createdAt, and the list shows no preview for those chats.
+        let hasMessages = lastMessageTime != (data["createdAt"] as? Timestamp)
+        let lastMessage = hasMessages ? (data["lastMessage"] as? String ?? "") : ""
+
+        return Chat(
+            id: UUID(uuidString: chatId) ?? UUID(),
+            title: title,
+            lastMessagePreview: lastMessage,
+            unreadCount: data["unreadCount_\(currentUserId)"] as? Int ?? 0,
+            messages: [],
+            lastMessageTime: lastMessageTime?.dateValue() ?? Date(),
+            participants: participants,
+            otherParticipantId: participants.first { $0 != currentUserId }
+        )
+    }
+
+    /// Parses chat documents and attaches each 1:1 partner's profile, read through the batched user cache.
+    func chats(from documents: [QueryDocumentSnapshot]) async -> [Chat] {
         guard let currentUserId = Auth.auth().currentUser?.uid else { return [] }
 
-        let snapshot = try await db.collection("chats")
-            .whereField("participants", arrayContains: currentUserId)
-            .order(by: "lastMessageTime", descending: true)
-            .getDocuments()
-
-        // Use async map to fetch user data for 1:1 chats
-        var chats: [Chat] = []
-        for doc in snapshot.documents {
-            let data = doc.data()
-            guard let title = data["title"] as? String else {
-                continue
-            }
-            
-            // Skip chats that are hidden for this user
-            let hiddenFor = data["hiddenFor"] as? [String] ?? []
-            if hiddenFor.contains(currentUserId) {
-                continue
-            }
-
-            // Read per-user unread count
-            let unreadFieldName = "unreadCount_\(currentUserId)"
-            let unreadCount = data[unreadFieldName] as? Int ?? 0
-            let chatId = data["id"] as? String ?? doc.documentID
-            let participants = data["participants"] as? [String] ?? []
-            let otherParticipantId = participants.first { $0 != currentUserId }
-            
-            if unreadCount > 0 {
-                print("📩 Chat \(title) has \(unreadCount) unread messages")
-            }
-            
-            // Fetch the actual most recent message from messages subcollection
-            let messagesSnapshot = try? await db.collection("chats")
-                .document(chatId)
-                .collection("messages")
-                .order(by: "timestamp", descending: true)
-                .limit(to: 1)
-                .getDocuments()
-            
-            let lastMessage = messagesSnapshot?.documents.first?.data()["content"] as? String ?? ""
-            let timestamp = (messagesSnapshot?.documents.first?.data()["timestamp"] as? Timestamp)?.dateValue() ?? (data["lastMessageTime"] as? Timestamp)?.dateValue() ?? Date()
-            
-            // For 1:1 chats, fetch the other user's current display name and avatar
-            var otherParticipantDisplayName: String?
-            var otherParticipantAvatarURL: String?
-            var otherParticipantBadgeType: BadgeType?
-            if participants.count == 2, let otherUserId = otherParticipantId {
-                if let otherUser = try? await getUser(withId: otherUserId) {
-                    otherParticipantDisplayName = otherUser.displayName
-                    otherParticipantAvatarURL = otherUser.avatarURL
-                    otherParticipantBadgeType = otherUser.badgeType
-                }
-            }
-
-            chats.append(Chat(
-                id: UUID(uuidString: chatId) ?? UUID(),
-                title: title,
-                lastMessagePreview: lastMessage,
-                unreadCount: unreadCount,
-                messages: [],
-                lastMessageTime: timestamp,
-                participants: participants,
-                otherParticipantId: otherParticipantId,
-                otherParticipantDisplayName: otherParticipantDisplayName,
-                otherParticipantAvatarURL: otherParticipantAvatarURL,
-                otherParticipantBadgeType: otherParticipantBadgeType
-            ))
+        let parsed = documents.compactMap {
+            Self.parseChat(id: $0.documentID, data: $0.data(), currentUserId: currentUserId)
         }
-        
-        return chats
+        let partnerIds = parsed.compactMap { $0.participants.count == 2 ? $0.otherParticipantId : nil }
+        let partners = await users(withIds: partnerIds)
+
+        return parsed.map { chat in
+            guard chat.participants.count == 2,
+                  let partnerId = chat.otherParticipantId,
+                  let partner = partners[partnerId] else {
+                return chat
+            }
+            var chat = chat
+            chat.otherParticipantDisplayName = partner.displayName
+            chat.otherParticipantAvatarURL = partner.avatarURL
+            chat.otherParticipantBadgeType = partner.badgeType
+            return chat
+        }
     }
 
     // MARK: - Message Operations
 
-    func sendMessage(chatId: String, content: String) async throws {
+    /// Writes a message together with the chat's preview, unread counts and the sender's typing state in one batch.
+    /// Firestore applies the batch to local listeners right away, so the message shows before the server confirms it.
+    func sendMessage(chatId: String, content: String, participants: [String]) async throws {
         guard let currentUserId = Auth.auth().currentUser?.uid else {
             throw NSError(domain: "FirebaseService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
         }
-        
-        let now = Date()
-        
-        // Check if this is a self-chat (messaging yourself)
-        let chatDoc = try await db.collection("chats").document(chatId).getDocument()
-        guard let chatData = chatDoc.data(),
-              let participants = chatData["participants"] as? [String] else {
+        guard !participants.isEmpty else {
             throw NSError(domain: "FirebaseService", code: 2, userInfo: [NSLocalizedDescriptionKey: "Invalid chat data"])
         }
-        
-        let isSelfChat = participants.count == 2 && Set(participants).count == 1 && participants[0] == currentUserId
-        
-        print("🔍 DEBUG: isSelfChat = \(isSelfChat), participants = \(participants), currentUserId = \(currentUserId)")
-        
+
+        let now = Date()
+        let chatRef = db.collection("chats").document(chatId)
+        let messagesRef = chatRef.collection("messages")
+        let isSelfChat = participants.count == 2 && Set(participants) == [currentUserId]
+        let batch = db.batch()
+
+        var chatUpdate: [String: Any] = [
+            "lastMessage": content,
+            "lastMessageTime": Timestamp(date: now),
+            "hiddenFor": FieldValue.arrayRemove([currentUserId]), // Unhide for sender
+            "typing_\(currentUserId)": FieldValue.delete()
+        ]
+
         if isSelfChat {
-            // For self-chats, create two messages - one as sent, one as received
-            print("📨 Creating self-chat messages...")
-            
-            // First message - sent by you (appears on right)
+            // A chat with yourself stores each message twice: sent (right side) and received (left side)
             let sentMessageId = UUID().uuidString
-            let sentMessageRef = db.collection("chats").document(chatId).collection("messages").document(sentMessageId)
-            let sentTimestamp = Date()
-            try await sentMessageRef.setData([
+            batch.setData([
                 "id": sentMessageId,
                 "content": content,
-                "timestamp": Timestamp(date: sentTimestamp),
+                "timestamp": Timestamp(date: now),
                 "senderId": currentUserId,
                 "isFromUser": true,
-                "isSelfChatSent": true // Marker for sent message in self-chat
-            ])
-            
-            print("✅ SENT message created: id=\(sentMessageId), isFromUser=true")
-            
-            // Second message - received by you (appears on left)
-            // Add a tiny offset so it appears after the sent message
-            let receivedTimestamp = sentTimestamp.addingTimeInterval(0.001)
-            let receivedMessageId = UUID().uuidString
-            let receivedMessageRef = db.collection("chats").document(chatId).collection("messages").document(receivedMessageId)
-            try await receivedMessageRef.setData([
-                "id": receivedMessageId,
-                "content": content,
-                "timestamp": Timestamp(date: receivedTimestamp),
-                "senderId": "self_received", // Different sender ID to mark as received
-                "isFromUser": false,
-                "isSelfChatReceived": true // Marker for received message in self-chat
-            ])
-            
-            print("✅ RECEIVED message created: id=\(receivedMessageId), isFromUser=false, senderId=self_received")
+                "isSelfChatSent": true
+            ], forDocument: messagesRef.document(sentMessageId))
+
+            // Self-chats still count as unread, but send no push notification
+            chatUpdate["unreadCount_\(currentUserId)"] = FieldValue.increment(Int64(1))
         } else {
-            // Normal chat - create single message
-            print("📨 Creating normal chat message...")
+            // isFromUser is not stored; readers compare senderId with their own ID
             let messageId = UUID().uuidString
-            let messageRef = db.collection("chats").document(chatId).collection("messages").document(messageId)
-            try await messageRef.setData([
+            batch.setData([
                 "id": messageId,
                 "content": content,
                 "timestamp": Timestamp(date: now),
                 "senderId": currentUserId
-                // Note: isFromUser is NOT stored - it's computed client-side by comparing senderId with current user
-            ])
-            
-            print("✅ Message created: id=\(messageId), senderId=\(currentUserId)")
+            ], forDocument: messagesRef.document(messageId))
+
+            for participantId in participants where participantId != currentUserId {
+                chatUpdate["unreadCount_\(participantId)"] = FieldValue.increment(Int64(1))
+            }
         }
 
-        // Update chat's last message and unhide for sender
-        let chatRef = db.collection("chats").document(chatId)
-        try await chatRef.updateData([
-            "lastMessage": content,
-            "lastMessageTime": Timestamp(date: now),
-            "hiddenFor": FieldValue.arrayRemove([currentUserId]) // Unhide for sender
-        ])
-        
-        // For self-chats: still increment unread count (but don't send push notification)
+        batch.updateData(chatUpdate, forDocument: chatRef)
+        try await batch.commit()
+
         if isSelfChat {
-            print("📬 Self-chat: Incrementing unread count without sending notification")
-            try? await incrementUnreadCount(chatId: chatId, userId: currentUserId)
-        } else {
-            // For normal chats: send push notifications which also increments unread counts
+            // The received copy goes in its own write: its senderId is not the signed-in user, which the documented
+            // rules reject, and a rejection must not undo the sent copy above. A tiny offset keeps it second.
+            let receivedMessageId = UUID().uuidString
+            do {
+                try await messagesRef.document(receivedMessageId).setData([
+                    "id": receivedMessageId,
+                    "content": content,
+                    "timestamp": Timestamp(date: now.addingTimeInterval(0.001)),
+                    "senderId": "self_received",
+                    "isFromUser": false,
+                    "isSelfChatReceived": true
+                ])
+            } catch {
+                logger.error("Self-chat received copy failed: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+
+        if !isSelfChat {
             await sendMessageNotifications(chatId: chatId, participants: participants, content: content, senderId: currentUserId)
         }
     }
@@ -594,45 +604,27 @@ class FirebaseService {
             // Get participant's FCM token
             guard let participant = try? await getUser(withId: participantId),
                   let fcmToken = participant.fcmToken else {
-                print("⚠️ No FCM token for participant \(participantId)")
+                logger.info("No FCM token for a chat participant; skipping push")
                 continue
             }
-            
-            // Increment unread count for this participant
-            try? await incrementUnreadCount(chatId: chatId, userId: participantId)
-            
+
             // Send push notification via Firebase Cloud Function
             do {
                 let functions = Functions.functions()
                 let sendNotification = functions.httpsCallable("sendNotification")
-                
-                let result = try await sendNotification.call([
+
+                _ = try await sendNotification.call([
                     "fcmToken": fcmToken,
                     "title": senderName,
                     "body": content,
                     "chatId": chatId,
                     "senderId": senderId
                 ])
-                
-                print("✅ Push notification sent to \(participantId)")
-                print("📬 Message: \(senderName): \(content)")
             } catch {
-                print("❌ Failed to send push notification to \(participantId): \(error.localizedDescription)")
                 // Continue to next participant even if one fails
+                logger.error("Message push failed: \(error.localizedDescription, privacy: .public)")
             }
         }
-    }
-    
-    private func incrementUnreadCount(chatId: String, userId: String) async throws {
-        // Store unread count per user in the chat document
-        let chatRef = db.collection("chats").document(chatId)
-        let unreadFieldName = "unreadCount_\(userId)"
-        
-        print("📊 Incrementing \(unreadFieldName) in chat \(chatId)")
-        try await chatRef.updateData([
-            unreadFieldName: FieldValue.increment(Int64(1))
-        ])
-        print("✅ Unread count incremented successfully")
     }
     
     func markChatAsRead(chatId: String) async throws {
@@ -649,117 +641,48 @@ class FirebaseService {
     // MARK: - Typing Indicators
     
     func setTypingStatus(chatId: String, isTyping: Bool) async throws {
-        guard let userId = Auth.auth().currentUser?.uid else {
-            print("⚠️ Cannot set typing status - no user ID")
-            return
-        }
-        
-        let chatRef = db.collection("chats").document(chatId)
-        let typingFieldName = "typing_\(userId)"
-        
-        if isTyping {
-            // Set typing status with timestamp
-            print("📝 Setting typing_\(userId) = \(Date()) in chat \(chatId)")
-            try await chatRef.updateData([
-                typingFieldName: Timestamp(date: Date())
-            ])
-            print("✅ Typing status set successfully")
-        } else {
-            // Remove typing status
-            print("📝 Deleting typing_\(userId) from chat \(chatId)")
-            try await chatRef.updateData([
-                typingFieldName: FieldValue.delete()
-            ])
-            print("✅ Typing status deleted successfully")
-        }
+        guard let userId = Auth.auth().currentUser?.uid else { return }
+
+        // A timestamp while typing, so readers can ignore indicators that went stale
+        let value: Any = isTyping ? Timestamp(date: Date()) : FieldValue.delete()
+        try await db.collection("chats").document(chatId).updateData([
+            "typing_\(userId)": value
+        ])
     }
-    
-    func listenForTypingStatus(chatId: String, completion: @escaping ([String: Date]) -> Void) -> ListenerRegistration {
-        guard let currentUserId = Auth.auth().currentUser?.uid else {
-            return db.collection("chats").document(chatId).addSnapshotListener { _, _ in }
-        }
-        
+
+    /// Listens to one chat document for who else is typing and for the current user's unread count.
+    /// Returns nil when nobody is signed in.
+    func listenForChatActivity(chatId: String, onChange: @escaping (ChatActivity) -> Void) -> ListenerRegistration? {
+        guard let currentUserId = Auth.auth().currentUser?.uid else { return nil }
+
         return db.collection("chats").document(chatId)
             .addSnapshotListener { snapshot, error in
+                if let error {
+                    self.logger.error("Chat activity listener failed: \(error.localizedDescription, privacy: .public)")
+                }
                 guard let data = snapshot?.data() else {
-                    print("🔍 Typing listener: No data in snapshot")
-                    completion([:])
+                    onChange(ChatActivity())
                     return
                 }
-                
-                // Check if this is a self-chat
+
                 let participants = data["participants"] as? [String] ?? []
-                let isSelfChat = participants.count == 2 && Set(participants).count == 1 && participants.first == currentUserId
-                
-                print("🔍 Typing listener: isSelfChat=\(isSelfChat), participants=\(participants)")
-                
+                let isSelfChat = participants.count == 2 && Set(participants) == [currentUserId]
+
                 var typingUsers: [String: Date] = [:]
-                
-                // Look for typing_<userId> fields
-                for (key, value) in data {
-                    if key.hasPrefix("typing_") {
-                        let userId = String(key.dropFirst("typing_".count))
-                        
-                        // For self-chats: show typing indicator even if it's your own
-                        // For normal chats: skip current user's typing status
-                        if isSelfChat || userId != currentUserId {
-                            if let timestamp = value as? Timestamp {
-                                typingUsers[userId] = timestamp.dateValue()
-                                print("🔍 Found typing user: \(userId) at \(timestamp.dateValue())")
-                            }
-                        } else {
-                            print("🔍 Skipping own typing status (not self-chat)")
-                        }
-                    }
+                for (key, value) in data where key.hasPrefix("typing_") {
+                    let userId = String(key.dropFirst("typing_".count))
+                    // In a chat with yourself your own typing shows; elsewhere only other people's does
+                    guard isSelfChat || userId != currentUserId, let timestamp = value as? Timestamp else { continue }
+                    typingUsers[userId] = timestamp.dateValue()
                 }
-                
-                print("🔍 Typing listener returning \(typingUsers.count) typing users")
-                completion(typingUsers)
+
+                onChange(ChatActivity(
+                    typingUsers: typingUsers,
+                    unreadCount: data["unreadCount_\(currentUserId)"] as? Int ?? 0
+                ))
             }
     }
 
-    func getMessages(forChatId chatId: String) async throws -> [Message] {
-        guard let currentUserId = Auth.auth().currentUser?.uid else { return [] }
-        
-        let snapshot = try await db.collection("chats").document(chatId).collection("messages")
-            .order(by: "timestamp", descending: false)
-            .getDocuments()
-
-        return snapshot.documents.compactMap { doc in
-            let data = doc.data()
-            guard let content = data["content"] as? String,
-                  let timestamp = data["timestamp"] as? Timestamp else {
-                return nil
-            }
-
-            let messageId = data["id"] as? String ?? doc.documentID
-            let senderId = data["senderId"] as? String ?? ""
-            
-            // For self-chat messages, use the stored isFromUser value
-            // Otherwise, determine by comparing sender ID
-            let isFromUser: Bool
-            if let storedIsFromUser = data["isFromUser"] as? Bool {
-                // Use stored value (important for self-chat messages)
-                isFromUser = storedIsFromUser
-            } else {
-                // Fallback: compare sender ID
-                isFromUser = senderId == currentUserId
-            }
-
-            let likedBy = data["likedBy"] as? [String] ?? []
-            
-            return Message(
-                id: UUID(uuidString: messageId) ?? UUID(),
-                content: content,
-                timestamp: timestamp.dateValue(),
-                isFromUser: isFromUser,
-                senderName: nil,
-                senderId: senderId,
-                likedBy: likedBy
-            )
-        }
-    }
-    
     func likeMessage(chatId: String, messageId: String) async throws {
         guard let currentUserId = Auth.auth().currentUser?.uid else {
             throw NSError(domain: "FirebaseService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
@@ -786,7 +709,7 @@ class FirebaseService {
         // Get chat participants to determine who to notify
         let chatDoc = try await db.collection("chats").document(chatId).getDocument()
         guard let chatData = chatDoc.data(),
-              let participants = chatData["participants"] as? [String] else {
+              let _ = chatData["participants"] as? [String] else {
             return
         }
         
@@ -827,7 +750,7 @@ class FirebaseService {
             // Truncate message content for notification
             let truncatedContent = messageContent.prefix(50) + (messageContent.count > 50 ? "..." : "")
             
-            let result = try await sendNotification.call([
+            _ = try await sendNotification.call([
                 "fcmToken": fcmToken,
                 "title": "\(likerName) liked your message",
                 "body": "\"\(truncatedContent)\"",
@@ -843,109 +766,37 @@ class FirebaseService {
 
     // MARK: - Real-time Listeners
 
-    func listenForChats(completion: @escaping ([Chat]) -> Void) -> ListenerRegistration {
-        guard let currentUserId = Auth.auth().currentUser?.uid else {
-            return db.collection("chats").addSnapshotListener { _, _ in }
-        }
+    /// Listens to the current user's chats, newest first, and hands over the raw documents.
+    /// Resolve them with `chats(from:)`. Returns nil when nobody is signed in.
+    func listenForChats(onSnapshot: @escaping (Result<[QueryDocumentSnapshot], Error>) -> Void) -> ListenerRegistration? {
+        guard let currentUserId = Auth.auth().currentUser?.uid else { return nil }
 
         return db.collection("chats")
             .whereField("participants", arrayContains: currentUserId)
             .order(by: "lastMessageTime", descending: true)
-            .addSnapshotListener { [weak self] snapshot, error in
-                guard let self = self else { return }
-                guard let documents = snapshot?.documents else {
-                    print("Error fetching chats: \(error?.localizedDescription ?? "Unknown error")")
-                    return
-                }
-
-                // Parse basic chat data first
-                let chatData: [(data: [String: Any], doc: QueryDocumentSnapshot)] = documents.compactMap { doc in
-                    let data = doc.data()
-                    guard data["title"] != nil else {
-                        return nil
-                    }
-                    return (data: data, doc: doc)
-                }
-                
-                // Fetch user data and latest message asynchronously for each chat
-                Task {
-                    var chats: [Chat] = []
-                    
-                    for (data, doc) in chatData {
-                        guard let title = data["title"] as? String else {
-                            continue
-                        }
-                        
-                        // Skip chats that are hidden for this user
-                        let hiddenFor = data["hiddenFor"] as? [String] ?? []
-                        if hiddenFor.contains(currentUserId) {
-                            continue
-                        }
-                        
-                        // Read per-user unread count
-                        let unreadFieldName = "unreadCount_\(currentUserId)"
-                        let unreadCount = data[unreadFieldName] as? Int ?? 0
-                        let chatId = data["id"] as? String ?? doc.documentID
-                        let participants = data["participants"] as? [String] ?? []
-                        let otherParticipantId = participants.first { $0 != currentUserId }
-                        
-                        // Fetch the actual most recent message from messages subcollection
-                        let messagesSnapshot = try? await self.db.collection("chats")
-                            .document(chatId)
-                            .collection("messages")
-                            .order(by: "timestamp", descending: true)
-                            .limit(to: 1)
-                            .getDocuments()
-                        
-                        let lastMessage = messagesSnapshot?.documents.first?.data()["content"] as? String ?? ""
-                        let timestamp = (messagesSnapshot?.documents.first?.data()["timestamp"] as? Timestamp)?.dateValue() ?? (data["lastMessageTime"] as? Timestamp)?.dateValue() ?? Date()
-                        
-                        // For 1:1 chats, fetch the other user's current display name and avatar
-                        var otherParticipantDisplayName: String?
-                        var otherParticipantAvatarURL: String?
-                        var otherParticipantBadgeType: BadgeType?
-                        if participants.count == 2, let otherUserId = otherParticipantId {
-                            if let otherUser = try? await self.getUser(withId: otherUserId) {
-                                otherParticipantDisplayName = otherUser.displayName
-                                otherParticipantAvatarURL = otherUser.avatarURL
-                                otherParticipantBadgeType = otherUser.badgeType
-                            }
-                        }
-                        
-                        chats.append(Chat(
-                            id: UUID(uuidString: chatId) ?? UUID(),
-                            title: title,
-                            lastMessagePreview: lastMessage,
-                            unreadCount: unreadCount,
-                            messages: [],
-                            lastMessageTime: timestamp,
-                            participants: participants,
-                            otherParticipantId: otherParticipantId,
-                            otherParticipantDisplayName: otherParticipantDisplayName,
-                            otherParticipantAvatarURL: otherParticipantAvatarURL,
-                            otherParticipantBadgeType: otherParticipantBadgeType
-                        ))
-                    }
-                    
-                    completion(chats)
+            .addSnapshotListener { snapshot, error in
+                if let error {
+                    onSnapshot(.failure(error))
+                } else {
+                    onSnapshot(.success(snapshot?.documents ?? []))
                 }
             }
     }
 
-    func listenForMessages(chatId: String, completion: @escaping ([Message]) -> Void) -> ListenerRegistration {
-        guard let currentUserId = Auth.auth().currentUser?.uid else {
-            return db.collection("chats").document(chatId).collection("messages").addSnapshotListener { _, _ in }
-        }
-        
+    /// Listens to a chat's messages, oldest first. The first snapshot carries the full history.
+    /// Returns nil when nobody is signed in.
+    func listenForMessages(chatId: String, onChange: @escaping (Result<[Message], Error>) -> Void) -> ListenerRegistration? {
+        guard let currentUserId = Auth.auth().currentUser?.uid else { return nil }
+
         return db.collection("chats").document(chatId).collection("messages")
             .order(by: "timestamp", descending: false)
             .addSnapshotListener { snapshot, error in
-                guard let documents = snapshot?.documents else {
-                    print("Error fetching messages: \(error?.localizedDescription ?? "Unknown error")")
+                if let error {
+                    onChange(.failure(error))
                     return
                 }
 
-                let messages = documents.compactMap { doc -> Message? in
+                let messages = (snapshot?.documents ?? []).compactMap { doc -> Message? in
                     let data = doc.data()
                     guard let content = data["content"] as? String,
                           let timestamp = data["timestamp"] as? Timestamp else {
@@ -954,39 +805,22 @@ class FirebaseService {
 
                     let messageId = data["id"] as? String ?? doc.documentID
                     let senderId = data["senderId"] as? String ?? ""
-                    
-                    // For self-chat messages, use the stored isFromUser value
-                    // Otherwise, determine by comparing sender ID
-                    let isFromUser: Bool
-                    if let storedIsFromUser = data["isFromUser"] as? Bool {
-                        // Use stored value (important for self-chat messages)
-                        isFromUser = storedIsFromUser
-                        print("🔍 Message listener: Using stored isFromUser=\(isFromUser) for message \(messageId)")
-                    } else {
-                        // Fallback: compare sender ID
-                        isFromUser = senderId == currentUserId
-                        print("🔍 Message listener: Calculated isFromUser=\(isFromUser) for message \(messageId) (senderId=\(senderId), currentUserId=\(currentUserId))")
-                    }
 
-                    let likedBy = data["likedBy"] as? [String] ?? []
-                    
-                    let message = Message(
+                    // Self-chat messages store isFromUser; everything else is decided by the sender ID
+                    let isFromUser = data["isFromUser"] as? Bool ?? (senderId == currentUserId)
+
+                    return Message(
                         id: UUID(uuidString: messageId) ?? UUID(),
                         content: content,
                         timestamp: timestamp.dateValue(),
                         isFromUser: isFromUser,
                         senderName: nil,
                         senderId: senderId,
-                        likedBy: likedBy
+                        likedBy: data["likedBy"] as? [String] ?? []
                     )
-                    
-                    print("✅ Message retrieved: id=\(messageId), content='\(content)', isFromUser=\(isFromUser), likes=\(likedBy.count)")
-                    return message
                 }
-                
-                print("📥 Total messages retrieved: \(messages.count)")
 
-                completion(messages)
+                onChange(.success(messages))
             }
     }
     
@@ -1043,12 +877,6 @@ class FirebaseService {
         print("✅ Successfully unfollowed user: \(targetUserId)")
     }
     
-    func isFollowing(_ targetUserId: String) async throws -> Bool {
-        guard let currentUserId = Auth.auth().currentUser?.uid else { return false }
-        guard let currentUser = try await getUser(withId: currentUserId) else { return false }
-        return currentUser.following.contains(targetUserId)
-    }
-    
     // MARK: - Loop Operations
     
     func createLoop(content: String, media: [LoopMedia] = [], isReply: Bool = false, parentLoopId: String? = nil, replyToReplyId: String? = nil) async throws {
@@ -1102,17 +930,18 @@ class FirebaseService {
             loopData["replyToReplyId"] = replyToReplyId
         }
         
-        try await loopRef.setData(loopData)
-        
-        // If this is a reply, update the parent loop's replies array
+        // A reply and its entry in the parent's replies array are written together, so neither can land alone
+        let batch = db.batch()
+        batch.setData(loopData, forDocument: loopRef)
+
         if isReply, let parentLoopId = parentLoopId {
             let parentLoopRef = db.collection("loops").document(parentLoopId)
-            try await parentLoopRef.updateData([
+            batch.updateData([
                 "replies": FieldValue.arrayUnion([loopId])
-            ])
+            ], forDocument: parentLoopRef)
         }
-        
-        print("✅ Successfully created loop: \(loopId)")
+
+        try await batch.commit()
     }
     
     func likeLoop(_ loopId: String) async throws {
@@ -1173,60 +1002,14 @@ class FirebaseService {
         }
         
         try await batch.commit()
-        
-        print("✅ Successfully deleted loop: \(loopId) - nested replies will be cleaned up by Cloud Function")
     }
     
     func getLoop(withId loopId: String) async throws -> Loop? {
         let doc = try await db.collection("loops").document(loopId).getDocument()
-        guard let data = doc.data() else { return nil }
+        guard let data = doc.data(), let loop = Self.parseLoop(id: doc.documentID, data: data) else { return nil }
         
-        guard let authorId = data["authorId"] as? String,
-              let content = data["content"] as? String,
-              let createdAtTimestamp = data["createdAt"] as? Timestamp else {
-            return nil
-        }
-        
-        // Parse media
-        let mediaArray = data["media"] as? [[String: Any]] ?? []
-        let media = mediaArray.compactMap { mediaData -> LoopMedia? in
-            guard let id = mediaData["id"] as? String,
-                  let typeString = mediaData["type"] as? String,
-                  let type = LoopMediaType(rawValue: typeString),
-                  let url = mediaData["url"] as? String else {
-                return nil
-            }
-            
-            return LoopMedia(
-                id: id,
-                type: type,
-                url: url,
-                thumbnailURL: mediaData["thumbnailURL"] as? String,
-                width: mediaData["width"] as? Double,
-                height: mediaData["height"] as? Double
-            )
-        }
-        
-        // Fetch author information
-        let author = try? await getUser(withId: authorId)
-        
-        return Loop(
-            id: doc.documentID,
-            authorId: authorId,
-            content: content,
-            media: media,
-            createdAt: createdAtTimestamp.dateValue(),
-            updatedAt: (data["updatedAt"] as? Timestamp)?.dateValue() ?? createdAtTimestamp.dateValue(),
-            likes: data["likes"] as? [String] ?? [],
-            replies: data["replies"] as? [String] ?? [],
-            isReply: data["isReply"] as? Bool ?? false,
-            parentLoopId: data["parentLoopId"] as? String,
-            replyToReplyId: data["replyToReplyId"] as? String,
-            authorDisplayName: author?.displayName,
-            authorUsername: author?.username,
-            authorAvatarURL: author?.avatarURL,
-            authorBadgeType: author?.badgeType
-        )
+        let authors = await users(withIds: [loop.authorId])
+        return loop.withAuthor(authors[loop.authorId])
     }
     
     func getReplies(for loopId: String) async throws -> [Loop] {
@@ -1235,26 +1018,26 @@ class FirebaseService {
             .order(by: "createdAt", descending: true) // Newest first (Reddit-style)
             .getDocuments()
         
-        var replies: [Loop] = []
-        for doc in snapshot.documents {
-            if let loop = try? await parseLoopFromDocument(doc) {
-                replies.append(loop)
-            }
-        }
-        
-        return replies
+        return await loops(from: snapshot.documents)
     }
     
-    private func parseLoopFromDocument(_ doc: QueryDocumentSnapshot) async throws -> Loop? {
-        let data = doc.data()
-        
+    // MARK: - Loop Parsing
+    
+    /// Builds loops from query documents and attaches author profiles fetched in one batch.
+    func loops(from documents: [QueryDocumentSnapshot]) async -> [Loop] {
+        let parsed = documents.compactMap { Self.parseLoop(id: $0.documentID, data: $0.data()) }
+        let authors = await users(withIds: parsed.map(\.authorId))
+        return parsed.map { $0.withAuthor(authors[$0.authorId]) }
+    }
+    
+    /// Parses a loop document without author details. Returns nil when required fields are missing.
+    static func parseLoop(id: String, data: [String: Any]) -> Loop? {
         guard let authorId = data["authorId"] as? String,
               let content = data["content"] as? String,
               let createdAtTimestamp = data["createdAt"] as? Timestamp else {
             return nil
         }
         
-        // Parse media
         let mediaArray = data["media"] as? [[String: Any]] ?? []
         let media = mediaArray.compactMap { mediaData -> LoopMedia? in
             guard let id = mediaData["id"] as? String,
@@ -1274,11 +1057,8 @@ class FirebaseService {
             )
         }
         
-        // Fetch author information
-        let author = try? await getUser(withId: authorId)
-        
         return Loop(
-            id: doc.documentID,
+            id: id,
             authorId: authorId,
             content: content,
             media: media,
@@ -1288,45 +1068,62 @@ class FirebaseService {
             replies: data["replies"] as? [String] ?? [],
             isReply: data["isReply"] as? Bool ?? false,
             parentLoopId: data["parentLoopId"] as? String,
-            replyToReplyId: data["replyToReplyId"] as? String,
-            authorDisplayName: author?.displayName,
-            authorUsername: author?.username,
-            authorAvatarURL: author?.avatarURL,
-            authorBadgeType: author?.badgeType
+            replyToReplyId: data["replyToReplyId"] as? String
         )
     }
     
-    /// Uploads a loop media file and returns the download URL
-    func uploadLoopMedia(_ image: UIImage, type: LoopMediaType) async throws -> LoopMedia {
+    /// Uploads a post photo, scaled to fit 2048x2048, and returns its media record
+    func uploadLoopMedia(_ source: UploadImageSource) async throws -> LoopMedia {
         guard let userId = Auth.auth().currentUser?.uid else {
             throw NSError(domain: "FirebaseService", code: 2, userInfo: [NSLocalizedDescriptionKey: "No authenticated user"])
         }
-        
-        // Compress image to JPEG (0.8 quality for posts)
-        guard let imageData = image.jpegData(compressionQuality: 0.8) else {
-            throw NSError(domain: "FirebaseService", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to compress image"])
-        }
-        
+
+        // Decoded, scaled and encoded off the main actor
+        let encoded = try await ImageUploadEncoder.encode(source, as: .post)
+
         // Create storage reference
         let storageRef = storage.reference()
         let mediaId = UUID().uuidString
         let mediaRef = storageRef.child("loops/\(userId)/\(mediaId).jpg")
-        
-        // Upload image
+
+        // Upload image. Every upload gets a new path that is never overwritten, so caches can keep it indefinitely.
         let metadata = StorageMetadata()
         metadata.contentType = "image/jpeg"
-        
-        _ = try await mediaRef.putDataAsync(imageData, metadata: metadata)
-        
+        metadata.cacheControl = "public, max-age=31536000, immutable"
+
+        _ = try await mediaRef.putDataAsync(encoded.data, metadata: metadata)
+
         // Get download URL
         let downloadURL = try await mediaRef.downloadURL()
-        
+
         return LoopMedia(
             id: mediaId,
-            type: type,
+            type: .image,
             url: downloadURL.absoluteString,
-            width: Double(image.size.width),
-            height: Double(image.size.height)
+            width: Double(encoded.pixelWidth),
+            height: Double(encoded.pixelHeight)
         )
+    }
+    
+    // MARK: - Profile Feed Operations
+    
+    /// Fetches all loops (posts and replies) created by a specific user
+    func getUserLoops(userId: String) async throws -> [Loop] {
+        let snapshot = try await db.collection("loops")
+            .whereField("authorId", isEqualTo: userId)
+            .order(by: "createdAt", descending: true)
+            .getDocuments()
+        
+        return await loops(from: snapshot.documents)
+    }
+    
+    /// Fetches all loops liked by a specific user, newest first
+    func getUserLikedLoops(userId: String) async throws -> [Loop] {
+        // Sorted on the device rather than with `order(by:)`, which would need a composite index
+        let snapshot = try await db.collection("loops")
+            .whereField("likes", arrayContains: userId)
+            .getDocuments()
+        
+        return await loops(from: snapshot.documents).sorted { $0.createdAt > $1.createdAt }
     }
 }

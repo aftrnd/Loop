@@ -1,12 +1,9 @@
 import SwiftUI
 import UIKit
+import os
 
 struct ChatsListView: View {
-    @State private var viewModel = ChatsListViewModel()
-    @State private var topDistance: CGFloat = 0
-    @State private var scrollOffset: CGFloat = 0
-    @State private var contentHeight: CGFloat = 0
-    @State private var scrollViewHeight: CGFloat = 0
+    @Environment(ChatsListViewModel.self) private var viewModel
     @State private var navigationPath = NavigationPath()
     @State private var showNewMessage = false
     @State private var showProfile = false
@@ -15,20 +12,15 @@ struct ChatsListView: View {
     @State private var showDeleteConfirmation = false
     @Environment(\.colorScheme) private var colorScheme
     @ObservedObject private var debugManager = DebugManager.shared
-    @StateObject private var notificationManager = NotificationNavigationManager.shared
-    
+    private let notificationNavigation = NotificationNavigationManager.shared
+    private static let logger = Logger(subsystem: "com.nejack.Loop", category: "ChatsListView")
+
     var body: some View {
         mainView
     }
     
     // MARK: - Methods
-    
-    private func refreshChats() async {
-        print("🔄 Pull-to-refresh triggered...")
-        await viewModel.refreshChats()
-        print("✅ Pull-to-refresh completed")
-    }
-    
+
     private var mainView: some View {
         NavigationStack(path: $navigationPath) {
             ZStack {
@@ -87,13 +79,16 @@ struct ChatsListView: View {
         }
         .sheet(item: $profileUserToShow) { profileUser in
             ProfileView(userId: profileUser.userId)
+                .presentationDetents([.large])
         }
         .sheet(isPresented: $debugManager.isDebugMenuVisible) {
             DebugMenuView()
         }
-        .onChange(of: notificationManager.chatToOpen) { _, chatId in
-            guard let chatId = chatId else { return }
-            handleNotificationNavigation(chatId: chatId)
+        .onChange(of: notificationNavigation.pendingChatID, initial: true) {
+            openPendingChat()
+        }
+        .onChange(of: viewModel.isLoadingInitialData) {
+            openPendingChat()
         }
         .alert("Delete Conversation?", isPresented: $showDeleteConfirmation, presenting: chatToDelete) { chat in
             Button("Delete", role: .destructive) {
@@ -109,37 +104,29 @@ struct ChatsListView: View {
         }
     }
     
-    private func handleNotificationNavigation(chatId: String) {
-        // Find the chat in our list
-        let allChats = viewModel.pinned + viewModel.recent
-        guard let chat = allChats.first(where: { $0.id.uuidString == chatId }) else {
-            print("⚠️ Chat not found for notification: \(chatId)")
-            notificationManager.clearNavigation()
+    /// Opens the chat a notification tap asked for, once the list has loaded.
+    private func openPendingChat() {
+        guard !viewModel.isLoadingInitialData, let chatID = notificationNavigation.consumePendingChat() else {
             return
         }
-        
-        print("📱 Navigating to chat: \(chat.displayTitle)")
+
+        guard let chat = viewModel.chat(withId: chatID) else {
+            Self.logger.notice("Chat from a notification is not in the list: \(chatID, privacy: .private)")
+            return
+        }
         navigationPath.append(ChatsRoute.conversation(chat))
-        notificationManager.clearNavigation()
     }
     
     
     private var chatListView: some View {
         GeometryReader { scrollGeometry in
             List {
-                // Scroll sentinel
-                GeometryReader { geo in
-                    let topMinY = geo.frame(in: .named("loopScroll")).minY
-                    Color.clear
-                        .onChange(of: topMinY) { _, newValue in
-                            let offset = max(0, -newValue)
-                            scrollOffset = offset
-                        }
-                }
-                .frame(height: 0)
-                .listRowSeparator(.hidden)
-                .listRowBackground(Color.clear)
-                .listRowInsets(EdgeInsets())
+                // Zero-height first row, kept so the list's top spacing stays as designed
+                Color.clear
+                    .frame(height: 0)
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets())
                 // Show loading indicator while initial data loads
                 if viewModel.isLoadingInitialData {
                     HStack {
@@ -198,12 +185,14 @@ struct ChatsListView: View {
                     .listRowBackground(Color.clear)
                     .listRowInsets(EdgeInsets(top: 0, leading: 10, bottom: 0, trailing: 10))
                     .swipeActions(edge: .leading, allowsFullSwipe: false) {
-                        Button {
-                            viewModel.pinChat(chat)
-                        } label: {
-                            Image(systemName: "pin.fill")
+                        if viewModel.canPinMoreChats {
+                            Button {
+                                viewModel.pinChat(chat)
+                            } label: {
+                                Image(systemName: "pin.fill")
+                            }
+                            .tint(.yellow)
                         }
-                        .tint(.yellow)
                     }
                     .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                         Button {
@@ -220,11 +209,10 @@ struct ChatsListView: View {
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .listSectionSeparator(.hidden)
-            .coordinateSpace(name: "loopScroll")
             .scrollIndicators(.hidden)
             .contentMargins(.top, AppConstants.Layout.listContentTopMargin)
             .refreshable {
-                await refreshChats()
+                await viewModel.refreshChats()
             }
         }
     }
@@ -413,6 +401,7 @@ struct PinnedMessagesView: View {
     NavigationStack {
         ChatsListView()
     }
+    .environment(ChatsListViewModel())
 }
 
 

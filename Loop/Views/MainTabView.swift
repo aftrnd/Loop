@@ -5,6 +5,9 @@ struct MainTabView: View {
     @State private var chatsViewModel = ChatsListViewModel()
     @State private var selectedTab = "Home" // Default to Home tab
     @State private var photoViewerManager = PhotoViewerManager()
+    @AppStorage("showLayoutGrid") private var showLayoutGrid = false
+    /// Touching the router here starts its notification observer no later than the tab view's creation
+    private let notificationNavigation = NotificationNavigationManager.shared
     
     var filteredChats: [Chat] {
         if searchText.isEmpty {
@@ -28,7 +31,7 @@ struct MainTabView: View {
                 Tab("Messages", systemImage: "message", value: "Messages") {
                     ChatsListView()
                 }
-                .badge(chatsViewModel.totalUnreadCount > 0 ? chatsViewModel.totalUnreadCount : 0)
+                .badge(chatsViewModel.totalUnreadCount)
                 
                 // Search Tab - Uses .search role for native iOS 26 behavior
                 Tab("Search", systemImage: "magnifyingglass", value: "Search", role: .search) {
@@ -98,7 +101,11 @@ struct MainTabView: View {
             .tabViewStyle(.sidebarAdaptable)
             .environment(\.horizontalSizeClass, .compact)
             .tabBarMinimizeBehavior(.onScrollDown)
+            // Ties search activation to the search tab. On iOS 27 the search tab only gets its own
+            // button, apart from the other tabs, with this set (checked in the iOS 27.0 simulator).
+            .tabViewSearchActivation(.searchTabSelection)
             .environment(photoViewerManager)
+            .environment(chatsViewModel)
             
             // Global photo viewer overlay - displays at root level for true full screen
             if photoViewerManager.isPresented {
@@ -116,6 +123,23 @@ struct MainTabView: View {
                 }
                 .ignoresSafeArea()
                 .zIndex(999) // Ensure it's on top of everything
+            }
+            
+            #if DEBUG
+            if showLayoutGrid {
+                LayoutGridOverlay()
+                    .zIndex(1000)
+            }
+            #endif
+        }
+        .task {
+            // One chat listener for the whole app: it feeds the Messages tab, its badge and search
+            chatsViewModel.start()
+        }
+        .onChange(of: notificationNavigation.pendingChatID, initial: true) { _, chatID in
+            // ChatsListView opens the chat itself once its list has loaded
+            if chatID != nil {
+                selectedTab = "Messages"
             }
         }
     }

@@ -6,7 +6,12 @@ struct MessageInputView: View {
     let onSend: () -> Void
     var onTextChanged: (() -> Void)? = nil
     var isFocused: FocusState<Bool>.Binding
-    
+
+    /// Whitespace alone is not a message, so the button stays disabled for it.
+    private var canSend: Bool {
+        !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     var body: some View {
         HStack(spacing: 8) {
             // Text field matching iOS 26 search field style
@@ -27,9 +32,9 @@ struct MessageInputView: View {
             Button(action: onSend) {
                 Image(systemName: "arrow.up.circle.fill")
                     .font(.system(size: 28))
-                    .foregroundStyle(messageText.isEmpty ? Color.gray.opacity(0.3) : Color.blue)
+                    .foregroundStyle(canSend ? Color.blue : Color.gray.opacity(0.3))
             }
-            .disabled(messageText.isEmpty)
+            .disabled(!canSend)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)

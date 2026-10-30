@@ -45,3 +45,11 @@ struct Chat: Identifiable, Hashable {
         }
     }
 }
+
+/// Live state of an open conversation, read from its chat document.
+struct ChatActivity: Equatable {
+    /// When each other participant last reported typing, keyed by user ID.
+    var typingUsers: [String: Date] = [:]
+    /// The current user's unread message count.
+    var unreadCount = 0
+}

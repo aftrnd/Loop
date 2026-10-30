@@ -1,5 +1,4 @@
 import SwiftUI
-import Combine
 
 /// Atomic component: Post action buttons (like, comment, share, menu)
 /// Single source of truth for all post action bars
@@ -28,7 +27,10 @@ struct PostActions: View {
     let showDebugOverlay: Bool
     
     // Animation state
-    @StateObject private var animationState = PostActionsAnimationState()
+    @State private var heartScale: CGFloat = 1.0
+    @State private var heartRotation: Double = 0
+    @State private var particleTriggerID = UUID()
+    @State private var heartAnimation: Task<Void, Never>?
     
     init(
         isLiked: Bool,
@@ -85,20 +87,18 @@ struct PostActions: View {
                 }
             }
         )
-        .overlay(alignment: .bottomLeading) {
+        .overlay {
             // Heart particle animation overlay
-            GeometryReader { geo in
-                HeartParticleAnimationView(
-                    iconSize: CardLayoutConstants.actionButtonIconSize,
-                    triggerID: animationState.particleTriggerID
-                )
-                .frame(width: 200, height: 200)
-                .position(
-                    x: CardLayoutConstants.actionButtonWidth / 2,
-                    y: CardLayoutConstants.actionButtonHeight / 2
-                )
-                .allowsHitTesting(false)
-            }
+            HeartParticleAnimationView(
+                iconSize: CardLayoutConstants.actionButtonIconSize,
+                triggerID: particleTriggerID
+            )
+            .frame(width: 200, height: 200)
+            .position(
+                x: CardLayoutConstants.actionButtonWidth / 2,
+                y: CardLayoutConstants.actionButtonHeight / 2
+            )
+            .allowsHitTesting(false)
         }
     }
     
@@ -107,7 +107,7 @@ struct PostActions: View {
     private var likeButton: some View {
         Button(action: {
             // Trigger animation
-            animationState.triggerHeartAnimation()
+            triggerHeartAnimation()
             
             // Haptic feedback
             let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
@@ -120,18 +120,20 @@ struct PostActions: View {
                 Image(systemName: isLiked ? "heart.fill" : "heart")
                     .font(.system(size: CardLayoutConstants.actionButtonIconSize, weight: .medium))
                     .foregroundColor(isLiked ? .red : .secondary)
-                    .scaleEffect(animationState.heartScale)
-                    .rotationEffect(.degrees(animationState.heartRotation))
+                    .contentTransition(.symbolEffect(.replace))
+                    .scaleEffect(heartScale)
+                    .rotationEffect(.degrees(heartRotation))
                 
                 if likeCount > 0 {
                     Text(likeCount > 99 ? "99+" : "\(likeCount)")
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .monospacedDigit()
+                        .contentTransition(.numericText(value: Double(likeCount)))
                 }
             }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
         .frame(minWidth: CardLayoutConstants.actionButtonWidth, alignment: .leading)
         .contentShape(Rectangle())
     }
@@ -154,10 +156,11 @@ struct PostActions: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .monospacedDigit()
+                        .contentTransition(.numericText(value: Double(commentCount)))
                 }
             }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
         .frame(minWidth: CardLayoutConstants.actionButtonWidth, alignment: .leading)
         .contentShape(Rectangle())
     }
@@ -174,7 +177,7 @@ struct PostActions: View {
                 .font(.system(size: CardLayoutConstants.actionButtonIconSize, weight: .medium))
                 .foregroundColor(.secondary)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
         .frame(minWidth: CardLayoutConstants.actionButtonWidth, alignment: .leading)
         .contentShape(Rectangle())
     }
@@ -196,47 +199,31 @@ struct PostActions: View {
         .buttonStyle(.plain)
         .contentShape(Rectangle())
     }
-}
-
-// MARK: - Animation State Manager
-class PostActionsAnimationState: ObservableObject {
-    @Published var heartScale: CGFloat = 1.0
-    @Published var heartRotation: Double = 0
-    @Published var particleTriggerID = UUID()
     
-    private var animationTask: Task<Void, Never>?
+    // MARK: - Animation
     
-    func triggerHeartAnimation() {
-        // Cancel any existing animation
-        animationTask?.cancel()
+    private func triggerHeartAnimation() {
+        heartAnimation?.cancel()
         
-        // Start new animation
-        animationTask = Task { @MainActor in
-            // Scale up
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.5)) {
-                heartScale = 1.5
-            }
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
-                heartRotation = 12
-            }
-            
-            // Trigger particle animation
-            particleTriggerID = UUID()
-            
-            // Wait and scale down
-            try? await Task.sleep(nanoseconds: 150_000_000) // 0.15 seconds
-            
+        // Scale up and tilt
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.5)) {
+            heartScale = 1.5
+        }
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+            heartRotation = 12
+        }
+        
+        particleTriggerID = UUID()
+        
+        // Settle back after a beat
+        heartAnimation = Task {
+            try? await Task.sleep(for: .milliseconds(150))
             guard !Task.isCancelled else { return }
-            
             withAnimation(.spring(response: 0.4, dampingFraction: 0.55)) {
                 heartScale = 1.0
                 heartRotation = 0
             }
         }
-    }
-    
-    deinit {
-        animationTask?.cancel()
     }
 }
 

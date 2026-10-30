@@ -100,15 +100,14 @@ struct MessageBubble: View {
                         .transition(.move(edge: .leading).combined(with: .opacity))
                 }
             }
-            .frame(maxWidth: UIScreen.main.bounds.width * 0.66, alignment: .leading)
+            .frame(maxWidth: 250, alignment: .leading)
             
             Spacer(minLength: 0)
         }
         .animation(.easeInOut(duration: 0.2), value: showTimestamp)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
-        .onTapGesture(perform: toggleTimestamp)
-        .onTapGesture(count: 2, perform: handleDoubleTap)
+        .gesture(likeOrTimestampGesture)
     }
     
     private var sentMessageView: some View {
@@ -181,15 +180,21 @@ struct MessageBubble: View {
                         }
                     }
             }
-            .frame(maxWidth: UIScreen.main.bounds.width * 0.66, alignment: .trailing)
+            .frame(maxWidth: 250, alignment: .trailing)
         }
         .animation(.easeInOut(duration: 0.2), value: showTimestamp)
         .frame(maxWidth: .infinity, alignment: .trailing)
         .contentShape(Rectangle())
-        .onTapGesture(perform: toggleTimestamp)
-        .onTapGesture(count: 2, perform: handleDoubleTap)
+        .gesture(likeOrTimestampGesture)
     }
     
+    /// A double tap likes the message. A single tap shows the time, once a double tap has been ruled out.
+    private var likeOrTimestampGesture: some Gesture {
+        TapGesture(count: 2)
+            .onEnded { handleDoubleTap() }
+            .exclusively(before: TapGesture().onEnded { toggleTimestamp() })
+    }
+
     private func toggleTimestamp() {
         // Immediate press feedback
         withAnimation(.spring(response: 0.15, dampingFraction: 0.8)) {
@@ -205,10 +210,15 @@ struct MessageBubble: View {
         showTimestamp.toggle()
     }
     
-    private func formatTime(_ date: Date) -> String {
+    // Built once rather than per bubble per render
+    private static let timeFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.timeStyle = .short
-        return formatter.string(from: date)
+        return formatter
+    }()
+
+    private func formatTime(_ date: Date) -> String {
+        Self.timeFormatter.string(from: date)
     }
     
     private func handleDoubleTap() {

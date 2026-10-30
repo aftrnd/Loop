@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import FirebaseFirestore
+import os
 
 @MainActor
 @Observable
@@ -9,241 +10,224 @@ final class ConversationViewModel {
     private(set) var isLoading = true // Start as loading to prevent empty state flash
     var messageText = ""
     private(set) var isOtherUserTyping = false
+    /// Changes whenever any message's like count changes: a cheap value for the list's like animation.
+    private(set) var likesRevision = 0
 
-    private var messageListener: ListenerRegistration?
-    private var typingListener: ListenerRegistration?
-    private var typingDebounceTask: Task<Void, Never>?
-    private let chatId: String
+    /// Readers ignore typing timestamps older than this, left behind by an app that stopped before clearing them.
+    private static let typingStaleInterval: TimeInterval = 5
+    /// While the user keeps typing, the typing timestamp is rewritten at most this often.
+    private static let typingRefreshInterval: TimeInterval = 3
+    /// Typing is cleared after this long without a change to the text.
+    private static let typingIdleTimeout: Duration = .seconds(2)
+
+    private let chat: Chat
     private let firebaseService = FirebaseService.shared
+    private let logger = Logger(subsystem: "com.nejack.Loop", category: "ConversationViewModel")
 
-    init(chatId: String) {
-        self.chatId = chatId
-        loadMessages()
-        setupMessageListener()
-        setupTypingListener()
+    @ObservationIgnored private var messageListener: ListenerRegistration?
+    @ObservationIgnored private var activityListener: ListenerRegistration?
+    @ObservationIgnored private var typingIdleTask: Task<Void, Never>?
+    /// When the typing timestamp was last written. Nil while nobody sees this user as typing.
+    @ObservationIgnored private var lastTypingWrite: Date?
+
+    private var chatId: String {
+        chat.id.uuidString
     }
 
-    @MainActor
+    /// Does no work: call `start()` when the conversation appears and `stop()` when it goes away.
+    init(chat: Chat) {
+        self.chat = chat
+    }
+
     deinit {
-        print("🗑️ ConversationViewModel deinit called for chat: \(chatId)")
-        
-        // Cancel tasks first
-        typingDebounceTask?.cancel()
-        
-        // Remove listeners
         messageListener?.remove()
-        typingListener?.remove()
-        
-        // Clear typing status synchronously without creating new Task
-        // We can't use async/await in deinit, so we'll let it clean up naturally via timeout
-        // or do it synchronously
-        let chatId = self.chatId
-        let firebaseService = self.firebaseService
-        
-        // Fire and forget - don't capture self
-        Task.detached {
-            try? await firebaseService.setTypingStatus(chatId: chatId, isTyping: false)
-            print("🗑️ Cleared typing status on deinit")
+        activityListener?.remove()
+        typingIdleTask?.cancel()
+    }
+
+    // MARK: - Lifecycle
+
+    /// Starts the message and chat activity listeners. Safe to call again; they only start once.
+    func start() {
+        guard messageListener == nil else { return }
+
+        messageListener = firebaseService.listenForMessages(chatId: chatId) { [weak self] result in
+            guard let self else { return }
+
+            switch result {
+            case .success(let messages):
+                self.setMessages(messages)
+            case .failure(let error):
+                self.logger.error("Message listener failed: \(error.localizedDescription, privacy: .public)")
+            }
+            if self.isLoading {
+                self.isLoading = false
+            }
+        }
+
+        activityListener = firebaseService.listenForChatActivity(chatId: chatId) { [weak self] activity in
+            self?.apply(activity)
+        }
+
+        if messageListener == nil {
+            // Nobody is signed in, so there is nothing to load
+            isLoading = false
         }
     }
 
-    private func loadMessages() {
-        Task { [weak self] in
-            guard let self = self else { return }
-            
+    /// Removes the listeners and clears this user's typing indicator if others can see it.
+    func stop() {
+        messageListener?.remove()
+        messageListener = nil
+        activityListener?.remove()
+        activityListener = nil
+        stopTyping()
+    }
+
+    private func setMessages(_ newMessages: [Message]) {
+        guard newMessages != messages else { return }
+        if newMessages.map(\.likeCount) != messages.map(\.likeCount) {
+            likesRevision &+= 1
+        }
+        messages = newMessages
+    }
+
+    private func apply(_ activity: ChatActivity) {
+        let staleCutoff = Date().addingTimeInterval(-Self.typingStaleInterval)
+        let shouldShowTyping = activity.typingUsers.values.contains { $0 > staleCutoff }
+
+        if shouldShowTyping != isOtherUserTyping {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                isOtherUserTyping = shouldShowTyping
+            }
+        }
+
+        // Messages that arrive while the conversation is open are read; reset the count only when there is one
+        if activity.unreadCount > 0 {
+            markAsRead()
+        }
+    }
+
+    private func markAsRead() {
+        Task {
             do {
-                await MainActor.run { self.isLoading = true }
-                let messages = try await self.firebaseService.getMessages(forChatId: self.chatId)
-                await MainActor.run {
-                    self.messages = messages
-                    self.isLoading = false
-                }
+                try await firebaseService.markChatAsRead(chatId: chatId)
             } catch {
-                print("Error loading messages: \(error)")
-                await MainActor.run { self.isLoading = false }
+                logger.error("Marking the chat as read failed: \(error.localizedDescription, privacy: .public)")
             }
         }
     }
 
-    private func setupMessageListener() {
-        messageListener = firebaseService.listenForMessages(chatId: chatId) { [weak self] messages in
-            guard let self = self else { return }
-            
-            self.messages = messages
-            
-            // Mark chat as read IMMEDIATELY when new messages arrive while viewing
-            // Use Task with high priority to minimize delay
-            Task(priority: .userInitiated) { [weak self] in
-                guard let self = self else { return }
-                try? await self.firebaseService.markChatAsRead(chatId: self.chatId)
-            }
-        }
-    }
-    
-    private func setupTypingListener() {
-        print("🔍 Setting up typing listener for chat: \(chatId)")
-        typingListener = firebaseService.listenForTypingStatus(chatId: chatId) { [weak self] typingUsers in
-            guard let self = self else { return }
-            
-            print("🔍 Typing status update received: \(typingUsers.count) users")
-            for (userId, timestamp) in typingUsers {
-                print("   - User \(userId) typing at \(timestamp)")
-            }
-            
-            // Filter out stale typing indicators (older than 5 seconds)
-            let fiveSecondsAgo = Date().addingTimeInterval(-5)
-            let activeTypingUsers = typingUsers.filter { $0.value > fiveSecondsAgo }
-            
-            let wasTyping = self.isOtherUserTyping
-            let shouldBeTyping = !activeTypingUsers.isEmpty
-            
-            if shouldBeTyping != wasTyping {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    self.isOtherUserTyping = shouldBeTyping
-                }
-                
-                if shouldBeTyping {
-                    print("💬 Someone is typing... (showing indicator)")
-                } else {
-                    print("💬 Typing stopped (hiding indicator)")
-                }
-            }
-        }
-    }
-    
+    // MARK: - Typing
+
+    /// Shows this user as typing to the others, rewriting the timestamp at most every few seconds,
+    /// and clears it after a pause.
     func onTextChanged() {
-        print("⌨️ Text changed: '\(messageText)'")
-        
-        // Cancel previous debounce task
-        typingDebounceTask?.cancel()
-        
-        // Set typing status immediately when user starts typing
-        if !messageText.isEmpty {
-            print("⌨️ Setting typing status to TRUE")
-            Task { [weak self] in
-                guard let self = self else { return }
-                try? await self.firebaseService.setTypingStatus(chatId: self.chatId, isTyping: true)
-            }
-        } else {
-            print("⌨️ Text is empty, clearing typing status")
-            Task { [weak self] in
-                guard let self = self else { return }
-                try? await self.firebaseService.setTypingStatus(chatId: self.chatId, isTyping: false)
-            }
+        typingIdleTask?.cancel()
+
+        guard !messageText.isEmpty else {
+            stopTyping()
+            return
         }
-        
-        // Debounce: Clear typing status after 2 seconds of no typing
-        typingDebounceTask = Task { [weak self] in
-            guard let self = self else { return }
-            
-            try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds
-            
-            if !Task.isCancelled {
-                await MainActor.run {
-                    print("⌨️ 2 seconds passed, clearing typing status")
-                }
-                try? await self.firebaseService.setTypingStatus(chatId: self.chatId, isTyping: false)
+
+        let now = Date()
+        if lastTypingWrite.map({ now.timeIntervalSince($0) >= Self.typingRefreshInterval }) ?? true {
+            lastTypingWrite = now
+            writeTypingStatus(true)
+        }
+
+        typingIdleTask = Task {
+            try? await Task.sleep(for: Self.typingIdleTimeout)
+            guard !Task.isCancelled else { return }
+            self.stopTyping()
+        }
+    }
+
+    private func stopTyping() {
+        typingIdleTask?.cancel()
+        typingIdleTask = nil
+
+        guard lastTypingWrite != nil else { return }
+        lastTypingWrite = nil
+        writeTypingStatus(false)
+    }
+
+    private func writeTypingStatus(_ isTyping: Bool) {
+        // Captured up front so a write started by stop() doesn't keep the view model alive
+        let chatId = chatId
+        let firebaseService = firebaseService
+        let logger = logger
+
+        Task {
+            do {
+                try await firebaseService.setTypingStatus(chatId: chatId, isTyping: isTyping)
+            } catch {
+                logger.error("Updating typing status failed: \(error.localizedDescription, privacy: .public)")
             }
         }
     }
+
+    // MARK: - Actions
 
     func sendMessage() {
-        guard !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-
         let content = messageText
-        messageText = ""
-        
-        // Cancel any pending typing debounce
-        typingDebounceTask?.cancel()
+        guard !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
 
-        Task { [weak self] in
-            guard let self = self else { return }
-            
+        messageText = ""
+
+        // The send batch also clears the typing indicator, so no separate write is needed
+        typingIdleTask?.cancel()
+        typingIdleTask = nil
+        lastTypingWrite = nil
+
+        Task {
             do {
-                // Clear typing status before sending
-                try? await self.firebaseService.setTypingStatus(chatId: self.chatId, isTyping: false)
-                
-                try await self.firebaseService.sendMessage(chatId: self.chatId, content: content)
+                try await firebaseService.sendMessage(chatId: chatId, content: content, participants: chat.participants)
             } catch {
-                print("Error sending message: \(error)")
-                // Restore message text on error
-                await MainActor.run {
-                    self.messageText = content
+                logger.error("Sending a message failed: \(error.localizedDescription, privacy: .public)")
+                // Put the text back, unless the user has started typing something else since
+                if messageText.isEmpty {
+                    messageText = content
                 }
             }
         }
     }
-    
+
+    /// Flips the like locally, then writes it. Firestore applies the write to the message listener right away,
+    /// so snapshots that arrive while the write is in flight already agree with the local state.
     func toggleLike(for message: Message) {
-        Task { [weak self] in
-            guard let self = self else { return }
-            guard let currentUserId = firebaseService.getCurrentUser()?.id else { return }
-            
-            let isCurrentlyLiked = message.isLikedBy(userId: currentUserId)
-            let messageId = message.id.uuidString
-            
-            // Optimistic update
-            if let index = messages.firstIndex(where: { $0.id == message.id }) {
-                var updatedMessage = messages[index]
-                var newLikedBy = updatedMessage.likedBy
-                
-                if isCurrentlyLiked {
-                    newLikedBy.removeAll { $0 == currentUserId }
-                } else {
-                    newLikedBy.append(currentUserId)
-                }
-                
-                updatedMessage = Message(
-                    id: updatedMessage.id,
-                    content: updatedMessage.content,
-                    timestamp: updatedMessage.timestamp,
-                    isFromUser: updatedMessage.isFromUser,
-                    senderName: updatedMessage.senderName,
-                    senderId: updatedMessage.senderId,
-                    likedBy: newLikedBy
-                )
-                
-                await MainActor.run {
-                    messages[index] = updatedMessage
-                }
-            }
-            
-            // Perform backend operation
+        guard let currentUserId = firebaseService.getCurrentUser()?.id,
+              let current = messages.first(where: { $0.id == message.id }) else {
+            return
+        }
+
+        // Read the current state rather than the bubble's captured copy, so quick repeat taps alternate
+        let wasLiked = current.isLikedBy(userId: currentUserId)
+        setLiked(!wasLiked, messageId: message.id, userId: currentUserId)
+
+        Task {
             do {
-                if isCurrentlyLiked {
-                    try await firebaseService.unlikeMessage(chatId: chatId, messageId: messageId)
+                if wasLiked {
+                    try await firebaseService.unlikeMessage(chatId: chatId, messageId: message.id.uuidString)
                 } else {
-                    try await firebaseService.likeMessage(chatId: chatId, messageId: messageId)
+                    try await firebaseService.likeMessage(chatId: chatId, messageId: message.id.uuidString)
                 }
             } catch {
-                print("❌ Error toggling like: \(error.localizedDescription)")
-                
-                // Revert optimistic update on error
-                if let index = messages.firstIndex(where: { $0.id == message.id }) {
-                    var revertedMessage = messages[index]
-                    var revertedLikedBy = revertedMessage.likedBy
-                    
-                    if isCurrentlyLiked {
-                        revertedLikedBy.append(currentUserId)
-                    } else {
-                        revertedLikedBy.removeAll { $0 == currentUserId }
-                    }
-                    
-                    revertedMessage = Message(
-                        id: revertedMessage.id,
-                        content: revertedMessage.content,
-                        timestamp: revertedMessage.timestamp,
-                        isFromUser: revertedMessage.isFromUser,
-                        senderName: revertedMessage.senderName,
-                        senderId: revertedMessage.senderId,
-                        likedBy: revertedLikedBy
-                    )
-                    
-                    await MainActor.run {
-                        messages[index] = revertedMessage
-                    }
-                }
+                logger.error("Toggling a message like failed: \(error.localizedDescription, privacy: .public)")
+                setLiked(wasLiked, messageId: message.id, userId: currentUserId)
             }
         }
+    }
+
+    private func setLiked(_ liked: Bool, messageId: UUID, userId: String) {
+        guard let index = messages.firstIndex(where: { $0.id == messageId }) else { return }
+
+        var likedBy = messages[index].likedBy
+        likedBy.removeAll { $0 == userId }
+        if liked {
+            likedBy.append(userId)
+        }
+        messages[index].likedBy = likedBy
+        likesRevision &+= 1
     }
 }

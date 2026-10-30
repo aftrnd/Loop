@@ -314,7 +314,10 @@ struct SingleReplyMediaView: View {
             let mediaHeight: CGFloat = max(minHeight, min(maxHeight, proportionalHeight))
             
             GeometryReader { geometry in
-                CachedAsyncImage(url: URL(string: media.url)) { image in
+                CachedAsyncImage(
+                    url: URL(string: media.url),
+                    targetSize: CGSize(width: geometry.size.width, height: mediaHeight)
+                ) { image in
                     image
                         .resizable()
                         .aspectRatio(contentMode: .fill)
@@ -428,7 +431,10 @@ struct ReplyCarouselPhotoView: View {
     
     var body: some View {
         GeometryReader { geometry in
-            CachedAsyncImage(url: URL(string: media.url)) { image in
+            CachedAsyncImage(
+                url: URL(string: media.url),
+                targetSize: CGSize(width: geometry.size.width, height: height)
+            ) { image in
                 image
                     .resizable()
                     .aspectRatio(contentMode: .fill)

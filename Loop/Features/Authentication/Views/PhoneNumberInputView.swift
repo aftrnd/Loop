@@ -52,14 +52,7 @@ struct PhoneNumberInputView: View {
             let waveSpeed: CGFloat = 1.57
             let waveFrequency: CGFloat = 0.018
             let innerR: CGFloat = 75
-            
-            // Calculate wave phase at the inner radius (center of pattern)
-            let wavePhase = sin(innerR * waveFrequency - CGFloat(time) * waveSpeed)
-            let normalizedPhase = (wavePhase + 1.0) / 2.0  // 0 to 1
-            
-            // Apply same easing as dots for perfect sync
-            let easedPhase = pow(normalizedPhase, 2.5)
-            
+
             // Natural breathing: oscillates between 0.95 (contracted) and 1.05 (expanded)
             // Circle and icon offset for organic feel
             let timeOffset: CGFloat = 0.4
@@ -348,21 +341,17 @@ struct PhoneNumberInputView: View {
     // MARK: - Motion Tracking
     
     private func startMotionTracking() {
-        print("🚀 Starting motion tracking...")
-        
         guard motionManager.isDeviceMotionAvailable else {
-            print("⚠️ Device motion not available")
             return
         }
-        
-        print("✅ Device motion is available, starting updates...")
+
+        guard !motionManager.isDeviceMotionActive else {
+            return
+        }
         
         motionManager.deviceMotionUpdateInterval = 1.0 / 60.0 // 60 Hz
         motionManager.startDeviceMotionUpdates(to: .main) { [self] motion, error in
             guard let motion = motion else {
-                if let error = error {
-                    print("❌ Motion update error: \(error.localizedDescription)")
-                }
                 return
             }
             
@@ -379,21 +368,13 @@ struct PhoneNumberInputView: View {
             // Update state
             tiltX = newTiltX
             tiltY = newTiltY
-            
-            // More frequent debug output
-            if Int(Date().timeIntervalSince1970 * 20) % 10 == 0 {
-                print("📱 Tilt - X: \(String(format: "%.2f", tiltX)), Y: \(String(format: "%.2f", tiltY)) | Gravity - X: \(String(format: "%.2f", gravityX)), Y: \(String(format: "%.2f", gravityY))")
-            }
-        }
-        
-        // Verify it started
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            print("📊 Motion manager running: \(self.motionManager.isDeviceMotionActive)")
         }
     }
     
     private func stopMotionTracking() {
         motionManager.stopDeviceMotionUpdates()
+        tiltX = 0
+        tiltY = 0
     }
     
 }

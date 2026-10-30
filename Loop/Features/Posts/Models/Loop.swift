@@ -43,7 +43,7 @@ struct Loop: Identifiable, Codable, Hashable {
     let media: [LoopMedia]
     let createdAt: Date
     let updatedAt: Date
-    let likes: [String] // Array of user IDs who liked this loop
+    var likes: [String] // Array of user IDs who liked this loop
     let replies: [String] // Array of reply loop IDs
     let isReply: Bool
     let parentLoopId: String? // If this is a reply, the parent loop ID (root post)
@@ -107,11 +107,15 @@ struct Loop: Identifiable, Codable, Hashable {
         return media.first?.type
     }
     
-    /// Returns a formatted time string for display
-    var timeAgoString: String {
+    private static let relativeFormatter: RelativeDateTimeFormatter = {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .abbreviated
-        return formatter.localizedString(for: createdAt, relativeTo: Date())
+        return formatter
+    }()
+    
+    /// Returns a formatted time string for display
+    var timeAgoString: String {
+        Self.relativeFormatter.localizedString(for: createdAt, relativeTo: Date())
     }
     
     /// Returns the display name to show for the author
@@ -129,6 +133,16 @@ struct Loop: Identifiable, Codable, Hashable {
     var formattedUsername: String? {
         guard let username = authorUsername, !username.isEmpty else { return nil }
         return "@\(username)"
+    }
+    
+    /// Returns a copy with the author details filled in from their profile
+    func withAuthor(_ author: User?) -> Loop {
+        var loop = self
+        loop.authorDisplayName = author?.displayName
+        loop.authorUsername = author?.username
+        loop.authorAvatarURL = author?.avatarURL
+        loop.authorBadgeType = author?.badgeType
+        return loop
     }
 }
 

@@ -80,6 +80,7 @@ struct DebugMenuView: View {
     // Layout debug settings
     @AppStorage("showLayoutDebugOverlays") private var showLayoutDebugOverlays = false
     @AppStorage("showDebugOverlayButton") private var showDebugOverlayButton = false
+    @AppStorage("showLayoutGrid") private var showLayoutGrid = false
     
     var body: some View {
         NavigationView {
@@ -105,6 +106,16 @@ struct DebugMenuView: View {
                         }
                     }
                     .disabled(!showDebugOverlayButton)
+                    
+                    Toggle(isOn: $showLayoutGrid) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Layout Grid")
+                                .font(.body)
+                            Text("4pt grid with the feed's column guides, over every screen")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
                 } header: {
                     Text("Layout Debugging")
                 } footer: {

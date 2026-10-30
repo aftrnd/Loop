@@ -19,7 +19,7 @@ class PhotoLibraryManager {
         case .authorized, .limited:
             return true
             
-        case .denied, .restricted:
+        case .denied, .restricted, .notDetermined:
             return false
             
         @unknown default:
