@@ -104,16 +104,8 @@ struct ComposeLoopView: View {
                 // Bottom left camera button - centered vertically
                 HStack {
                     Button(action: {
-                        Task {
-                            // Request photo library access first (iOS 18+ best practice)
-                            let hasAccess = await PhotoLibraryManager.shared.requestPhotoLibraryAccess()
-                            if hasAccess {
-                                showingImageSourceActionSheet = true
-                            } else {
-                                // Handle permission denied - could show settings alert
-                                print("Photo library access denied")
-                            }
-                        }
+                        // The photos picker runs out of process and needs no library access; the camera asks for its own
+                        showingImageSourceActionSheet = true
                     }) {
                         Image(systemName: "camera")
                             .font(.system(size: 20, weight: .medium))
@@ -151,10 +143,6 @@ struct ComposeLoopView: View {
             
             Button("Photo Library") {
                 showingPhotoLibraryPicker = true
-                // iOS 18+ best practice: prompt for full access if limited
-                if PhotoLibraryManager.shared.hasLimitedAccess {
-                    PhotoLibraryManager.shared.promptForFullAccessIfLimited()
-                }
             }
             
             Button("Cancel", role: .cancel) { }
