@@ -10,7 +10,8 @@ struct ConversationView: View {
 
     init(chat: Chat) {
         self.chat = chat
-        _viewModel = State(wrappedValue: ConversationViewModel(chatId: chat.id.uuidString))
+        // SwiftUI evaluates this on every init but keeps the first instance; the init itself does no work
+        _viewModel = State(initialValue: ConversationViewModel(chat: chat))
     }
     
     // Determine if we should anchor to bottom (when content fills screen)
@@ -72,6 +73,12 @@ struct ConversationView: View {
                     .presentationDetents([.large])
             }
         }
+        .task {
+            viewModel.start()
+        }
+        .onDisappear {
+            viewModel.stop()
+        }
     }
     
     // MARK: - View Components
@@ -118,16 +125,6 @@ struct ConversationView: View {
                     scrollViewHeight = newHeight
                 }
                 .contentMargins(.bottom, AppConstants.UI.spacing, for: .scrollContent)
-                .task {
-                    // Mark chat as read when conversation opens
-                    try? await FirebaseService.shared.markChatAsRead(chatId: chat.id.uuidString)
-                    
-                    // Continuously mark as read while viewing (every 2 seconds)
-                    while !Task.isCancelled {
-                        try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds
-                        try? await FirebaseService.shared.markChatAsRead(chatId: chat.id.uuidString)
-                    }
-                }
             }
         }
     }
