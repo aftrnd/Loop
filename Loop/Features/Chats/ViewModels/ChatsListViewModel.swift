@@ -146,6 +146,11 @@ final class ChatsListViewModel {
 
     // MARK: - Chat Actions
 
+    func chat(withId id: String) -> Chat? {
+        guard let uuid = UUID(uuidString: id) else { return nil }
+        return chats.first { $0.id == uuid }
+    }
+
     func createChat(with phoneNumber: String, displayName: String) async throws {
         guard FirebaseService.shared.getCurrentUser()?.id != nil else {
             throw NSError(domain: "ChatsListViewModel", code: 1, userInfo: [NSLocalizedDescriptionKey: "User not authenticated"])

@@ -1,32 +1,36 @@
 import Foundation
-import SwiftUI
-import Combine
+import Observation
 
-/// Manages navigation from push notifications to specific chats
-@MainActor
-class NotificationNavigationManager: ObservableObject {
-    static let shared = NotificationNavigationManager()
-    
-    @Published var chatToOpen: String?
-    
-    private init() {
-        // Listen for notification taps
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(handleOpenChat),
-            name: NSNotification.Name("OpenChat"),
-            object: nil
-        )
-    }
-    
-    @objc private func handleOpenChat(_ notification: Notification) {
-        guard let chatId = notification.object as? String else { return }
-        print("📱 Opening chat from notification: \(chatId)")
-        chatToOpen = chatId
-    }
-    
-    func clearNavigation() {
-        chatToOpen = nil
-    }
+extension Notification.Name {
+    /// Posted when a chat notification is tapped. The object is the chat ID.
+    static let openChat = Notification.Name("OpenChat")
 }
 
+/// Holds the chat a notification tap asked to open until the Messages tab can show it.
+/// MainTabView switches to Messages when a request arrives; ChatsListView opens the chat once its list has loaded.
+@MainActor
+@Observable
+final class NotificationNavigationManager {
+    static let shared = NotificationNavigationManager()
+
+    private(set) var pendingChatID: String?
+
+    @ObservationIgnored private var observer: (any NSObjectProtocol)?
+
+    private init() {
+        observer = NotificationCenter.default.addObserver(forName: .openChat, object: nil, queue: .main) { [weak self] notification in
+            guard let chatID = notification.object as? String else { return }
+            // Delivered on the main queue
+            MainActor.assumeIsolated {
+                self?.pendingChatID = chatID
+            }
+        }
+    }
+
+    /// Takes the pending request, so it is handled once.
+    func consumePendingChat() -> String? {
+        guard let chatID = pendingChatID else { return nil }
+        pendingChatID = nil
+        return chatID
+    }
+}

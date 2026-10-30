@@ -6,6 +6,8 @@ struct MainTabView: View {
     @State private var selectedTab = "Home" // Default to Home tab
     @State private var photoViewerManager = PhotoViewerManager()
     @AppStorage("showLayoutGrid") private var showLayoutGrid = false
+    /// Touching the router here starts its notification observer no later than the tab view's creation
+    private let notificationNavigation = NotificationNavigationManager.shared
     
     var filteredChats: [Chat] {
         if searchText.isEmpty {
@@ -133,6 +135,12 @@ struct MainTabView: View {
         .task {
             // One chat listener for the whole app: it feeds the Messages tab, its badge and search
             chatsViewModel.start()
+        }
+        .onChange(of: notificationNavigation.pendingChatID, initial: true) { _, chatID in
+            // ChatsListView opens the chat itself once its list has loaded
+            if chatID != nil {
+                selectedTab = "Messages"
+            }
         }
     }
 }

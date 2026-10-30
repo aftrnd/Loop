@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import os
 
 struct ChatsListView: View {
     @Environment(ChatsListViewModel.self) private var viewModel
@@ -11,8 +12,9 @@ struct ChatsListView: View {
     @State private var showDeleteConfirmation = false
     @Environment(\.colorScheme) private var colorScheme
     @ObservedObject private var debugManager = DebugManager.shared
-    @StateObject private var notificationManager = NotificationNavigationManager.shared
-    
+    private let notificationNavigation = NotificationNavigationManager.shared
+    private static let logger = Logger(subsystem: "com.nejack.Loop", category: "ChatsListView")
+
     var body: some View {
         mainView
     }
@@ -82,9 +84,11 @@ struct ChatsListView: View {
         .sheet(isPresented: $debugManager.isDebugMenuVisible) {
             DebugMenuView()
         }
-        .onChange(of: notificationManager.chatToOpen) { _, chatId in
-            guard let chatId = chatId else { return }
-            handleNotificationNavigation(chatId: chatId)
+        .onChange(of: notificationNavigation.pendingChatID, initial: true) {
+            openPendingChat()
+        }
+        .onChange(of: viewModel.isLoadingInitialData) {
+            openPendingChat()
         }
         .alert("Delete Conversation?", isPresented: $showDeleteConfirmation, presenting: chatToDelete) { chat in
             Button("Delete", role: .destructive) {
@@ -100,18 +104,17 @@ struct ChatsListView: View {
         }
     }
     
-    private func handleNotificationNavigation(chatId: String) {
-        // Find the chat in our list
-        let allChats = viewModel.pinned + viewModel.recent
-        guard let chat = allChats.first(where: { $0.id.uuidString == chatId }) else {
-            print("⚠️ Chat not found for notification: \(chatId)")
-            notificationManager.clearNavigation()
+    /// Opens the chat a notification tap asked for, once the list has loaded.
+    private func openPendingChat() {
+        guard !viewModel.isLoadingInitialData, let chatID = notificationNavigation.consumePendingChat() else {
             return
         }
-        
-        print("📱 Navigating to chat: \(chat.displayTitle)")
+
+        guard let chat = viewModel.chat(withId: chatID) else {
+            Self.logger.notice("Chat from a notification is not in the list: \(chatID, privacy: .private)")
+            return
+        }
         navigationPath.append(ChatsRoute.conversation(chat))
-        notificationManager.clearNavigation()
     }
     
     
