@@ -25,7 +25,8 @@ struct ProfileView: View {
     
     // Dynamic sheet height
     @State private var currentDetent: PresentationDetent = .height(366)
-    @State private var actualSheetHeight: CGFloat = 0
+    @State private var sheetMetrics = ProfileSheetMetrics()
+    @State private var containerMetrics = ContainerMetrics()
     @State private var otherProfileHeaderHeight: CGFloat = 0
     @State private var ownershipHintOpacity: Double = 0
     @State private var ownershipHintMeasuredHeight: CGFloat = 0
@@ -50,22 +51,20 @@ struct ProfileView: View {
         return [minDetent, currentDetent, .large]
     }
     
-    // Calculate expansion progress (0.0 to 1.0) for fade-in animations
-    // Use actual height if available, otherwise base on detent state
-    private var expansionProgress: CGFloat {
-        // If we have actual height, use it for smooth animation
-        if actualSheetHeight > 0 {
-            guard actualSheetHeight > minimumProfileHeight else { return 0 }
-            // Use a reasonable estimate for max height (90% of typical screen)
-            let maxHeight: CGFloat = 900 // Approximate max sheet height
-            let range = maxHeight - minimumProfileHeight
-            guard range > 0 else { return 1 }
-            let progress = min(max((actualSheetHeight - minimumProfileHeight) / range, 0), 1)
-            // Start fading in at 50% expansion, fully visible at 80% - earlier fade for better UX
-            return max(0, min(1, (progress - 0.5) / 0.3))
-        }
-        // Fallback: use detent state (discrete but works)
-        return isSheetFullyExpanded ? 1.0 : 0.0
+    /// Fades a part of the profile with the sheet's expansion without making this body depend on the live height.
+    private func expansionFade(_ style: SheetExpansionFade.Style) -> SheetExpansionFade {
+        SheetExpansionFade(
+            metrics: sheetMetrics,
+            minimumHeight: minimumProfileHeight,
+            isFullyExpanded: isSheetFullyExpanded,
+            style: style
+        )
+    }
+    
+    /// Size and top safe area of the frame the profile content fills.
+    private nonisolated struct ContainerMetrics: Equatable {
+        var width: CGFloat = 0
+        var topSafeAreaInset: CGFloat = 0
     }
     
     enum ProfileTab: String, CaseIterable {
@@ -106,12 +105,12 @@ struct ProfileView: View {
         return userId == nil || userId == currentUserId
     }
     
-    // Date formatter for joined date (Month Year format)
-    private var joinedDateFormatter: DateFormatter {
+    // Date formatter for joined date (Month Year format), built once rather than on every render
+    private static let joinedDateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "MMM yyyy"
         return formatter
-    }
+    }()
     
     // Calculate baseline minimum height needed for profile content
     private var baseProfileHeight: CGFloat {
@@ -158,17 +157,12 @@ struct ProfileView: View {
     }
     
     @ViewBuilder
-    private func profileContent(geometry: GeometryProxy) -> some View {
+    private var profileContent: some View {
         let bannerHeight: CGFloat = 180
-        
-        // Track actual sheet height for expansion progress
-        Color.clear
-            .frame(width: geometry.size.width, height: geometry.size.height)
-            .preference(key: SheetHeightKey.self, value: geometry.size.height)
         
         // Unified view structure - always the same, components fade in/out
         if currentUser != nil {
-            profileMainContent(bannerHeight: bannerHeight, geometry: geometry)
+            profileMainContent(bannerHeight: bannerHeight)
         } else if isLoading {
             loadingView
         } else if loadError != nil {
@@ -185,19 +179,17 @@ struct ProfileView: View {
     }
     
     @ViewBuilder
-    private func profileMainContent(bannerHeight: CGFloat, geometry: GeometryProxy) -> some View {
+    private func profileMainContent(bannerHeight: CGFloat) -> some View {
         ScrollView {
             VStack(spacing: 0) {
                 // Profile header - always rendered with same structure
                 if let user = currentUser {
-                    profileHeaderCompact(for: user, bannerHeight: bannerHeight, geometry: geometry, showProfileInfo: true)
+                    profileHeaderCompact(for: user, bannerHeight: bannerHeight, showProfileInfo: true)
                 }
                 
                 // Tabs and feed - always rendered, fade in during swipe
                 profileTabs
-                    .opacity(expansionProgress)
-                    .animation(.easeInOut(duration: 0.2), value: expansionProgress)
-                    .allowsHitTesting(expansionProgress > 0.5)
+                    .modifier(expansionFade(.reveal))
                 
                 // Tab content - fade in as sheet expands
                 Group {
@@ -207,9 +199,7 @@ struct ProfileView: View {
                         profileLikesTabUnified
                     }
                 }
-                .opacity(expansionProgress)
-                .animation(.easeInOut(duration: 0.2), value: expansionProgress)
-                .allowsHitTesting(expansionProgress > 0.5)
+                .modifier(expansionFade(.reveal))
             }
         }
         .scrollIndicators(.hidden)
@@ -296,21 +286,29 @@ struct ProfileView: View {
     }
     
     private var profileGeometryContent: some View {
-        GeometryReader { geometry in
-            profileContent(geometry: geometry)
-        }
-        .onPreferenceChange(SheetHeightKey.self) { height in
-            actualSheetHeight = height
-        }
-        .onChange(of: selectedTab) { _, newTab in
-            Task {
-                if newTab == .posts {
-                    await feedViewModel.loadUserPosts()
-                } else {
-                    await feedViewModel.loadUserLikedPosts()
+        profileContent
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            // Width and safe area rarely change, so this re-renders the profile only when they do
+            .onGeometryChange(for: ContainerMetrics.self) { proxy in
+                ContainerMetrics(width: proxy.size.width, topSafeAreaInset: proxy.safeAreaInsets.top)
+            } action: { metrics in
+                containerMetrics = metrics
+            }
+            // The height changes on every frame of a sheet drag; only SheetExpansionFade reads it
+            .onGeometryChange(for: CGFloat.self) { proxy in
+                proxy.size.height
+            } action: { height in
+                sheetMetrics.height = height
+            }
+            .onChange(of: selectedTab) { _, newTab in
+                Task {
+                    if newTab == .posts {
+                        await feedViewModel.loadUserPosts()
+                    } else {
+                        await feedViewModel.loadUserLikedPosts()
+                    }
                 }
             }
-        }
     }
     
     // MARK: - Banner
@@ -468,7 +466,7 @@ struct ProfileView: View {
                         .fontWeight(.semibold)
                         .foregroundStyle(.secondary)
                     
-                    Text(joinedDateFormatter.string(from: user.createdAt))
+                    Text(Self.joinedDateFormatter.string(from: user.createdAt))
                         .font(.callout)
                         .fontWeight(.regular)
                         .foregroundStyle(.secondary)
@@ -701,8 +699,7 @@ struct ProfileView: View {
                 
                 if shouldShowOwnershipHint {
                     ownershipHintLabel()
-                        .opacity(ownershipHintOpacity * max(0, 1 - expansionProgress))
-                        .animation(.easeInOut(duration: 0.25), value: expansionProgress)
+                        .modifier(expansionFade(.conceal(baseOpacity: ownershipHintOpacity)))
                         .transition(.opacity)
                         .onAppear {
                             ownershipHintOpacity = 0
@@ -860,19 +857,19 @@ struct ProfileView: View {
     }
     
     @ViewBuilder
-    private func profileHeaderCompact(for user: User, bannerHeight: CGFloat, geometry: GeometryProxy, showProfileInfo: Bool = true) -> some View {
+    private func profileHeaderCompact(for user: User, bannerHeight: CGFloat, showProfileInfo: Bool = true) -> some View {
         VStack(spacing: 0) {
             // Banner - fixed height (same as half-opened state, doesn't expand)
             // Extends all the way to top edge with no white space (use same banner instance to prevent flashing)
             bannerContent
                 .id("profile-banner") // Consistent ID across all states
                 .frame(
-                    width: geometry.size.width,
-                    height: bannerHeight + geometry.safeAreaInsets.top,
+                    width: containerMetrics.width,
+                    height: bannerHeight + containerMetrics.topSafeAreaInset,
                     alignment: .center
                 )
-                .offset(y: -geometry.safeAreaInsets.top)
-                .padding(.bottom, -geometry.safeAreaInsets.top)
+                .offset(y: -containerMetrics.topSafeAreaInset)
+                .padding(.bottom, -containerMetrics.topSafeAreaInset)
                 .clipped()
                 .ignoresSafeArea(edges: .top) // Extend to very top edge
             
@@ -1230,8 +1227,14 @@ struct ProfileView: View {
                 .frame(height: 200)
                 .padding(.top, 50)
             } else {
+                let firstLoopId = loops.first?.id
+                let lastLoopId = loops.last?.id
+                
                 LazyVStack(spacing: 0) {
-                    ForEach(Array(loops.enumerated()), id: \.element.id) { index, loop in
+                    ForEach(loops) { loop in
+                        let isFirst = loop.id == firstLoopId
+                        let isLast = loop.id == lastLoopId
+                        
                         VStack(spacing: 0) {
                             PostCard(
                                 loop: loop,
@@ -1265,10 +1268,10 @@ struct ProfileView: View {
                                 showDebugOverlays: showLayoutDebugOverlays
                             )
                             .padding(.horizontal, 10)
-                            .padding(.top, index == 0 ? 0 : 5)
-                            .padding(.bottom, index == loops.count - 1 ? 0 : 5)
+                            .padding(.top, isFirst ? 0 : 5)
+                            .padding(.bottom, isLast ? 0 : 5)
                             
-                            if index < loops.count - 1 {
+                            if !isLast {
                                 PostDivider()
                             }
                         }
@@ -1279,13 +1282,62 @@ struct ProfileView: View {
     }
 }
 
-// Preference key to track sheet height for expansion animations
-private struct SheetHeightKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
+// MARK: - Sheet Expansion
+
+/// The live height of the profile's content area. It changes on every frame of a sheet drag, so only
+/// `SheetExpansionFade` reads it and the rest of the profile doesn't re-render while the sheet moves.
+@Observable
+private final class ProfileSheetMetrics {
+    var height: CGFloat = 0
+    
+    /// How far the sheet has opened: 0 up to halfway between the minimum detent and full height, 1 from 80%.
+    /// Before the first measurement it falls back to the detent state.
+    func expansionProgress(minimumHeight: CGFloat, isFullyExpanded: Bool) -> CGFloat {
+        guard height > 0 else { return isFullyExpanded ? 1 : 0 }
+        guard height > minimumHeight else { return 0 }
+        // Use a reasonable estimate for max height (90% of typical screen)
+        let maxHeight: CGFloat = 900 // Approximate max sheet height
+        let range = maxHeight - minimumHeight
+        guard range > 0 else { return 1 }
+        let progress = min(max((height - minimumHeight) / range, 0), 1)
+        return max(0, min(1, (progress - 0.5) / 0.3))
     }
 }
+
+/// Fades part of the profile as the sheet opens or closes. The live height is read here, so per-frame
+/// updates during a drag stop at this modifier instead of re-running ProfileView's body.
+private struct SheetExpansionFade: ViewModifier {
+    enum Style {
+        /// Tabs and feed: fade in as the sheet opens, taking touches once mostly visible.
+        case reveal
+        /// Ownership hint: fade out as the sheet opens, scaled by the hint's own opacity.
+        case conceal(baseOpacity: Double)
+    }
+    
+    let metrics: ProfileSheetMetrics
+    let minimumHeight: CGFloat
+    let isFullyExpanded: Bool
+    let style: Style
+    
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        let progress = metrics.expansionProgress(minimumHeight: minimumHeight, isFullyExpanded: isFullyExpanded)
+        
+        switch style {
+        case .reveal:
+            content
+                .opacity(progress)
+                .animation(.easeInOut(duration: 0.2), value: progress)
+                .allowsHitTesting(progress > 0.5)
+        case .conceal(let baseOpacity):
+            content
+                .opacity(baseOpacity * max(0, 1 - progress))
+                .animation(.easeInOut(duration: 0.25), value: progress)
+        }
+    }
+}
+
+// MARK: - Preference Keys
 
 private struct ProfileHeaderHeightKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
