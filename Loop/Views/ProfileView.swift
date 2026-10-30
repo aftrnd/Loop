@@ -55,7 +55,7 @@ struct ProfileView: View {
     private func expansionFade(_ style: SheetExpansionFade.Style) -> SheetExpansionFade {
         SheetExpansionFade(
             metrics: sheetMetrics,
-            minimumHeight: minimumProfileHeight,
+            minimumHeight: expansionBaselineHeight,
             isFullyExpanded: isSheetFullyExpanded,
             style: style
         )
@@ -132,9 +132,11 @@ struct ProfileView: View {
         return bannerHeight + avatarSection + nameHeight + usernameHeight + followersHeight + bioMinHeight + buttonsHeight + spacing + padding
     }
     
+    /// The collapsed detent. On your own profile it always leaves room for the ownership hint, even while
+    /// fully expanded, so collapsing settles once instead of stopping short and then growing as the hint appears.
     private var minimumProfileHeight: CGFloat {
         if isOwnProfile {
-            return baseProfileHeight + (shouldShowOwnershipHint ? ownershipHintHeight : 0)
+            return baseProfileHeight + ownershipHintHeight
         }
         
         if otherProfileHeaderHeight > 0 {
@@ -142,6 +144,15 @@ struct ProfileView: View {
         }
         
         return baseProfileHeight
+    }
+    
+    /// Where the tabs and feed start fading in. While your own profile is fully expanded this leaves out the
+    /// hidden ownership hint, as it always has, so the fade timing doesn't depend on the detent fix above.
+    private var expansionBaselineHeight: CGFloat {
+        if isOwnProfile && !shouldShowOwnershipHint {
+            return baseProfileHeight
+        }
+        return minimumProfileHeight
     }
     
     init(userId: String? = nil) {
