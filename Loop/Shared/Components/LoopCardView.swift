@@ -500,7 +500,10 @@ struct SingleMediaView: View {
             let displayMode = determineDisplayMode(media: media)
             
             GeometryReader { geometry in
-                CachedAsyncImage(url: URL(string: media.url)) { image in
+                CachedAsyncImage(
+                    url: URL(string: media.url),
+                    targetSize: CGSize(width: geometry.size.width, height: displayMode.height)
+                ) { image in
                     image
                         .resizable()
                         .aspectRatio(contentMode: .fill)
@@ -678,7 +681,10 @@ struct CarouselPhotoView: View {
         switch media.type {
         case .image:
             GeometryReader { geometry in
-                CachedAsyncImage(url: URL(string: media.url)) { image in
+                CachedAsyncImage(
+                    url: URL(string: media.url),
+                    targetSize: CGSize(width: geometry.size.width, height: height)
+                ) { image in
                     image
                         .resizable()
                         .aspectRatio(contentMode: .fill)

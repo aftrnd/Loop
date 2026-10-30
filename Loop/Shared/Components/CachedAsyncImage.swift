@@ -1,102 +1,58 @@
 import SwiftUI
 
-/// A cached version of AsyncImage that stores loaded images in memory
+/// Remote image backed by `ImagePipeline`: downsampled to `targetSize`, decoded off the main actor,
+/// and shown without a placeholder flash when the image is already in memory.
 struct CachedAsyncImage<Content: View, Placeholder: View>: View {
-    @State private var cachedImage: UIImage?
-    @State private var isLoading = false
     private let url: URL?
+    private let targetSize: CGSize?
     private let content: (Image) -> Content
     private let placeholder: () -> Placeholder
-    
+
+    @Environment(\.displayScale) private var displayScale
+    @State private var loaded: (request: ImageRequest, image: UIImage)?
+
+    /// - Parameter targetSize: The frame the image fills, in points. Pass nil to keep full resolution.
     init(
         url: URL?,
+        targetSize: CGSize? = nil,
         @ViewBuilder content: @escaping (Image) -> Content,
         @ViewBuilder placeholder: @escaping () -> Placeholder
     ) {
         self.url = url
+        self.targetSize = targetSize
         self.content = content
         self.placeholder = placeholder
     }
-    
+
+    private var request: ImageRequest? {
+        guard let url else { return nil }
+        // A zero-sized frame hasn't been laid out yet; wait for the real size rather than loading full resolution.
+        if let targetSize, targetSize.width <= 0 || targetSize.height <= 0 { return nil }
+        return ImageRequest(url: url, pointSize: targetSize, scale: displayScale)
+    }
+
     var body: some View {
+        let request = request
         Group {
-            if let cachedImage = cachedImage {
-                content(Image(uiImage: cachedImage))
+            if let image = image(for: request) {
+                content(Image(uiImage: image))
             } else {
                 placeholder()
             }
         }
-        .task {
-            guard let url = url, cachedImage == nil, !isLoading else { return }
-            
-            // Try to load from cache first
-            if let cached = ImageCache.shared.get(url: url) {
-                cachedImage = cached
-                return
-            }
-            
-            // Load asynchronously from URL
-            isLoading = true
-            await loadUIImage(from: url)
-            isLoading = false
+        .task(id: request) {
+            // Hold the image in state even on a cache hit, so a later eviction can't drop it back to the placeholder.
+            guard let request, loaded?.request != request else { return }
+            guard let image = await ImagePipeline.shared.image(for: request), !Task.isCancelled else { return }
+            loaded = (request, image)
         }
     }
-    
-    private func loadUIImage(from url: URL) async {
-        // Try to get from cache first
-        if let cached = ImageCache.shared.get(url: url) {
-            cachedImage = cached
-            return
+
+    private func image(for request: ImageRequest?) -> UIImage? {
+        guard let request else { return nil }
+        if let loaded, loaded.request == request {
+            return loaded.image
         }
-        
-        // Load from URL asynchronously using URLSession
-        do {
-            let (data, _) = try await URLSession.shared.data(from: url)
-            
-            // Decode image on background thread
-            let image = await Task.detached(priority: .userInitiated) {
-                UIImage(data: data)
-            }.value
-            
-            if let image = image {
-                // Cache and update UI on main thread
-                ImageCache.shared.set(image: image, for: url)
-                await MainActor.run {
-                    cachedImage = image
-                }
-            }
-        } catch {
-            // Silent failure - just show placeholder
-            print("Failed to load image from \(url): \(error.localizedDescription)")
-        }
+        return ImagePipeline.shared.memoryCache[request]
     }
 }
-
-/// Simple in-memory image cache
-class ImageCache {
-    static let shared = ImageCache()
-    
-    private var cache: [String: UIImage] = [:]
-    private let queue = DispatchQueue(label: "com.loop.imagecache", attributes: .concurrent)
-    
-    private init() {}
-    
-    func get(url: URL) -> UIImage? {
-        queue.sync {
-            return cache[url.absoluteString]
-        }
-    }
-    
-    func set(image: UIImage, for url: URL) {
-        queue.async(flags: .barrier) {
-            self.cache[url.absoluteString] = image
-        }
-    }
-    
-    func clear() {
-        queue.async(flags: .barrier) {
-            self.cache.removeAll()
-        }
-    }
-}
-

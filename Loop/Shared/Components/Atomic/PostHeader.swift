@@ -66,7 +66,7 @@ struct PostHeader: View {
     private var avatar: some View {
         Group {
             if let avatarURLString = avatarURL, let avatarURL = URL(string: avatarURLString) {
-                CachedAsyncImage(url: avatarURL) { image in
+                CachedAsyncImage(url: avatarURL, targetSize: CGSize(width: avatarSize, height: avatarSize)) { image in
                     image
                         .resizable()
                         .aspectRatio(contentMode: .fill)
