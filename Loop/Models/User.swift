@@ -31,7 +31,7 @@ struct User: Identifiable, Codable, Equatable {
     let avatarURL: String?
     let bannerURL: String?
     let badgeType: BadgeType?
-    let followers: [String] // Array of user IDs who follow this user
+    var followers: [String] // Array of user IDs who follow this user
     let following: [String] // Array of user IDs this user follows
     let createdAt: Date
     let lastSeen: Date

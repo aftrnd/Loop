@@ -877,12 +877,6 @@ class FirebaseService {
         print("✅ Successfully unfollowed user: \(targetUserId)")
     }
     
-    func isFollowing(_ targetUserId: String) async throws -> Bool {
-        guard let currentUserId = Auth.auth().currentUser?.uid else { return false }
-        guard let currentUser = try await getUser(withId: currentUserId) else { return false }
-        return currentUser.following.contains(targetUserId)
-    }
-    
     // MARK: - Loop Operations
     
     func createLoop(content: String, media: [LoopMedia] = [], isReply: Bool = false, parentLoopId: String? = nil, replyToReplyId: String? = nil) async throws {

@@ -1,10 +1,17 @@
 import SwiftUI
 import FirebaseAuth
+import os
 
 struct ProfileView: View {
     // Optional userId - if nil, shows current user's profile (editable)
     // If provided, shows that user's profile (read-only)
     let userId: String?
+    /// The signed-in user, read once per view value.
+    private let currentUserId: String?
+    /// Whether this is the signed-in user's own profile.
+    private let isOwnProfile: Bool
+    
+    private static let logger = Logger(subsystem: "com.nejack.Loop", category: "ProfileView")
     
     @State private var currentUser: User?
     @State private var isLoading = false
@@ -16,9 +23,11 @@ struct ProfileView: View {
     @AppStorage("showLayoutDebugOverlays") private var showLayoutDebugOverlays = false
     
     // Follow system
-    @State private var isFollowing = false
     @State private var isFollowLoading = false
-    @State private var triggerSparkles = false
+    /// Set to a new value to play the follow sparkle once.
+    @State private var sparkleBurstID: UUID?
+    /// A failed follow or message action, shown in an alert.
+    @State private var actionError: String?
     
     // Message system
     @State private var isMessageLoading = false
@@ -99,10 +108,10 @@ struct ProfileView: View {
         isOwnProfile && !isSheetFullyExpanded
     }
     
-    // Computed property to determine if viewing own profile
-    private var isOwnProfile: Bool {
-        guard let currentUserId = Auth.auth().currentUser?.uid else { return false }
-        return userId == nil || userId == currentUserId
+    /// Read from the profile's followers list, so the button and the follower count always agree.
+    private var isFollowing: Bool {
+        guard let currentUserId else { return false }
+        return currentUser?.followers.contains(currentUserId) ?? false
     }
     
     // Date formatter for joined date (Month Year format), built once rather than on every render
@@ -157,6 +166,9 @@ struct ProfileView: View {
     
     init(userId: String? = nil) {
         self.userId = userId
+        let currentUserId = Auth.auth().currentUser?.uid
+        self.currentUserId = currentUserId
+        self.isOwnProfile = currentUserId != nil && (userId == nil || userId == currentUserId)
         // Start in loading state if we need to fetch a user
         if userId != nil {
             _isLoading = State(initialValue: true)
@@ -257,7 +269,9 @@ struct ProfileView: View {
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 40)
             Button("Retry") {
-                loadCurrentUser()
+                Task {
+                    await loadUser()
+                }
             }
             .buttonStyle(.borderedProminent)
         }
@@ -283,8 +297,13 @@ struct ProfileView: View {
                     userId: userId,
                     selectedTab: selectedTab,
                     feedViewModel: feedViewModel,
-                    loadCurrentUserAsync: loadCurrentUserAsync
+                    loadCurrentUserAsync: loadUser
                 ))
+                .alert("Error", isPresented: actionErrorBinding) {
+                    Button("OK", role: .cancel) {}
+                } message: {
+                    Text(actionError ?? "")
+                }
                 .presentationDetents(supportedDetents, selection: $currentDetent)
                 .presentationDragIndicator(.visible)
                 .onAppear {
@@ -514,162 +533,101 @@ struct ProfileView: View {
         return "?"
     }
     
-    // MARK: - Follow Methods
+    // MARK: - Loading
     
-    private func toggleFollow() async {
-        guard let targetUserId = userId else {
-            print("⚠️ toggleFollow: No target user ID provided")
-            return
-        }
-        
-        await MainActor.run {
-            isFollowLoading = true
-        }
-        
-        do {
-            if isFollowing {
-                print("📤 Unfollowing user: \(targetUserId)")
-                try await FirebaseService.shared.unfollowUser(targetUserId)
-                await MainActor.run {
-                    isFollowing = false
-                    print("✅ Successfully unfollowed user")
-                }
-            } else {
-                print("📤 Following user: \(targetUserId)")
-                try await FirebaseService.shared.followUser(targetUserId)
-                await MainActor.run {
-                    isFollowing = true
-                    // Trigger sparkle animation on follow
-                    triggerSparkles = true
-                    print("✅ Successfully followed user")
-                }
-            }
-            
-            // Refresh user data to get updated follower counts
-            await loadCurrentUserAsync()
-            
-        } catch {
-            print("❌ Error toggling follow for user \(targetUserId): \(error.localizedDescription)")
-            print("   Error details: \(error)")
-            // Optionally show user-facing error here if needed
-        }
-        
-        await MainActor.run {
-            isFollowLoading = false
-        }
-    }
-    
-    private func checkFollowStatus() async {
-        guard let targetUserId = userId else {
-            print("⚠️ checkFollowStatus: No target user ID provided")
-            return
-        }
-        
-        do {
-            print("🔍 Checking follow status for user: \(targetUserId)")
-            let following = try await FirebaseService.shared.isFollowing(targetUserId)
-            await MainActor.run {
-                isFollowing = following
-                print("✅ Follow status: \(following ? "Following" : "Not following")")
-            }
-        } catch {
-            print("❌ Error checking follow status for user \(targetUserId): \(error.localizedDescription)")
-            print("   Error details: \(error)")
-        }
-    }
-    
-    // MARK: - Methods
-    
-    private func loadCurrentUserAsync() async {
-        await MainActor.run {
+    /// Loads the profile shown in the header with a single read. A profile already on screen stays in place
+    /// while it refreshes, so the banner, feed and scroll position don't rebuild.
+    private func loadUser() async {
+        if currentUser == nil {
             isLoading = true
-            loadError = nil
-            currentUser = nil // Clear any stale data
         }
+        loadError = nil
+        defer { isLoading = false }
         
         do {
-            if let targetUserId = userId {
-                // Loading another user's profile
-                print("🔵 Loading profile for user: \(targetUserId)")
-                
-                // Try cache first for immediate display
-                if let cachedUser = try? await FirebaseService.shared.getUser(withId: targetUserId, forceRefresh: false) {
-                    print("⚡️ Loaded from cache: \(cachedUser.displayName ?? "Unknown")")
-                    await MainActor.run {
-                        self.currentUser = cachedUser
-                        self.isLoading = false
-                        print("✅ UI updated with cached user: \(cachedUser.displayName ?? "Unknown")")
-                    }
-                    
-                    // Check follow status for other users
-                    await checkFollowStatus()
-                    
-                    // Then fetch fresh data in background
-                    if let freshUser = try? await FirebaseService.shared.getUser(withId: targetUserId, forceRefresh: true) {
-                        print("🔄 Updated with fresh data: \(freshUser.displayName ?? "Unknown")")
-                        await MainActor.run {
-                            self.currentUser = freshUser
-                            print("✅ UI updated with fresh user: \(freshUser.displayName ?? "Unknown")")
-                        }
-                    }
-                } else if let user = try await FirebaseService.shared.getUser(withId: targetUserId, forceRefresh: true) {
-                    print("✅ Profile loaded from server: \(user.displayName ?? "Unknown")")
-                    await MainActor.run {
-                        self.currentUser = user
-                        self.isLoading = false
-                    }
-                    
-                    // Check follow status for other users
-                    await checkFollowStatus()
+            if let userId {
+                if let user = try await FirebaseService.shared.getUser(withId: userId) {
+                    currentUser = user
+                } else if currentUser == nil {
+                    loadError = "User not found"
+                }
+            } else if let firebaseUser = Auth.auth().currentUser {
+                if let user = try await FirebaseService.shared.getUser(withId: firebaseUser.uid) {
+                    currentUser = user
                 } else {
-                    print("❌ User not found: \(targetUserId)")
-                    await MainActor.run {
-                        self.loadError = "User not found"
-                        self.isLoading = false
-                    }
+                    Self.logger.info("Creating a profile for the signed-in user")
+                    currentUser = try await FirebaseService.shared.createUserIfNotExists(
+                        phoneNumber: firebaseUser.phoneNumber ?? "",
+                        displayName: firebaseUser.displayName
+                    )
                 }
             } else {
-                // Loading own profile - can use cache for better performance
-                if let firebaseUser = Auth.auth().currentUser {
-                    print("🔵 Loading own profile: \(firebaseUser.uid)")
-                    if let firestoreUser = try await FirebaseService.shared.getUser(withId: firebaseUser.uid, forceRefresh: false) {
-                        print("✅ Own profile loaded successfully")
-                        await MainActor.run {
-                            self.currentUser = firestoreUser
-                            self.isLoading = false
-                        }
-                    } else {
-                        print("⚠️ Creating new user profile")
-                        let newUser = try await FirebaseService.shared.createUserIfNotExists(
-                            phoneNumber: firebaseUser.phoneNumber ?? "",
-                            displayName: firebaseUser.displayName
-                        )
-                        await MainActor.run {
-                            self.currentUser = newUser
-                            self.isLoading = false
-                        }
-                    }
-                } else {
-                    print("❌ Not authenticated")
-                    await MainActor.run {
-                        self.loadError = "Not authenticated"
-                        self.isLoading = false
-                    }
-                }
+                loadError = "Not authenticated"
             }
         } catch {
-            print("❌ Error loading user: \(error)")
-            await MainActor.run {
-                self.loadError = error.localizedDescription
-                self.isLoading = false
+            Self.logger.error("Profile load failed: \(error.localizedDescription, privacy: .public)")
+            if currentUser == nil {
+                loadError = error.localizedDescription
             }
         }
     }
     
-    private func loadCurrentUser() {
-        Task {
-            await loadCurrentUserAsync()
+    // MARK: - Follow
+    
+    /// Follows or unfollows optimistically: the button, follower count and sparkle update on tap,
+    /// and revert if the write fails.
+    private func toggleFollow() async {
+        guard let targetUserId = userId, let currentUserId, currentUser != nil, !isFollowLoading else { return }
+        
+        let wasFollowing = isFollowing
+        isFollowLoading = true
+        setFollowing(!wasFollowing, viewerId: currentUserId)
+        if !wasFollowing {
+            sparkleBurstID = UUID()
         }
+        
+        do {
+            if wasFollowing {
+                try await FirebaseService.shared.unfollowUser(targetUserId)
+            } else {
+                try await FirebaseService.shared.followUser(targetUserId)
+            }
+        } catch {
+            Self.logger.error("Follow change failed: \(error.localizedDescription, privacy: .public)")
+            setFollowing(wasFollowing, viewerId: currentUserId)
+            actionError = wasFollowing ? "Couldn't unfollow. Please try again." : "Couldn't follow. Please try again."
+            isFollowLoading = false
+            return
+        }
+        isFollowLoading = false
+        
+        // Pick up other people's follows since the profile loaded, unless a newer tap has changed the state
+        if let fresh = try? await FirebaseService.shared.getUser(withId: targetUserId),
+           !isFollowLoading,
+           fresh.followers.contains(currentUserId) == isFollowing {
+            currentUser = fresh
+        }
+    }
+    
+    private func setFollowing(_ following: Bool, viewerId: String) {
+        guard var user = currentUser, user.followers.contains(viewerId) != following else { return }
+        if following {
+            user.followers.append(viewerId)
+        } else {
+            user.followers.removeAll { $0 == viewerId }
+        }
+        currentUser = user
+    }
+    
+    private var actionErrorBinding: Binding<Bool> {
+        Binding(
+            get: { actionError != nil },
+            set: { isPresented in
+                if !isPresented {
+                    actionError = nil
+                }
+            }
+        )
     }
     
     // MARK: - Expanded Profile Views
@@ -960,16 +918,19 @@ struct ProfileView: View {
             .saturation(isFollowLoading ? 0.4 : 1.0) // Use saturation for loading state instead of opacity
             .opacity(1.0) // Force full opacity regardless of sheet state
             .overlay {
-                SparkleAnimation()
-                    .opacity(triggerSparkles ? 1 : 0)
-                    .allowsHitTesting(false)
-                    .onChange(of: triggerSparkles) { _, newValue in
-                        if newValue {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                                triggerSparkles = false
+                // A fresh SparkleAnimation plays once when it appears, so each follow inserts a new one
+                if let sparkleBurstID {
+                    SparkleAnimation()
+                        .id(sparkleBurstID)
+                        .allowsHitTesting(false)
+                        .task(id: sparkleBurstID) {
+                            // The burst runs 0.1s plus 1.5s; remove it once it has faded out
+                            try? await Task.sleep(for: .seconds(1.6))
+                            if !Task.isCancelled {
+                                self.sparkleBurstID = nil
                             }
                         }
-                    }
+                }
             }
             
             // Message button - perfectly centered, equal width
