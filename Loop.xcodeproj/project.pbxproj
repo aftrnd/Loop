@@ -17,10 +17,8 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		A644BB7B2ED3838500D745D8 /* loop.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = loop.xcodeproj; sourceTree = "<group>"; };
 		A65C74BD2E9AD0F6004336EF /* loop-icon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = "loop-icon.icon"; sourceTree = "<group>"; };
 		A68674AA2E7B488D00D7A119 /* Loop.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Loop.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		A6C9169D2EA145F100EF87EC /* loop.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = loop.xcodeproj; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -28,6 +26,7 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
+				README.md,
 			);
 			target = A68674A92E7B488D00D7A119 /* Loop */;
 		};
@@ -61,11 +60,6 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		A644BB7F2ED3838500D745D8 /* Products */ = {
-			isa = PBXGroup;
-			name = Products;
-			sourceTree = "<group>";
-		};
 		A659A4952E7DD58100089673 /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
@@ -87,13 +81,6 @@
 			isa = PBXGroup;
 			children = (
 				A68674AA2E7B488D00D7A119 /* Loop.app */,
-			);
-			name = Products;
-			sourceTree = "<group>";
-		};
-		A6C916A12EA145F100EF87EC /* Products */ = {
-			isa = PBXGroup;
-			children = (
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -159,16 +146,6 @@
 			preferredProjectObjectVersion = 77;
 			productRefGroup = A68674AB2E7B488D00D7A119 /* Products */;
 			projectDirPath = "";
-			projectReferences = (
-				{
-					ProductGroup = A6C916A12EA145F100EF87EC /* Products */;
-					ProjectRef = A6C9169D2EA145F100EF87EC /* loop.xcodeproj */;
-				},
-				{
-					ProductGroup = A644BB7F2ED3838500D745D8 /* Products */;
-					ProjectRef = A644BB7B2ED3838500D745D8 /* loop.xcodeproj */;
-				},
-			);
 			projectRoot = "";
 			targets = (
 				A68674A92E7B488D00D7A119 /* Loop */,
