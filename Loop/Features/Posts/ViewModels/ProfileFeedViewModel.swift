@@ -9,7 +9,6 @@ class ProfileFeedViewModel: ObservableObject {
     @Published var likedPosts: [Loop] = []
     @Published var isLoadingPosts = false
     @Published var isLoadingLikes = false
-    @Published var isRefreshing = false
     @Published var errorMessage: String?
     
     let userId: String
@@ -48,18 +47,6 @@ class ProfileFeedViewModel: ObservableObject {
         }
         
         isLoadingLikes = false
-    }
-    
-    func refreshPosts() async {
-        isRefreshing = true
-        await loadUserPosts()
-        isRefreshing = false
-    }
-    
-    func refreshLikedPosts() async {
-        isRefreshing = true
-        await loadUserLikedPosts()
-        isRefreshing = false
     }
     
     // MARK: - Helper Methods

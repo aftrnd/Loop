@@ -1,45 +1,19 @@
 import SwiftUI
 import FirebaseAuth
-import PhotosUI
 
 struct ProfileView: View {
     // Optional userId - if nil, shows current user's profile (editable)
     // If provided, shows that user's profile (read-only)
     let userId: String?
     
-    @Environment(\.colorScheme) private var colorScheme
     @State private var currentUser: User?
     @State private var isLoading = false
-    @State private var showSettings = false
     @State private var showEditProfile = false
-    @State private var isEditing = false
     @State private var loadError: String?
-    
-    // Editable fields
-    @State private var editDisplayName: String = ""
-    @State private var editUsername: String = ""
-    @State private var editBio: String = ""
-    @State private var editLocation: String = ""
-    
-    // Save state
-    @State private var isSaving = false
-    @State private var showSaveError = false
-    @State private var saveErrorMessage = ""
-    
-    // Logout
-    @State private var showLogoutConfirmation = false
     @Environment(\.dismiss) private var dismiss
     
     // Debug settings
     @AppStorage("showLayoutDebugOverlays") private var showLayoutDebugOverlays = false
-    
-    // Avatar editing with native PhotosPicker
-    @State private var avatarPickerItem: PhotosPickerItem?
-    @State private var selectedImage: UIImage?
-    @State private var bannerPickerItem: PhotosPickerItem?
-    @State private var selectedBanner: UIImage?
-    @State private var showAvatarPicker = false
-    @State private var showBannerPicker = false
     
     // Follow system
     @State private var isFollowing = false
@@ -50,7 +24,6 @@ struct ProfileView: View {
     @State private var isMessageLoading = false
     
     // Dynamic sheet height
-    @State private var contentHeight: CGFloat = 0
     @State private var currentDetent: PresentationDetent = .height(366)
     @State private var actualSheetHeight: CGFloat = 0
     @State private var otherProfileHeaderHeight: CGFloat = 0
@@ -116,15 +89,15 @@ struct ProfileView: View {
         return CardLayoutConstants.topPadding + profileCardBottomPadding + 24
     }
     private var tabTopPadding: CGFloat {
-        (!isOwnProfile && !isEditing) ? CardLayoutConstants.headerBottomSpacing : 0
+        !isOwnProfile ? CardLayoutConstants.headerBottomSpacing : 0
     }
     
     private var tabBottomPadding: CGFloat {
         // Add bottom padding for ALL profiles (both own and others)
-        !isEditing ? CardLayoutConstants.headerBottomSpacing : 0
+        CardLayoutConstants.headerBottomSpacing
     }
     private var shouldShowOwnershipHint: Bool {
-        isOwnProfile && !isEditing && !isSheetFullyExpanded
+        isOwnProfile && !isSheetFullyExpanded
     }
     
     // Computed property to determine if viewing own profile
@@ -221,24 +194,22 @@ struct ProfileView: View {
                 }
                 
                 // Tabs and feed - always rendered, fade in during swipe
-                if !isEditing {
-                    profileTabs
-                        .opacity(expansionProgress)
-                        .animation(.easeInOut(duration: 0.2), value: expansionProgress)
-                        .allowsHitTesting(expansionProgress > 0.5)
-                    
-                    // Tab content - fade in as sheet expands
-                    Group {
-                        if selectedTab == .posts {
-                            profilePostsTabUnified
-                        } else {
-                            profileLikesTabUnified
-                        }
-                    }
+                profileTabs
                     .opacity(expansionProgress)
                     .animation(.easeInOut(duration: 0.2), value: expansionProgress)
                     .allowsHitTesting(expansionProgress > 0.5)
+                
+                // Tab content - fade in as sheet expands
+                Group {
+                    if selectedTab == .posts {
+                        profilePostsTabUnified
+                    } else {
+                        profileLikesTabUnified
+                    }
                 }
+                .opacity(expansionProgress)
+                .animation(.easeInOut(duration: 0.2), value: expansionProgress)
+                .allowsHitTesting(expansionProgress > 0.5)
             }
         }
         .scrollIndicators(.hidden)
@@ -302,15 +273,9 @@ struct ProfileView: View {
         NavigationStack(path: $navigationPath) {
             profileGeometryContent
                 .modifier(ProfileNavigationModifiers(
-                    isEditing: isEditing,
                     isOwnProfile: isOwnProfile,
-                    isSaving: isSaving,
                     isSheetFullyExpanded: isSheetFullyExpanded,
-                    showSettings: $showSettings,
                     showEditProfile: $showEditProfile,
-                    cancelAction: cancelEditing,
-                    saveAction: saveProfile,
-                    startEditingAction: startEditing,
                     dismissAction: { dismiss() }
                 ))
                 .modifier(ProfileTaskModifiers(
@@ -318,21 +283,6 @@ struct ProfileView: View {
                     selectedTab: selectedTab,
                     feedViewModel: feedViewModel,
                     loadCurrentUserAsync: loadCurrentUserAsync
-                ))
-                .modifier(ProfileImagePickerModifiers(
-                    showAvatarPicker: $showAvatarPicker,
-                    showBannerPicker: $showBannerPicker,
-                    avatarPickerItem: $avatarPickerItem,
-                    bannerPickerItem: $bannerPickerItem,
-                    selectedImage: $selectedImage,
-                    selectedBanner: $selectedBanner,
-                    currentUser: $currentUser
-                ))
-                .modifier(ProfileAlertModifiers(
-                    showLogoutConfirmation: $showLogoutConfirmation,
-                    showSaveError: $showSaveError,
-                    saveErrorMessage: saveErrorMessage,
-                    logoutAction: logout
                 ))
                 .presentationDetents(supportedDetents, selection: $currentDetent)
                 .presentationDragIndicator(.visible)
@@ -379,14 +329,7 @@ struct ProfileView: View {
             
             ZStack(alignment: .bottomTrailing) {
                 Group {
-                    if let banner = selectedBanner {
-                        // Show locally selected image (while uploading or editing)
-                        Image(uiImage: banner)
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                            .frame(width: bannerGeometry.size.width, height: bannerGeometry.size.height)
-                            .clipped()
-                    } else if let bannerURL = currentUser?.bannerURL, let url = URL(string: bannerURL) {
+                    if let bannerURL = currentUser?.bannerURL, let url = URL(string: bannerURL) {
                         // Load from Firebase Storage URL with caching
                         CachedAsyncImage(url: url) { image in
                             image
@@ -425,32 +368,6 @@ struct ProfileView: View {
                             .blendMode(.destinationOut)
                     }
                 }
-                
-                if isEditing && isOwnProfile {
-                    Button {
-                        Task {
-                            // iOS 18+ best practice: request access first
-                            let hasAccess = await PhotoLibraryManager.shared.requestPhotoLibraryAccess()
-                            if hasAccess {
-                                showBannerPicker = true
-                                // Prompt for full access if limited
-                                if PhotoLibraryManager.shared.hasLimitedAccess {
-                                    PhotoLibraryManager.shared.promptForFullAccessIfLimited()
-                                }
-                            }
-                        }
-                    } label: {
-                        Image(systemName: "camera.fill")
-                            .font(.caption)
-                            .foregroundColor(.white)
-                            .padding(8)
-                            .background {
-                                Color.clear
-                                    .glassEffect(.regular, in: Circle())
-                            }
-                    }
-                    .padding(12)
-                }
             }
         }
     }
@@ -459,14 +376,7 @@ struct ProfileView: View {
     
     private var avatarView: some View {
         ZStack {
-            if let image = selectedImage {
-                // Show locally selected image (while uploading or editing)
-                Image(uiImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .frame(width: avatarImageSize, height: avatarImageSize)
-                    .clipShape(Circle())
-            } else if let avatarURL = currentUser?.avatarURL, let url = URL(string: avatarURL) {
+            if let avatarURL = currentUser?.avatarURL, let url = URL(string: avatarURL) {
                 // Load from Firebase Storage URL with caching
                 CachedAsyncImage(url: url) { image in
                     image
@@ -497,32 +407,6 @@ struct ProfileView: View {
                     .font(.system(size: 48, weight: .semibold))
                     .foregroundColor(.primary)
             }
-            
-            if isEditing && isOwnProfile {
-                Button {
-                    Task {
-                        // iOS 18+ best practice: request access first
-                        let hasAccess = await PhotoLibraryManager.shared.requestPhotoLibraryAccess()
-                        if hasAccess {
-                            showAvatarPicker = true
-                            // Prompt for full access if limited
-                            if PhotoLibraryManager.shared.hasLimitedAccess {
-                                PhotoLibraryManager.shared.promptForFullAccessIfLimited()
-                            }
-                        }
-                    }
-                } label: {
-                    Image(systemName: "camera.fill")
-                        .font(.caption)
-                        .foregroundColor(.white)
-                        .padding(8)
-                        .background {
-                            Color.clear
-                                .glassEffect(.regular, in: Circle())
-                        }
-                }
-                .offset(x: avatarImageSize / 2 - 8, y: avatarImageSize / 2 - 8)
-            }
         }
         .frame(width: avatarImageSize, height: avatarImageSize)
     }
@@ -530,325 +414,82 @@ struct ProfileView: View {
     // MARK: - User Info
     
     private var displayNameView: some View {
-        Group {
-            if isEditing && isOwnProfile {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("DISPLAY NAME")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.secondary)
-                        .textCase(.uppercase)
-                    
-                    TextField("Display Name", text: $editDisplayName)
-                        .font(.body)
-                        .fontWeight(.regular)
-                        .padding(18)
-                        .background(Color(.tertiarySystemGroupedBackground))
-                        .cornerRadius(16)
-                }
-            } else {
-                HStack(spacing: 6) {
-                    Text(currentUser?.displayName ?? "Display Name")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                        .foregroundStyle(.primary)
-                    
-                    // Badge inline with name
-                    if let badgeType = currentUser?.badgeType {
-                        Image(systemName: badgeType.iconName)
-                            .foregroundStyle(badgeType.color)
-                            .font(.title3)
-                    }
-                    
-                    Spacer()
-                }
+        HStack(spacing: 6) {
+            Text(currentUser?.displayName ?? "Display Name")
+                .font(.title2)
+                .fontWeight(.bold)
+                .foregroundStyle(.primary)
+            
+            // Badge inline with name
+            if let badgeType = currentUser?.badgeType {
+                Image(systemName: badgeType.iconName)
+                    .foregroundStyle(badgeType.color)
+                    .font(.title3)
             }
+            
+            Spacer()
         }
     }
     
     private var usernameView: some View {
-        Group {
-            if isEditing && isOwnProfile {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("USERNAME")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.secondary)
-                        .textCase(.uppercase)
-                    
-                    HStack(spacing: 8) {
-                        Text("@")
-                            .font(.body)
-                            .fontWeight(.regular)
-                            .foregroundStyle(.secondary)
-                        
-                        TextField("username", text: $editUsername)
-                            .font(.body)
-                            .fontWeight(.regular)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .onChange(of: editUsername) { oldValue, newValue in
-                                editUsername = sanitizeUsername(newValue)
-                            }
-                    }
-                    .padding(18)
-                    .background(Color(.tertiarySystemGroupedBackground))
-                    .cornerRadius(16)
-                }
-            } else {
-                HStack(spacing: 8) {
-                    // Username
-                    HStack(spacing: 4) {
-                        Image(systemName: "at")
-                            .font(.callout)
-                            .fontWeight(.semibold)
-                            .foregroundStyle(.secondary)
-                        Text(currentUser?.username ?? "username")
-                            .font(.callout)
-                            .fontWeight(.regular)
-                            .foregroundStyle(.secondary)
-                    }
-                    
-                    // Location - only show if exists, with consistent styling
-                    if let location = currentUser?.location, !location.isEmpty {
-                        HStack(spacing: 4) {
-                            Image(systemName: "location")
-                                .font(.callout)
-                                .fontWeight(.semibold)
-                                .foregroundStyle(.secondary)
-                            
-                            Text(location)
-                                .font(.callout)
-                                .fontWeight(.regular)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    
-                    // Joined date - with calendar icon, styled exactly like username and location
-                    if let user = currentUser {
-                        HStack(spacing: 4) {
-                            Image(systemName: "calendar")
-                                .font(.callout)
-                                .fontWeight(.semibold)
-                                .foregroundStyle(.secondary)
-                            
-                            Text(joinedDateFormatter.string(from: user.createdAt))
-                                .font(.callout)
-                                .fontWeight(.regular)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-            }
-        }
-    }
-    
-    private var locationView: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("LOCATION")
-                .font(.caption)
-                .fontWeight(.semibold)
-                .foregroundColor(.secondary)
-                .textCase(.uppercase)
-            
-            HStack(spacing: 12) {
-                Image(systemName: "location.fill")
+        HStack(spacing: 8) {
+            // Username
+            HStack(spacing: 4) {
+                Image(systemName: "at")
+                    .font(.callout)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.secondary)
+                Text(currentUser?.username ?? "username")
                     .font(.callout)
                     .fontWeight(.regular)
                     .foregroundStyle(.secondary)
-                
-                TextField("Add location...", text: $editLocation)
-                    .font(.body)
-                    .fontWeight(.regular)
-                    .textFieldStyle(.plain)
             }
-            .padding(18)
-            .background(Color(.tertiarySystemGroupedBackground))
-            .cornerRadius(16)
+            
+            // Location - only show if exists, with consistent styling
+            if let location = currentUser?.location, !location.isEmpty {
+                HStack(spacing: 4) {
+                    Image(systemName: "location")
+                        .font(.callout)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.secondary)
+                    
+                    Text(location)
+                        .font(.callout)
+                        .fontWeight(.regular)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            
+            // Joined date - with calendar icon, styled exactly like username and location
+            if let user = currentUser {
+                HStack(spacing: 4) {
+                    Image(systemName: "calendar")
+                        .font(.callout)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.secondary)
+                    
+                    Text(joinedDateFormatter.string(from: user.createdAt))
+                        .font(.callout)
+                        .fontWeight(.regular)
+                        .foregroundStyle(.secondary)
+                }
+            }
         }
     }
     
     private var bioView: some View {
-        Group {
-            if isEditing && isOwnProfile {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("BIO")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.secondary)
-                        .textCase(.uppercase)
-                    
-                    TextField("Add a bio...", text: $editBio, axis: .vertical)
-                        .font(.body)
-                        .fontWeight(.regular)
-                        .lineLimit(2...6)
-                        .padding(18)
-                        .frame(maxWidth: .infinity, minHeight: 100, alignment: .topLeading)
-                        .background(Color(.tertiarySystemGroupedBackground))
-                        .cornerRadius(16)
-                }
-            } else {
-                // Always show bio area, even if empty
-                Text(currentUser?.bio ?? "")
-                    .font(.callout)
-                    .foregroundStyle(.primary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
-            }
-        }
-    }
-    
-    // MARK: - Profile Content
-    
-    @ViewBuilder
-    private func profileContent(for user: User, bannerHeight: CGFloat, geometry: GeometryProxy) -> some View {
-        // Banner - extends to top edge (use same banner instance to prevent flashing)
-        bannerContent
-            .id("profile-banner") // Consistent ID across all states
-            .frame(height: bannerHeight + geometry.safeAreaInsets.top)
-            .offset(y: -geometry.safeAreaInsets.top)
-            .padding(.bottom, -geometry.safeAreaInsets.top)
-            .clipped()
-        
-        // Avatar and profile info - moves up to overlap banner
-        VStack(alignment: .leading, spacing: 0) {
-            // Avatar - left edge aligns with content padding
-            avatarView
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.leading, profileContentPadding)
-                .background(showLayoutDebugOverlays ? Color.yellow.opacity(0.1) : Color.clear)
-                .overlay(
-                    Group {
-                        if showLayoutDebugOverlays {
-                            Rectangle()
-                                .stroke(Color.red, lineWidth: 1)
-                        }
-                    }
-                )
-            
-            // Profile info
-            VStack(alignment: .leading, spacing: isEditing ? 16 : 8) {
-                displayNameView
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                
-                if isEditing && isOwnProfile {
-                    // Editing Mode - All fields stacked vertically with modern styling
-                    usernameView
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    
-                    locationView
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                } else {
-                    // View Mode - Username and location with consistent spacing
-                    usernameView
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                
-                // Follower counts (inline format) - only in view mode
-                if !isEditing {
-                    HStack(spacing: 16) {
-                        HStack(spacing: 4) {
-                            Text("\(user.followerCount)")
-                                .font(.callout)
-                                .fontWeight(.heavy)
-                                .foregroundColor(.primary)
-                            Text("Followers")
-                                .font(.callout)
-                                .fontWeight(.regular)
-                                .foregroundStyle(.secondary)
-                        }
-                        
-                        HStack(spacing: 4) {
-                            Text("\(user.followingCount)")
-                                .font(.callout)
-                                .fontWeight(.heavy)
-                                .foregroundColor(.primary)
-                            Text("Following")
-                                .font(.callout)
-                                .fontWeight(.regular)
-                                .foregroundStyle(.secondary)
-                        }
-                        
-                        Spacer()
-                    }
-                }
-                
-                // Bio - always visible
-                bioView
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .fixedSize(horizontal: false, vertical: true) // Allow vertical expansion
-            }
-            .padding(.horizontal, profileContentPadding) // Match post content padding (20pt total)
-            .padding(.top, isEditing ? 20 : CardLayoutConstants.topPadding)
-            .padding(.bottom, isEditing ? 24 : CardLayoutConstants.bottomPadding)
-        }
-        .offset(y: avatarOverlapOffset)
-        .padding(.bottom, avatarOverlapOffset)
-        
-        Spacer(minLength: 20) // Minimal bottom space
-    }
-    
-    // MARK: - Settings
-    // Note: Settings section removed - now accessed via gear button -> EditProfileView
-    
-    
-    // MARK: - Follow Button
-    
-    private var compactFollowButton: some View {
-        Button(action: {
-            // Haptic feedback
-            let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
-            impactFeedback.impactOccurred()
-            
-            Task {
-                await toggleFollow()
-            }
-        }) {
-            HStack(spacing: 6) {
-                if isFollowLoading {
-                    ProgressView()
-                        .scaleEffect(0.7)
-                        .tint(.white)
-                } else {
-                    Image(systemName: isFollowing ? "checkmark" : "plus")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundColor(.white)
-                }
-                
-                Text(isFollowing ? "Following" : "Follow")
-                    .font(.caption)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.white)
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-            .background {
-                RoundedRectangle(cornerRadius: 18)
-                    .fill(isFollowing ? Color.gray : Color.blue)
-            }
-            .scaleEffect(isFollowLoading ? 0.95 : 1.0)
-            .animation(.easeInOut(duration: 0.1), value: isFollowLoading)
-        }
-        .disabled(isFollowLoading)
-        .overlay {
-            SparkleAnimation()
-                .opacity(triggerSparkles ? 1 : 0)
-                .allowsHitTesting(false)
-                .onChange(of: triggerSparkles) { _, newValue in
-                    if newValue {
-                        // Reset trigger after animation
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                            triggerSparkles = false
-                        }
-                    }
-                }
-        }
+        // Always show bio area, even if empty
+        Text(currentUser?.bio ?? "")
+            .font(.callout)
+            .foregroundStyle(.primary)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
     }
     
     // MARK: - Helper Properties
     
     private var userInitials: String {
-        let displayName = isEditing ? editDisplayName : (currentUser?.displayName ?? "")
+        let displayName = currentUser?.displayName ?? ""
         
         guard !displayName.isEmpty else {
             return "?"
@@ -862,37 +503,6 @@ struct ProfileView: View {
         }
         
         return "?"
-    }
-    
-    private var formattedPhoneNumber: String {
-        guard let phoneNumber = currentUser?.phoneNumber else {
-            return "No phone number"
-        }
-        
-        // Format phone number for display (assuming US format)
-        let digits = phoneNumber.replacingOccurrences(of: "[^0-9]", with: "", options: .regularExpression)
-        guard digits.count == 11 && digits.hasPrefix("1") else {
-            return phoneNumber // Return as-is if not in expected format
-        }
-        
-        let areaCode = String(digits.dropFirst(1).prefix(3))
-        let firstPart = String(digits.dropFirst(4).prefix(3))
-        let lastPart = String(digits.dropFirst(7))
-        
-        return "(\(areaCode)) \(firstPart)-\(lastPart)"
-    }
-    
-    // MARK: - Helper Methods
-    
-    private func sanitizeUsername(_ username: String) -> String {
-        // Convert to lowercase
-        let lowercased = username.lowercased()
-        
-        // Only allow alphanumeric, hyphen, and underscore
-        let allowedCharacters = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_"))
-        let filtered = lowercased.unicodeScalars.filter { allowedCharacters.contains($0) }
-        
-        return String(String.UnicodeScalarView(filtered))
     }
     
     // MARK: - Follow Methods
@@ -1053,77 +663,6 @@ struct ProfileView: View {
         }
     }
     
-    private func refreshProfile() async {
-        // Reuse the same loading logic
-        await loadCurrentUserAsync()
-    }
-    
-    private func startEditing() {
-        editDisplayName = currentUser?.displayName ?? ""
-        editUsername = currentUser?.username ?? ""
-        editBio = currentUser?.bio ?? ""
-        editLocation = currentUser?.location ?? ""
-        
-        withAnimation(.easeInOut(duration: 0.25)) {
-            isEditing = true
-        }
-    }
-    
-    private func cancelEditing() {
-        withAnimation(.easeInOut(duration: 0.25)) {
-            isEditing = false
-        }
-        
-        editDisplayName = ""
-        editUsername = ""
-        editBio = ""
-        editLocation = ""
-    }
-    
-    private func saveProfile() {
-        isSaving = true
-        
-        Task {
-            do {
-                // Sanitize username: lowercase, alphanumeric + hyphen + underscore only
-                let cleanUsername = sanitizeUsername(editUsername.trimmingCharacters(in: .whitespaces)
-                    .replacingOccurrences(of: "@", with: ""))
-                
-                try await FirebaseService.shared.updateUserProfile(
-                    displayName: editDisplayName.isEmpty ? nil : editDisplayName,
-                    username: cleanUsername.isEmpty ? nil : cleanUsername,
-                    bio: editBio.isEmpty ? nil : editBio,
-                    location: editLocation.isEmpty ? nil : editLocation
-                )
-                
-                if let firebaseUser = Auth.auth().currentUser {
-                    currentUser = try await FirebaseService.shared.getUser(withId: firebaseUser.uid)
-                }
-                
-                await MainActor.run {
-                    isSaving = false
-                    withAnimation(.easeInOut(duration: 0.25)) {
-                        isEditing = false
-                    }
-                }
-            } catch {
-                await MainActor.run {
-                    isSaving = false
-                    saveErrorMessage = error.localizedDescription
-                    showSaveError = true
-                }
-            }
-        }
-    }
-    
-    private func logout() {
-        do {
-            try Auth.auth().signOut()
-        } catch {
-            print("Error signing out: \(error.localizedDescription)")
-        }
-    }
-    
     // MARK: - Expanded Profile Views
     
     // MARK: - Debug Overlay Helpers
@@ -1143,9 +682,7 @@ struct ProfileView: View {
                         .background(debugSectionBackground(.content))
                         .overlay(debugStrokeOverlay())
                     
-                    if !isEditing {
-                        followerCountsView(for: user)
-                    }
+                    followerCountsView(for: user)
                     
                     bioView
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1154,7 +691,7 @@ struct ProfileView: View {
                         .background(debugSectionBackground(.content))
                         .overlay(debugStrokeOverlay())
                     
-                    if !isOwnProfile && !isEditing {
+                    if !isOwnProfile {
                         actionButtons
                             .drawingGroup()
                             .background(debugSectionBackground(.actions))
@@ -1185,17 +722,6 @@ struct ProfileView: View {
                         .allowsHitTesting(false)
                 }
             }
-        }
-    }
-    
-    @ViewBuilder
-    private var profileInfoBackground: some View {
-        // Use solid background when fully expanded, clear when half-opened to let sheet's native liquid glass show through
-        if isSheetFullyExpanded {
-            Color(.systemBackground)
-        } else {
-            // No background - let iOS 26 sheet automatically apply liquid glass effect
-            Color.clear
         }
     }
     
@@ -1778,15 +1304,9 @@ private struct OwnershipHintHeightKey: PreferenceKey {
 // MARK: - View Modifiers to reduce type-checking complexity
 
 private struct ProfileNavigationModifiers: ViewModifier {
-    let isEditing: Bool
     let isOwnProfile: Bool
-    let isSaving: Bool
     let isSheetFullyExpanded: Bool
-    @Binding var showSettings: Bool
     @Binding var showEditProfile: Bool
-    let cancelAction: () -> Void
-    let saveAction: () -> Void
-    let startEditingAction: () -> Void
     let dismissAction: () -> Void
     
     func body(content: Content) -> some View {
@@ -1796,54 +1316,26 @@ private struct ProfileNavigationModifiers: ViewModifier {
             .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    if isEditing {
-                        Button("Cancel") {
-                            cancelAction()
-                        }
-                        .fontWeight(.medium)
-                    } else {
-                        if isSheetFullyExpanded {
-                            Button(action: dismissAction) {
-                                Image(systemName: "xmark")
-                                    .font(.body.weight(.medium))
-                            }
+                    if isSheetFullyExpanded {
+                        Button(action: dismissAction) {
+                            Image(systemName: "xmark")
+                                .font(.body.weight(.medium))
                         }
                     }
                 }
                 
                 ToolbarItem(placement: .topBarTrailing) {
-                    if isOwnProfile {
-                        if isEditing {
-                            Button {
-                                if !isSaving {
-                                    saveAction()
-                                }
-                            } label: {
-                                if isSaving {
-                                    ProgressView()
-                                } else {
-                                    Text("Done")
-                                        .fontWeight(.medium)
-                                }
-                            }
-                            .disabled(isSaving)
-                        } else {
-                            if isSheetFullyExpanded {
-                                Button {
-                                    showEditProfile = true
-                                } label: {
-                                    Image(systemName: "gear")
-                                        .font(.body.weight(.medium))
-                                }
-                            }
+                    if isOwnProfile && isSheetFullyExpanded {
+                        Button {
+                            showEditProfile = true
+                        } label: {
+                            Image(systemName: "gear")
+                                .font(.body.weight(.medium))
                         }
                     }
                 }
             }
             .navigationBarBackButtonHidden(true)
-            .navigationDestination(isPresented: $showSettings) {
-                SettingsView()
-            }
             .sheet(isPresented: $showEditProfile) {
                 EditProfileView()
             }
@@ -1877,78 +1369,6 @@ private struct ProfileTaskModifiers: ViewModifier {
             }
             .onAppear {
                 print("👀 ProfileView.onAppear - userId: \(userId ?? "nil")")
-            }
-    }
-}
-
-private struct ProfileImagePickerModifiers: ViewModifier {
-    @Binding var showAvatarPicker: Bool
-    @Binding var showBannerPicker: Bool
-    @Binding var avatarPickerItem: PhotosPickerItem?
-    @Binding var bannerPickerItem: PhotosPickerItem?
-    @Binding var selectedImage: UIImage?
-    @Binding var selectedBanner: UIImage?
-    @Binding var currentUser: User?
-    
-    func body(content: Content) -> some View {
-        content
-            .onChange(of: avatarPickerItem) { _, newItem in
-                Task {
-                    if let data = try? await newItem?.loadTransferable(type: Data.self),
-                       let image = UIImage(data: data) {
-                        selectedImage = image
-                        do {
-                            _ = try await FirebaseService.shared.uploadAvatarImage(image)
-                            if let firebaseUser = Auth.auth().currentUser {
-                                currentUser = try await FirebaseService.shared.getUser(withId: firebaseUser.uid)
-                            }
-                        } catch {
-                            print("Error uploading avatar: \(error.localizedDescription)")
-                        }
-                    }
-                }
-            }
-            .onChange(of: bannerPickerItem) { _, newItem in
-                Task {
-                    if let data = try? await newItem?.loadTransferable(type: Data.self),
-                       let image = UIImage(data: data) {
-                        selectedBanner = image
-                        do {
-                            _ = try await FirebaseService.shared.uploadBannerImage(image)
-                            if let firebaseUser = Auth.auth().currentUser {
-                                currentUser = try await FirebaseService.shared.getUser(withId: firebaseUser.uid)
-                            }
-                        } catch {
-                            print("Error uploading banner: \(error.localizedDescription)")
-                        }
-                    }
-                }
-            }
-            .photosPicker(isPresented: $showAvatarPicker, selection: $avatarPickerItem, matching: .images)
-            .photosPicker(isPresented: $showBannerPicker, selection: $bannerPickerItem, matching: .images)
-    }
-}
-
-private struct ProfileAlertModifiers: ViewModifier {
-    @Binding var showLogoutConfirmation: Bool
-    @Binding var showSaveError: Bool
-    let saveErrorMessage: String
-    let logoutAction: () -> Void
-    
-    func body(content: Content) -> some View {
-        content
-            .alert("Log Out", isPresented: $showLogoutConfirmation) {
-                Button("Cancel", role: .cancel) { }
-                Button("Log Out", role: .destructive) {
-                    logoutAction()
-                }
-            } message: {
-                Text("Are you sure you want to log out?")
-            }
-            .alert("Error Saving Profile", isPresented: $showSaveError) {
-                Button("OK", role: .cancel) { }
-            } message: {
-                Text(saveErrorMessage)
             }
     }
 }
