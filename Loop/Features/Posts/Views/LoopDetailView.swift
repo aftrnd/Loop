@@ -4,54 +4,14 @@ struct LoopDetailView: View {
     @State private var viewModel: LoopDetailViewModel
     @Environment(\.dismiss) private var dismiss
     @State private var profileUserToShow: ProfileUser?
-    @State private var replyHeights: [String: CGFloat] = [:] // Store actual heights by reply ID
+    /// Measured reply card heights, read only by the conversation lines.
+    @State private var replyHeights = ReplyHeightStore()
     
     // Debug overlay
     @AppStorage("showLayoutDebugOverlays") private var showDebugOverlay = false
     
     init(loop: Loop, onRepliesChanged: (() -> Void)? = nil) {
         _viewModel = State(initialValue: LoopDetailViewModel(loop: loop, onRepliesChanged: onRepliesChanged))
-    }
-    
-    // Helper function to calculate conversation line height
-    private func calculateLineHeight(for threadedReply: ThreadedReply, parentIndex: Int) -> CGFloat {
-        guard let parentHeight = replyHeights[threadedReply.reply.id], parentHeight > 0 else {
-            return 0
-        }
-        
-        // External top padding on parent card
-        let externalTopPadding: CGFloat = parentIndex == 0 ? 0 : 5
-        
-        // Line starts below parent avatar + gap
-        let lineStartY = externalTopPadding + CardLayoutConstants.topPadding + CardLayoutConstants.avatarSize + CardLayoutConstants.avatarLineGap
-        
-        // Calculate where last nested avatar's top is
-        // 1. Parent card height (includes all padding applied to it)
-        let parentCardHeight = parentHeight
-        
-        // 2. Spacing between parent actions and first nested reply (no divider, just spacing)
-        let spacingAfterParent = CardLayoutConstants.contentToActionsSpacing
-        
-        // 3. Sum of nested reply heights before the last one
-        var nestedHeightsBeforeLast: CGFloat = 0
-        for i in 0..<(threadedReply.nestedReplies.count - 1) {
-            let nestedReply = threadedReply.nestedReplies[i]
-            nestedHeightsBeforeLast += replyHeights[nestedReply.id] ?? 145
-            // Add divider between nested replies
-            if i < threadedReply.nestedReplies.count - 2 {
-                nestedHeightsBeforeLast += CardLayoutConstants.dividerHeight
-            }
-        }
-        
-        // 4. Last nested reply avatar position (in ZStack coordinates)
-        // Everything is offset by externalTopPadding
-        // Avatar is topPadding below the start of the nested reply container
-        let lastAvatarTop = externalTopPadding + parentCardHeight + spacingAfterParent + nestedHeightsBeforeLast + CardLayoutConstants.topPadding
-        
-        // Line ends before last nested avatar
-        let lineEndY = lastAvatarTop - CardLayoutConstants.avatarLineGap
-        
-        return max(10, lineEndY - lineStartY)
     }
     
     // MARK: - View Components
@@ -210,10 +170,10 @@ struct LoopDetailView: View {
                                             GeometryReader { geo in
                                                 Color.clear
                                                 .onAppear {
-                                                    replyHeights[threadedReply.reply.id] = geo.size.height
+                                                    replyHeights.record(geo.size.height, for: threadedReply.reply.id)
                                                 }
                                                 .onChange(of: geo.size.height) { _, newHeight in
-                                                    replyHeights[threadedReply.reply.id] = newHeight
+                                                    replyHeights.record(newHeight, for: threadedReply.reply.id)
                                                 }
                                             }
                                         )
@@ -261,10 +221,10 @@ struct LoopDetailView: View {
                                                         GeometryReader { geo in
                                                             Color.clear
                                                             .onAppear {
-                                                                replyHeights[nestedReply.id] = geo.size.height
+                                                                replyHeights.record(geo.size.height, for: nestedReply.id)
                                                             }
                                                             .onChange(of: geo.size.height) { _, newHeight in
-                                                                replyHeights[nestedReply.id] = newHeight
+                                                                replyHeights.record(newHeight, for: nestedReply.id)
                                                             }
                                                         }
                                                     )
@@ -410,17 +370,31 @@ struct LoopDetailView: View {
     }
 }
 
+// MARK: - Reply Heights
+
+/// Reply card heights by reply ID, measured as the cards lay out. A reference type so that writing a height
+/// only invalidates the views that read heights, not the detail view that owns the store.
+@Observable
+final class ReplyHeightStore {
+    private(set) var heights: [String: CGFloat] = [:]
+
+    func record(_ height: CGFloat, for replyId: String) {
+        // Skipped when unchanged, so a card appearing again doesn't redraw the lines
+        guard heights[replyId] != height else { return }
+        heights[replyId] = height
+    }
+}
+
 // MARK: - Conversation Lines Component
 struct ConversationLinesView: View {
     let threadedReply: ThreadedReply
-    let replyHeights: [String: CGFloat]
+    let replyHeights: ReplyHeightStore
     let parentIndex: Int
     @AppStorage("showLayoutDebugOverlays") private var showDebugOverlay = false
     
     var body: some View {
         let lineWidth = CardLayoutConstants.conversationLineWidth
         let lineX = CardLayoutConstants.horizontalPadding + CardLayoutConstants.avatarSize / 2 - lineWidth / 2
-        let _ = parentIndex == 0 ? 0 : 5
         
         // Draw individual lines between each consecutive pair
         ForEach(Array(lineSegments.enumerated()), id: \.offset) { _, segment in
@@ -446,7 +420,8 @@ struct ConversationLinesView: View {
         var segments: [LineSegment] = []
         let externalTopPadding: CGFloat = parentIndex == 0 ? 0 : 5
         
-        guard let parentHeight = replyHeights[threadedReply.reply.id] else { return segments }
+        let heights = replyHeights.heights
+        guard let parentHeight = heights[threadedReply.reply.id] else { return segments }
         
         // Line from parent to first nested reply
         if !threadedReply.nestedReplies.isEmpty {
@@ -471,7 +446,7 @@ struct ConversationLinesView: View {
                 let prevReply = threadedReply.nestedReplies[i - 1]
                 let currentReply = threadedReply.nestedReplies[i]
                 
-                if let prevHeight = replyHeights[prevReply.id], let _ = replyHeights[currentReply.id] {
+                if let prevHeight = heights[prevReply.id], let _ = heights[currentReply.id] {
                     // Previous avatar bottom + gap
                     let prevAvatarBottom = cumulativeHeight + CardLayoutConstants.topPadding + CardLayoutConstants.avatarSize
                     let lineStart = prevAvatarBottom + CardLayoutConstants.avatarLineGap
