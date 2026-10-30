@@ -609,7 +609,7 @@ class FirebaseService {
             // Get participant's FCM token
             guard let participant = try? await getUser(withId: participantId),
                   let fcmToken = participant.fcmToken else {
-                print("⚠️ No FCM token for participant \(participantId)")
+                logger.info("No FCM token for a chat participant; skipping push")
                 continue
             }
 
@@ -617,7 +617,7 @@ class FirebaseService {
             do {
                 let functions = Functions.functions()
                 let sendNotification = functions.httpsCallable("sendNotification")
-                
+
                 _ = try await sendNotification.call([
                     "fcmToken": fcmToken,
                     "title": senderName,
@@ -625,11 +625,9 @@ class FirebaseService {
                     "chatId": chatId,
                     "senderId": senderId
                 ])
-                
-                print("✅ Push notification sent to \(participantId)")
             } catch {
-                print("❌ Failed to send push notification to \(participantId): \(error.localizedDescription)")
                 // Continue to next participant even if one fails
+                logger.error("Message push failed: \(error.localizedDescription, privacy: .public)")
             }
         }
     }

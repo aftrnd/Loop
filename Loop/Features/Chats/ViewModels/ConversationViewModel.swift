@@ -60,7 +60,9 @@ final class ConversationViewModel {
             case .failure(let error):
                 self.logger.error("Message listener failed: \(error.localizedDescription, privacy: .public)")
             }
-            self.isLoading = false
+            if self.isLoading {
+                self.isLoading = false
+            }
         }
 
         activityListener = firebaseService.listenForChatActivity(chatId: chatId) { [weak self] activity in

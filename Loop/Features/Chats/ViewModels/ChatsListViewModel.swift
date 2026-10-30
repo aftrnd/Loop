@@ -81,7 +81,9 @@ final class ChatsListViewModel {
             guard !Task.isCancelled else { return }
             self.chats = chats
             self.applyPinnedState()
-            self.isLoadingInitialData = false
+            if self.isLoadingInitialData {
+                self.isLoadingInitialData = false
+            }
         }
         snapshotTask = task
         return task
