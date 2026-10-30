@@ -1,17 +1,29 @@
 import Foundation
 import SwiftUI
-import Combine
 import FirebaseAuth
+import os
+
+/// The feeds under a profile's header.
+enum ProfileFeedTab: String, CaseIterable {
+    case posts = "Posts"
+    case likes = "Likes"
+}
 
 @MainActor
-class ProfileFeedViewModel: ObservableObject {
-    @Published var posts: [Loop] = []
-    @Published var likedPosts: [Loop] = []
-    @Published var isLoadingPosts = false
-    @Published var isLoadingLikes = false
-    @Published var errorMessage: String?
+@Observable
+final class ProfileFeedViewModel {
+    private(set) var posts: [Loop] = []
+    private(set) var likedPosts: [Loop] = []
+    private(set) var isLoadingPosts = false
+    private(set) var isLoadingLikes = false
+    var errorMessage: String?
     
     let userId: String
+    
+    private let logger = Logger(subsystem: "com.nejack.Loop", category: "ProfileFeedViewModel")
+    
+    /// Tabs whose results are loaded. Each tab is fetched once, so switching back to it doesn't refetch.
+    @ObservationIgnored private var loadedTabs: Set<ProfileFeedTab> = []
     
     init(userId: String) {
         self.userId = userId
@@ -19,34 +31,39 @@ class ProfileFeedViewModel: ObservableObject {
     
     // MARK: - Load Data
     
-    func loadUserPosts() async {
-        isLoadingPosts = true
-        errorMessage = nil
+    /// Loads `tab` unless it is already loaded or loading. Pass `force` to reload a loaded tab.
+    func load(_ tab: ProfileFeedTab, force: Bool = false) async {
+        guard force || !loadedTabs.contains(tab), !isLoading(tab) else { return }
+        
+        setLoading(true, for: tab)
+        defer { setLoading(false, for: tab) }
         
         do {
-            let loops = try await FirebaseService.shared.getUserLoops(userId: userId)
-            posts = loops
+            switch tab {
+            case .posts:
+                posts = try await FirebaseService.shared.getUserLoops(userId: userId)
+            case .likes:
+                likedPosts = try await FirebaseService.shared.getUserLikedLoops(userId: userId)
+            }
+            loadedTabs.insert(tab)
         } catch {
+            logger.error("Profile \(tab.rawValue, privacy: .public) load failed: \(error.localizedDescription, privacy: .public)")
             errorMessage = error.localizedDescription
-            print("❌ Error loading user posts: \(error)")
         }
-        
-        isLoadingPosts = false
     }
     
-    func loadUserLikedPosts() async {
-        isLoadingLikes = true
-        errorMessage = nil
-        
-        do {
-            let loops = try await FirebaseService.shared.getUserLikedLoops(userId: userId)
-            likedPosts = loops
-        } catch {
-            errorMessage = error.localizedDescription
-            print("❌ Error loading user liked posts: \(error)")
+    private func isLoading(_ tab: ProfileFeedTab) -> Bool {
+        switch tab {
+        case .posts: isLoadingPosts
+        case .likes: isLoadingLikes
         }
-        
-        isLoadingLikes = false
+    }
+    
+    private func setLoading(_ isLoading: Bool, for tab: ProfileFeedTab) {
+        switch tab {
+        case .posts: isLoadingPosts = isLoading
+        case .likes: isLoadingLikes = isLoading
+        }
     }
     
     // MARK: - Helper Methods
@@ -80,9 +97,10 @@ class ProfileFeedViewModel: ObservableObject {
         do {
             try await FirebaseService.shared.deleteLoop(loop.id)
         } catch {
-            // Revert on error - reload data
-            await loadUserPosts()
-            await loadUserLikedPosts()
+            // Revert on error - reload whatever has been loaded
+            for tab in loadedTabs {
+                await load(tab, force: true)
+            }
             errorMessage = "Couldn't delete post. Please try again."
         }
     }

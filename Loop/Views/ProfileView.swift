@@ -41,8 +41,8 @@ struct ProfileView: View {
     @State private var ownershipHintMeasuredHeight: CGFloat = 0
     
     // Profile feed
-    @StateObject private var feedViewModel: ProfileFeedViewModel
-    @State private var selectedTab: ProfileTab = .posts
+    @State private var feedViewModel: ProfileFeedViewModel
+    @State private var selectedTab: ProfileFeedTab = .posts
     
     // Navigation for messages
     @State private var navigationPath = NavigationPath()
@@ -74,11 +74,6 @@ struct ProfileView: View {
     private nonisolated struct ContainerMetrics: Equatable {
         var width: CGFloat = 0
         var topSafeAreaInset: CGFloat = 0
-    }
-    
-    enum ProfileTab: String, CaseIterable {
-        case posts = "Posts"
-        case likes = "Likes"
     }
     
     // Layout constants
@@ -174,9 +169,8 @@ struct ProfileView: View {
             _isLoading = State(initialValue: true)
         }
         // Initialize feed view model with the target user ID or current user
-        let targetUserId = userId ?? Auth.auth().currentUser?.uid ?? ""
-        _feedViewModel = StateObject(wrappedValue: ProfileFeedViewModel(userId: targetUserId))
-        print("🎯 ProfileView.init(userId: \(userId ?? "nil"))")
+        let targetUserId = userId ?? currentUserId ?? ""
+        _feedViewModel = State(initialValue: ProfileFeedViewModel(userId: targetUserId))
     }
     
     @ViewBuilder
@@ -214,15 +208,9 @@ struct ProfileView: View {
                 profileTabs
                     .modifier(expansionFade(.reveal))
                 
-                // Tab content - fade in as sheet expands
-                Group {
-                    if selectedTab == .posts {
-                        profilePostsTabUnified
-                    } else {
-                        profileLikesTabUnified
-                    }
-                }
-                .modifier(expansionFade(.reveal))
+                // Tab content - fade in as sheet expands. Its own view, so feed updates don't re-render the header
+                ProfileFeedSection(viewModel: feedViewModel, selectedTab: selectedTab)
+                    .modifier(expansionFade(.reveal))
             }
         }
         .scrollIndicators(.hidden)
@@ -293,12 +281,10 @@ struct ProfileView: View {
                     showEditProfile: $showEditProfile,
                     dismissAction: { dismiss() }
                 ))
-                .modifier(ProfileTaskModifiers(
-                    userId: userId,
-                    selectedTab: selectedTab,
-                    feedViewModel: feedViewModel,
-                    loadCurrentUserAsync: loadUser
-                ))
+                // Runs alongside the feed's task below, so the header and the feed load in parallel
+                .task {
+                    await loadUser()
+                }
                 .alert("Error", isPresented: actionErrorBinding) {
                     Button("OK", role: .cancel) {}
                 } message: {
@@ -330,14 +316,9 @@ struct ProfileView: View {
             } action: { height in
                 sheetMetrics.height = height
             }
-            .onChange(of: selectedTab) { _, newTab in
-                Task {
-                    if newTab == .posts {
-                        await feedViewModel.loadUserPosts()
-                    } else {
-                        await feedViewModel.loadUserLikedPosts()
-                    }
-                }
+            // Loads each tab the first time it is shown; cancelled when the profile is dismissed
+            .task(id: selectedTab) {
+                await feedViewModel.load(selectedTab)
             }
     }
     
@@ -1066,7 +1047,7 @@ struct ProfileView: View {
     
     private var tabButtonsContainer: some View {
         HStack(spacing: 0) {
-            ForEach(ProfileTab.allCases, id: \.self) { tab in
+            ForEach(ProfileFeedTab.allCases, id: \.self) { tab in
                 Button {
                     selectedTab = tab
                 } label: {
@@ -1166,16 +1147,27 @@ struct ProfileView: View {
                 .stroke(Color.red, lineWidth: 2)
         }
     }
+}
+
+// MARK: - Feed
+
+/// The posts or likes list under the header. Reading the view model here rather than in ProfileView keeps
+/// feed loads and like changes from re-rendering the banner and header.
+private struct ProfileFeedSection: View {
+    let viewModel: ProfileFeedViewModel
+    let selectedTab: ProfileFeedTab
     
-    private var profilePostsTabUnified: some View {
-        profileFeedViewUnified(loops: feedViewModel.posts, isLoading: feedViewModel.isLoadingPosts)
+    @AppStorage("showLayoutDebugOverlays") private var showLayoutDebugOverlays = false
+    
+    var body: some View {
+        if selectedTab == .posts {
+            feed(loops: viewModel.posts, isLoading: viewModel.isLoadingPosts)
+        } else {
+            feed(loops: viewModel.likedPosts, isLoading: viewModel.isLoadingLikes)
+        }
     }
     
-    private var profileLikesTabUnified: some View {
-        profileFeedViewUnified(loops: feedViewModel.likedPosts, isLoading: feedViewModel.isLoadingLikes)
-    }
-    
-    private func profileFeedViewUnified(loops: [Loop], isLoading: Bool) -> some View {
+    private func feed(loops: [Loop], isLoading: Bool) -> some View {
         Group {
             if isLoading && loops.isEmpty {
                 VStack(spacing: 16) {
@@ -1210,18 +1202,18 @@ struct ProfileView: View {
                         VStack(spacing: 0) {
                             PostCard(
                                 loop: loop,
-                                isLiked: feedViewModel.isLikedByCurrentUser(loop),
+                                isLiked: viewModel.isLikedByCurrentUser(loop),
                                 onLike: {
                                     Task {
-                                        let wasLiked = feedViewModel.isLikedByCurrentUser(loop)
+                                        let wasLiked = viewModel.isLikedByCurrentUser(loop)
                                         
                                         do {
                                             if wasLiked {
                                                 try await FirebaseService.shared.unlikeLoop(loop.id)
-                                                feedViewModel.updateLoopLikeState(loopId: loop.id, isLiked: false)
+                                                viewModel.updateLoopLikeState(loopId: loop.id, isLiked: false)
                                             } else {
                                                 try await FirebaseService.shared.likeLoop(loop.id)
-                                                feedViewModel.updateLoopLikeState(loopId: loop.id, isLiked: true)
+                                                viewModel.updateLoopLikeState(loopId: loop.id, isLiked: true)
                                             }
                                         } catch {
                                             print("❌ Error toggling like: \(error.localizedDescription)")
@@ -1231,9 +1223,9 @@ struct ProfileView: View {
                                 onComment: {
                                     // Handle comment tap
                                 },
-                                onDelete: feedViewModel.canDeleteLoop(loop) ? {
+                                onDelete: viewModel.canDeleteLoop(loop) ? {
                                     Task {
-                                        await feedViewModel.deleteLoop(loop)
+                                        await viewModel.deleteLoop(loop)
                                     }
                                 } : nil,
                                 onAvatarTap: nil,
@@ -1368,31 +1360,6 @@ private struct ProfileNavigationModifiers: ViewModifier {
                 case .conversation(let chat):
                     ConversationView(chat: chat)
                 }
-            }
-    }
-}
-
-private struct ProfileTaskModifiers: ViewModifier {
-    let userId: String?
-    let selectedTab: ProfileView.ProfileTab
-    let feedViewModel: ProfileFeedViewModel
-    let loadCurrentUserAsync: () async -> Void
-    
-    func body(content: Content) -> some View {
-        content
-            .task(id: userId) {
-                print("📋 .task(id: \(userId ?? "nil")) triggered")
-                await loadCurrentUserAsync()
-                
-                // Load feed data after user loads
-                if selectedTab == .posts {
-                    await feedViewModel.loadUserPosts()
-                } else {
-                    await feedViewModel.loadUserLikedPosts()
-                }
-            }
-            .onAppear {
-                print("👀 ProfileView.onAppear - userId: \(userId ?? "nil")")
             }
     }
 }
