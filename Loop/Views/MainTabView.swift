@@ -98,6 +98,9 @@ struct MainTabView: View {
             .tabViewStyle(.sidebarAdaptable)
             .environment(\.horizontalSizeClass, .compact)
             .tabBarMinimizeBehavior(.onScrollDown)
+            // Ties search activation to the search tab. On iOS 27 the search tab only gets its own
+            // button, apart from the other tabs, with this set (checked in the iOS 27.0 simulator).
+            .tabViewSearchActivation(.searchTabSelection)
             .environment(photoViewerManager)
             
             // Global photo viewer overlay - displays at root level for true full screen
