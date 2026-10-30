@@ -183,8 +183,10 @@ final class ConversationViewModel {
                 try await firebaseService.sendMessage(chatId: chatId, content: content, participants: chat.participants)
             } catch {
                 logger.error("Sending a message failed: \(error.localizedDescription, privacy: .public)")
-                // Restore message text on error
-                messageText = content
+                // Put the text back, unless the user has started typing something else since
+                if messageText.isEmpty {
+                    messageText = content
+                }
             }
         }
     }

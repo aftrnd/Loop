@@ -107,8 +107,7 @@ struct MessageBubble: View {
         .animation(.easeInOut(duration: 0.2), value: showTimestamp)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
-        .onTapGesture(perform: toggleTimestamp)
-        .onTapGesture(count: 2, perform: handleDoubleTap)
+        .gesture(likeOrTimestampGesture)
     }
     
     private var sentMessageView: some View {
@@ -186,10 +185,16 @@ struct MessageBubble: View {
         .animation(.easeInOut(duration: 0.2), value: showTimestamp)
         .frame(maxWidth: .infinity, alignment: .trailing)
         .contentShape(Rectangle())
-        .onTapGesture(perform: toggleTimestamp)
-        .onTapGesture(count: 2, perform: handleDoubleTap)
+        .gesture(likeOrTimestampGesture)
     }
     
+    /// A double tap likes the message. A single tap shows the time, once a double tap has been ruled out.
+    private var likeOrTimestampGesture: some Gesture {
+        TapGesture(count: 2)
+            .onEnded { handleDoubleTap() }
+            .exclusively(before: TapGesture().onEnded { toggleTimestamp() })
+    }
+
     private func toggleTimestamp() {
         // Immediate press feedback
         withAnimation(.spring(response: 0.15, dampingFraction: 0.8)) {
