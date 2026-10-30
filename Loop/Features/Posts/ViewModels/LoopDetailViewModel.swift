@@ -8,14 +8,12 @@ struct ThreadedReply: Identifiable {
     let id: String
     let reply: Loop
     let nestedReplies: [Loop] // Replies to this reply, sorted oldest first
-    let indentLevel: Int
     var isExpanded: Bool // For collapsing/expanding nested replies
-    
-    init(reply: Loop, nestedReplies: [Loop] = [], indentLevel: Int = 0, isExpanded: Bool = false) {
+
+    init(reply: Loop, nestedReplies: [Loop] = [], isExpanded: Bool = false) {
         self.id = reply.id
         self.reply = reply
         self.nestedReplies = nestedReplies
-        self.indentLevel = indentLevel
         self.isExpanded = isExpanded
     }
 }
@@ -29,164 +27,137 @@ final class LoopDetailViewModel {
     var isLoading = false
     var isRefreshing = false
     var errorMessage: String?
-    
+
     // Compose state for replies
     var showingCompose = false
     var composeDraft = LoopDraft()
     var isPosting = false
-    
-    // Optimistic updates tracking for likes
-    private(set) var pendingLikeOperations: Set<String> = []
-    @ObservationIgnored private var completedLikeOperations: Set<String> = []
-    @ObservationIgnored private var likeTimeoutTasks: [String: Task<Void, Never>] = [:]
-    private let operationTimeout: TimeInterval = 2.0
-    
+
     // Callback for when replies change (to notify parent feed)
     @ObservationIgnored var onRepliesChanged: (() -> Void)?
-    
+
+    private let currentUserId = Auth.auth().currentUser?.uid
+
     @ObservationIgnored private var listener: ListenerRegistration?
-    
+    /// Top-level replies whose nested replies are showing, kept across rebuilds of the thread list.
+    @ObservationIgnored private var expandedReplyIds: Set<String> = []
+
     init(loop: Loop, onRepliesChanged: (() -> Void)? = nil) {
         self.loop = loop
         self.onRepliesChanged = onRepliesChanged
     }
-    
+
     deinit {
         listener?.remove()
     }
-    
+
     // MARK: - Data Loading
-    
+
     func loadReplies() async {
         isLoading = true
         errorMessage = nil
-        
+
         do {
             // Fetch all replies for this loop
-            replies = try await FirebaseService.shared.getReplies(for: loop.id)
-            
-            // Organize into threaded structure
-            organizeThreadedReplies()
+            let fetched = try await FirebaseService.shared.getReplies(for: loop.id)
+
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                replies = fetched
+                rebuildThreads()
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
-        
+
         isLoading = false
     }
-    
-    private func organizeThreadedReplies() {
-        // Separate top-level replies (replies to the POST) from nested replies (replies to replies)
-        let topLevelReplies = replies.filter { $0.replyToReplyId == nil }
-            .sorted { $0.createdAt > $1.createdAt } // Newest first
-        
-        var threaded: [ThreadedReply] = []
-        
-        for topLevelReply in topLevelReplies {
-            // Find all replies to this reply
-            let nestedReplies = replies.filter { $0.replyToReplyId == topLevelReply.id }
-                .sorted { $0.createdAt < $1.createdAt } // Oldest first for nested
-            
-            // Check if this reply was previously expanded
-            let wasExpanded = threadedReplies.first(where: { $0.id == topLevelReply.id })?.isExpanded ?? false
-            
-            // Add only the top-level reply (nested replies are hidden by default)
-            threaded.append(ThreadedReply(
-                reply: topLevelReply,
-                nestedReplies: nestedReplies,
-                indentLevel: 0,
-                isExpanded: wasExpanded
-            ))
+
+    /// Groups `replies` into threads: top-level replies newest first, each with its nested replies oldest first.
+    /// Always built from `replies`, so a reply's place in the thread comes from its current data.
+    /// Callers choose the animation.
+    private func rebuildThreads() {
+        var nestedByParent: [String: [Loop]] = [:]
+        for reply in replies {
+            if let parentId = reply.replyToReplyId {
+                nestedByParent[parentId, default: []].append(reply)
+            }
         }
-        
-        var transaction = Transaction()
-        transaction.disablesAnimations = true
-        withTransaction(transaction) {
-            threadedReplies = threaded
-        }
+
+        threadedReplies = replies
+            .filter { $0.replyToReplyId == nil }
+            .sorted { $0.createdAt > $1.createdAt }
+            .map { topLevelReply in
+                ThreadedReply(
+                    reply: topLevelReply,
+                    nestedReplies: (nestedByParent[topLevelReply.id] ?? []).sorted { $0.createdAt < $1.createdAt },
+                    isExpanded: expandedReplyIds.contains(topLevelReply.id)
+                )
+            }
     }
-    
+
     func toggleReplyExpansion(_ replyId: String) {
-        if let index = threadedReplies.firstIndex(where: { $0.id == replyId }) {
-            var updated = threadedReplies[index]
-            updated = ThreadedReply(
-                reply: updated.reply,
-                nestedReplies: updated.nestedReplies,
-                indentLevel: updated.indentLevel,
-                isExpanded: !updated.isExpanded
-            )
-            threadedReplies[index] = updated
+        guard let index = threadedReplies.firstIndex(where: { $0.id == replyId }) else { return }
+
+        threadedReplies[index].isExpanded.toggle()
+        if threadedReplies[index].isExpanded {
+            expandedReplyIds.insert(replyId)
+        } else {
+            expandedReplyIds.remove(replyId)
         }
     }
-    
+
     func refreshReplies() async {
         isRefreshing = true
         await loadReplies()
         isRefreshing = false
     }
-    
+
     func startListeningForReplies() {
         listener?.remove()
-        
+
         listener = Firestore.firestore()
             .collection("loops")
             .whereField("parentLoopId", isEqualTo: loop.id)
             .order(by: "createdAt", descending: true)
             .addSnapshotListener { [weak self] snapshot, error in
                 guard let self = self else { return }
-                
+
                 if let error = error {
                     self.errorMessage = error.localizedDescription
                     return
                 }
-                
+
                 guard let documents = snapshot?.documents else { return }
-                
+
                 Task {
                     await self.processReplyDocuments(documents)
                 }
             }
     }
-    
+
     private func processReplyDocuments(_ documents: [QueryDocumentSnapshot]) async {
+        // Taken as is: snapshots already include this device's pending writes, such as a like in flight
         let newReplies = await FirebaseService.shared.loops(from: documents)
-        
-        // Preserve optimistic states for replies with pending operations
-        var mergedReplies: [Loop] = []
-        
-        for newReply in newReplies {
-            let shouldPreserveOptimisticState = pendingLikeOperations.contains(newReply.id) 
-                || completedLikeOperations.contains(newReply.id)
-            
-            if shouldPreserveOptimisticState {
-                if let existingReply = replies.first(where: { $0.id == newReply.id }) {
-                    mergedReplies.append(existingReply)
-                } else {
-                    mergedReplies.append(newReply)
-                }
-            } else {
-                mergedReplies.append(newReply)
-            }
-        }
-        
+
         var transaction = Transaction()
         transaction.disablesAnimations = true
         withTransaction(transaction) {
-            replies = mergedReplies
+            replies = newReplies
+            rebuildThreads()
         }
-        
-        // Re-organize threaded structure
-        organizeThreadedReplies()
     }
-    
+
     // MARK: - Compose Actions
-    
+
     func showReplyCompose() {
         composeDraft = LoopDraft()
         composeDraft.isReply = true
         composeDraft.parentLoopId = loop.id
         showingCompose = true
     }
-    
+
     func replyToReply(_ reply: Loop) {
         // Reply to a reply - sets both parent loop and the reply being replied to
         composeDraft = LoopDraft()
@@ -195,17 +166,17 @@ final class LoopDetailViewModel {
         composeDraft.replyToReplyId = reply.id // The reply being replied to
         showingCompose = true
     }
-    
+
     func hideCompose() {
         showingCompose = false
         composeDraft = LoopDraft()
     }
-    
+
     func postReply() async {
         guard composeDraft.isValid, composeDraft.isWithinCharacterLimit else { return }
-        
+
         isPosting = true
-        
+
         do {
             try await FirebaseService.shared.createLoop(
                 content: composeDraft.content,
@@ -214,284 +185,153 @@ final class LoopDetailViewModel {
                 parentLoopId: composeDraft.parentLoopId,
                 replyToReplyId: composeDraft.replyToReplyId
             )
-            
+
             // Success - clear the compose state
             hideCompose()
-            
+
             // Refresh replies to show the new one
             await loadReplies()
-            
+
             // Notify parent that replies changed
             onRepliesChanged?()
         } catch {
             errorMessage = error.localizedDescription
         }
-        
+
         isPosting = false
     }
-    
+
     // MARK: - Like Actions
-    
+
+    /// Flips the like locally, then writes it. Firestore applies the write to the live listener right away,
+    /// so snapshots that arrive while the write is in flight already agree with the local state.
     func toggleLike(for targetLoop: Loop) async {
-        guard !pendingLikeOperations.contains(targetLoop.id) else {
-            return
-        }
-        
-        guard let currentUserId = Auth.auth().currentUser?.uid else { 
-            return 
-        }
-        
-        let isCurrentlyLiked = targetLoop.likes.contains(currentUserId)
-        
-        pendingLikeOperations.insert(targetLoop.id)
-        
-        // Update the appropriate loop (main or reply)
-        if targetLoop.id == loop.id {
-            updateLoopLikes(loopId: targetLoop.id, currentUserId: currentUserId, shouldAdd: !isCurrentlyLiked, isMainLoop: true)
-        } else {
-            updateLoopLikes(loopId: targetLoop.id, currentUserId: currentUserId, shouldAdd: !isCurrentlyLiked, isMainLoop: false)
-        }
-        
-        // Start timeout task
-        let timeoutTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: UInt64(operationTimeout * 1_000_000_000))
-            
-            if pendingLikeOperations.contains(targetLoop.id) && !completedLikeOperations.contains(targetLoop.id) {
-                // Revert the optimistic update
-                if targetLoop.id == loop.id {
-                    updateLoopLikes(loopId: targetLoop.id, currentUserId: currentUserId, shouldAdd: isCurrentlyLiked, isMainLoop: true)
-                } else {
-                    updateLoopLikes(loopId: targetLoop.id, currentUserId: currentUserId, shouldAdd: isCurrentlyLiked, isMainLoop: false)
-                }
-                
-                pendingLikeOperations.remove(targetLoop.id)
-                likeTimeoutTasks.removeValue(forKey: targetLoop.id)
-                
-                errorMessage = "Failed to update like. Please check your connection."
-            }
-        }
-        likeTimeoutTasks[targetLoop.id] = timeoutTask
-        
-        // Perform backend operation
+        guard let currentUserId else { return }
+
+        // Read the current state rather than the row's captured copy, so quick repeat taps alternate
+        let wasLiked = currentLikes(of: targetLoop.id)?.contains(currentUserId)
+            ?? targetLoop.likes.contains(currentUserId)
+        setLiked(!wasLiked, loopId: targetLoop.id, userId: currentUserId)
+
         do {
-            if isCurrentlyLiked {
+            if wasLiked {
                 try await FirebaseService.shared.unlikeLoop(targetLoop.id)
             } else {
                 try await FirebaseService.shared.likeLoop(targetLoop.id)
             }
-            
-            completedLikeOperations.insert(targetLoop.id)
-            timeoutTask.cancel()
-            likeTimeoutTasks.removeValue(forKey: targetLoop.id)
-            
-            Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 500_000_000)
-                pendingLikeOperations.remove(targetLoop.id)
-                completedLikeOperations.remove(targetLoop.id)
-            }
-            
         } catch {
-            timeoutTask.cancel()
-            likeTimeoutTasks.removeValue(forKey: targetLoop.id)
-            
-            // Revert the optimistic update
-            if targetLoop.id == loop.id {
-                updateLoopLikes(loopId: targetLoop.id, currentUserId: currentUserId, shouldAdd: isCurrentlyLiked, isMainLoop: true)
-            } else {
-                updateLoopLikes(loopId: targetLoop.id, currentUserId: currentUserId, shouldAdd: isCurrentlyLiked, isMainLoop: false)
-            }
-            
-            pendingLikeOperations.remove(targetLoop.id)
-            completedLikeOperations.remove(targetLoop.id)
-            
+            setLiked(wasLiked, loopId: targetLoop.id, userId: currentUserId)
             errorMessage = "Couldn't update like. Please try again."
         }
     }
-    
-    private func updateLoopLikes(loopId: String, currentUserId: String, shouldAdd: Bool, isMainLoop: Bool) {
-        if isMainLoop {
-            var updatedLoop = loop
-            var newLikes = updatedLoop.likes
-            
-            if shouldAdd {
-                newLikes.append(currentUserId)
-            } else {
-                newLikes.removeAll { $0 == currentUserId }
+
+    private func currentLikes(of loopId: String) -> [String]? {
+        if loopId == loop.id {
+            return loop.likes
+        }
+        return replies.first(where: { $0.id == loopId })?.likes
+    }
+
+    private func setLiked(_ liked: Bool, loopId: String, userId: String) {
+        // Animated so the heart morphs and the count rolls; only the liked card's content changes
+        if loopId == loop.id {
+            guard loop.likes.contains(userId) != liked else { return }
+            withAnimation(.snappy(duration: 0.3)) {
+                if liked {
+                    loop.likes.append(userId)
+                } else {
+                    loop.likes.removeAll { $0 == userId }
+                }
             }
-            
-            updatedLoop = Loop(
-                id: updatedLoop.id,
-                authorId: updatedLoop.authorId,
-                content: updatedLoop.content,
-                media: updatedLoop.media,
-                createdAt: updatedLoop.createdAt,
-                updatedAt: updatedLoop.updatedAt,
-                likes: newLikes,
-                replies: updatedLoop.replies,
-                isReply: updatedLoop.isReply,
-                parentLoopId: updatedLoop.parentLoopId,
-                authorDisplayName: updatedLoop.authorDisplayName,
-                authorUsername: updatedLoop.authorUsername,
-                authorAvatarURL: updatedLoop.authorAvatarURL,
-                authorBadgeType: updatedLoop.authorBadgeType
-            )
-            
-            var transaction = Transaction()
-            transaction.disablesAnimations = true
-            withTransaction(transaction) {
-                loop = updatedLoop
-            }
-        } else {
-            guard let index = replies.firstIndex(where: { $0.id == loopId }) else { return }
-            
-            var updatedReply = replies[index]
-            var newLikes = updatedReply.likes
-            
-            if shouldAdd {
-                newLikes.append(currentUserId)
-            } else {
-                newLikes.removeAll { $0 == currentUserId }
-            }
-            
-            updatedReply = Loop(
-                id: updatedReply.id,
-                authorId: updatedReply.authorId,
-                content: updatedReply.content,
-                media: updatedReply.media,
-                createdAt: updatedReply.createdAt,
-                updatedAt: updatedReply.updatedAt,
-                likes: newLikes,
-                replies: updatedReply.replies,
-                isReply: updatedReply.isReply,
-                parentLoopId: updatedReply.parentLoopId,
-                authorDisplayName: updatedReply.authorDisplayName,
-                authorUsername: updatedReply.authorUsername,
-                authorAvatarURL: updatedReply.authorAvatarURL,
-                authorBadgeType: updatedReply.authorBadgeType
-            )
-            
-            var transaction = Transaction()
-            transaction.disablesAnimations = true
-            withTransaction(transaction) {
-                replies[index] = updatedReply
+        } else if let index = replies.firstIndex(where: { $0.id == loopId }) {
+            guard replies[index].likes.contains(userId) != liked else { return }
+            withAnimation(.snappy(duration: 0.3)) {
+                if liked {
+                    replies[index].likes.append(userId)
+                } else {
+                    replies[index].likes.removeAll { $0 == userId }
+                }
+                // The cards render from the threads, so they are rebuilt from the updated reply
+                rebuildThreads()
             }
         }
     }
-    
+
+    // MARK: - Delete Actions
+
     func canDeleteLoop(_ targetLoop: Loop) -> Bool {
-        guard let currentUserId = Auth.auth().currentUser?.uid else { return false }
-        return targetLoop.authorId == currentUserId
+        targetLoop.authorId == currentUserId
     }
-    
+
     func deleteLoop(_ targetLoop: Loop) async {
-        guard canDeleteLoop(targetLoop) else { return }
-        
-        if targetLoop.id == loop.id {
-            // Can't delete the main loop from detail view - should navigate back
-            return
-        }
-        
-        // OPTIMISTIC: Remove reply and all its nested replies, update reply count immediately
-        guard let index = replies.firstIndex(where: { $0.id == targetLoop.id }) else { return }
-        let deletedReply = replies[index]
-        
-        // Find all nested replies to this comment (replies where replyToReplyId == targetLoop.id)
-        let nestedRepliesToDelete = replies.filter { $0.replyToReplyId == targetLoop.id }
-        let deletedNestedReplies = nestedRepliesToDelete
-        
-        // Update loop's reply count optimistically - remove this reply AND all nested replies
-        var updatedLoop = loop
-        var newReplies = updatedLoop.replies
-        newReplies.removeAll { $0 == targetLoop.id }
-        // Also remove all nested replies from the count
-        for nestedReply in nestedRepliesToDelete {
-            newReplies.removeAll { $0 == nestedReply.id }
-        }
-        
-        updatedLoop = Loop(
-            id: updatedLoop.id,
-            authorId: updatedLoop.authorId,
-            content: updatedLoop.content,
-            media: updatedLoop.media,
-            createdAt: updatedLoop.createdAt,
-            updatedAt: updatedLoop.updatedAt,
-            likes: updatedLoop.likes,
-            replies: newReplies,
-            isReply: updatedLoop.isReply,
-            parentLoopId: updatedLoop.parentLoopId,
-            replyToReplyId: updatedLoop.replyToReplyId,
-            authorDisplayName: updatedLoop.authorDisplayName,
-            authorUsername: updatedLoop.authorUsername,
-            authorAvatarURL: updatedLoop.authorAvatarURL,
-            authorBadgeType: updatedLoop.authorBadgeType
-        )
-        
+        // The main loop can't be deleted from the detail view
+        guard canDeleteLoop(targetLoop), targetLoop.id != loop.id,
+              replies.contains(where: { $0.id == targetLoop.id }) else { return }
+
+        // Optimistically remove the reply and the replies nested under it, and drop them from the count
+        let removedIds = Set([targetLoop.id] + replies.filter { $0.replyToReplyId == targetLoop.id }.map(\.id))
+        let removedReplies = replies.filter { removedIds.contains($0.id) }
+        let removedCountIds = loop.replies.filter { removedIds.contains($0) }
+
         var transaction = Transaction()
         transaction.disablesAnimations = true
         withTransaction(transaction) {
-            loop = updatedLoop
-            // Remove the deleted reply
-            replies.remove(at: index)
-            // Remove all nested replies
-            replies.removeAll { nestedReply in
-                nestedRepliesToDelete.contains { $0.id == nestedReply.id }
-            }
-            organizeThreadedReplies()
+            loop = loop.withReplies(loop.replies.filter { !removedIds.contains($0) })
+            replies.removeAll { removedIds.contains($0.id) }
+            rebuildThreads()
         }
-        
+
         do {
             try await FirebaseService.shared.deleteLoop(targetLoop.id)
             // Notify parent that replies changed
             onRepliesChanged?()
         } catch {
-            // REVERT: Restore reply, nested replies, and count on error
-            var revertedLoop = loop
-            var revertedReplies = revertedLoop.replies
-            revertedReplies.append(targetLoop.id)
-            // Restore nested replies to the count
-            for nestedReply in deletedNestedReplies {
-                revertedReplies.append(nestedReply.id)
-            }
-            
-            revertedLoop = Loop(
-                id: revertedLoop.id,
-                authorId: revertedLoop.authorId,
-                content: revertedLoop.content,
-                media: revertedLoop.media,
-                createdAt: revertedLoop.createdAt,
-                updatedAt: revertedLoop.updatedAt,
-                likes: revertedLoop.likes,
-                replies: revertedReplies,
-                isReply: revertedLoop.isReply,
-                parentLoopId: revertedLoop.parentLoopId,
-                replyToReplyId: revertedLoop.replyToReplyId,
-                authorDisplayName: revertedLoop.authorDisplayName,
-                authorUsername: revertedLoop.authorUsername,
-                authorAvatarURL: revertedLoop.authorAvatarURL,
-                authorBadgeType: revertedLoop.authorBadgeType
-            )
-            
-            var transaction = Transaction()
-            transaction.disablesAnimations = true
+            // Restore whatever a newer snapshot hasn't already brought back
             withTransaction(transaction) {
-                loop = revertedLoop
-                replies.insert(deletedReply, at: min(index, replies.count))
-                // Restore nested replies
-                replies.append(contentsOf: deletedNestedReplies)
-                organizeThreadedReplies()
+                let missingCountIds = removedCountIds.filter { !loop.replies.contains($0) }
+                loop = loop.withReplies(loop.replies + missingCountIds)
+                let presentIds = Set(replies.map(\.id))
+                replies.append(contentsOf: removedReplies.filter { !presentIds.contains($0.id) })
+                rebuildThreads()
             }
-            
+
             errorMessage = "Couldn't delete comment. Please try again."
         }
     }
-    
+
+    // MARK: - Helpers
+
     func isLikedByCurrentUser(_ targetLoop: Loop) -> Bool {
-        guard let currentUserId = Auth.auth().currentUser?.uid else { return false }
+        guard let currentUserId else { return false }
         return targetLoop.likes.contains(currentUserId)
     }
-    
+
     func clearError() {
         errorMessage = nil
     }
 }
 
+// MARK: - Loop Copy
+
+private extension Loop {
+    /// A copy with a different reply list. `replies` is a constant, so every other field is carried over by hand.
+    func withReplies(_ replies: [String]) -> Loop {
+        Loop(
+            id: id,
+            authorId: authorId,
+            content: content,
+            media: media,
+            createdAt: createdAt,
+            updatedAt: updatedAt,
+            likes: likes,
+            replies: replies,
+            isReply: isReply,
+            parentLoopId: parentLoopId,
+            replyToReplyId: replyToReplyId,
+            authorDisplayName: authorDisplayName,
+            authorUsername: authorUsername,
+            authorAvatarURL: authorAvatarURL,
+            authorBadgeType: authorBadgeType
+        )
+    }
+}
