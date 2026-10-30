@@ -1,10 +1,12 @@
 import SwiftUI
 import FirebaseAuth
 import PhotosUI
+import ImageIO
 import os
 
 struct EditProfileView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.displayScale) private var displayScale
     
     // User data
     @State private var currentUser: User?
@@ -16,16 +18,21 @@ struct EditProfileView: View {
     // Avatar editing
     @State private var showAvatarPicker = false
     @State private var avatarPickerItem: PhotosPickerItem?
+    /// Downsampled preview of the picked avatar, shown while it uploads and after.
     @State private var selectedImage: UIImage?
     
     // Banner editing
     @State private var showBannerPicker = false
     @State private var bannerPickerItem: PhotosPickerItem?
+    /// Downsampled preview of the picked banner, shown while it uploads and after.
     @State private var selectedBanner: UIImage?
     
-    // Track changes
-    @State private var hasUnsavedChanges = false
-    @State private var showDiscardAlert = false
+    // Photo uploads
+    /// Avatar and banner uploads in flight. Text fields save on their own screens, so this is the only work
+    /// that leaving could interrupt.
+    @State private var activeUploads = 0
+    @State private var showLeaveDuringUploadAlert = false
+    @State private var photoError: String?
     
     // Navigation
     @State private var showAppSettings = false
@@ -37,6 +44,10 @@ struct EditProfileView: View {
     init(user: User? = nil) {
         _currentUser = State(initialValue: user)
         _isLoading = State(initialValue: user == nil)
+    }
+    
+    private var isUploadingPhoto: Bool {
+        activeUploads > 0
     }
     
     var body: some View {
@@ -167,15 +178,7 @@ struct EditProfileView: View {
                                 EditDisplayNameView(
                                     currentValue: currentUser?.displayName ?? "",
                                     onSave: { newValue in
-                                        Task {
-                                            try? await FirebaseService.shared.updateUserProfile(
-                                                displayName: newValue,
-                                                username: nil,
-                                                bio: nil,
-                                                location: nil
-                                            )
-                                            await reloadUser()
-                                        }
+                                        try await saveProfile(displayName: newValue)
                                     }
                                 )
                             } label: {
@@ -206,15 +209,7 @@ struct EditProfileView: View {
                                 EditBioView(
                                     currentValue: currentUser?.bio ?? "",
                                     onSave: { newValue in
-                                        Task {
-                                            try? await FirebaseService.shared.updateUserProfile(
-                                                displayName: nil,
-                                                username: nil,
-                                                bio: newValue,
-                                                location: nil
-                                            )
-                                            await reloadUser()
-                                        }
+                                        try await saveProfile(bio: newValue)
                                     }
                                 )
                             } label: {
@@ -245,15 +240,7 @@ struct EditProfileView: View {
                                 EditUsernameView(
                                     currentValue: currentUser?.username ?? "",
                                     onSave: { newValue in
-                                        Task {
-                                            try? await FirebaseService.shared.updateUserProfile(
-                                                displayName: nil,
-                                                username: newValue,
-                                                bio: nil,
-                                                location: nil
-                                            )
-                                            await reloadUser()
-                                        }
+                                        try await saveProfile(username: newValue)
                                     }
                                 )
                             } label: {
@@ -354,13 +341,13 @@ struct EditProfileView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {
-                        if hasUnsavedChanges {
-                            showDiscardAlert = true
+                        if isUploadingPhoto {
+                            showLeaveDuringUploadAlert = true
                         } else {
                             dismiss()
                         }
                     } label: {
-                        if hasUnsavedChanges {
+                        if isUploadingPhoto {
                             Text("Cancel")
                                 .fontWeight(.medium)
                         } else {
@@ -370,7 +357,7 @@ struct EditProfileView: View {
                     }
                 }
             }
-            .interactiveDismissDisabled(hasUnsavedChanges)
+            .interactiveDismissDisabled(isUploadingPhoto)
         }
         .task {
             await loadCurrentUser()
@@ -386,46 +373,30 @@ struct EditProfileView: View {
             matching: .images
         )
         .onChange(of: avatarPickerItem) { _, newItem in
+            guard let newItem else { return }
             Task {
-                if let data = try? await newItem?.loadTransferable(type: Data.self),
-                   let image = UIImage(data: data) {
-                    selectedImage = image
-                    hasUnsavedChanges = true
-                    do {
-                        _ = try await FirebaseService.shared.uploadAvatarImage(image)
-                        await reloadUser()
-                        hasUnsavedChanges = false
-                    } catch {
-                        print("Error uploading avatar: \(error.localizedDescription)")
-                        hasUnsavedChanges = false
-                    }
-                }
+                await uploadPhoto(newItem, as: .avatar)
             }
         }
         .onChange(of: bannerPickerItem) { _, newItem in
+            guard let newItem else { return }
             Task {
-                if let data = try? await newItem?.loadTransferable(type: Data.self),
-                   let image = UIImage(data: data) {
-                    selectedBanner = image
-                    hasUnsavedChanges = true
-                    do {
-                        _ = try await FirebaseService.shared.uploadBannerImage(image)
-                        await reloadUser()
-                        hasUnsavedChanges = false
-                    } catch {
-                        print("Error uploading banner: \(error.localizedDescription)")
-                        hasUnsavedChanges = false
-                    }
-                }
+                await uploadPhoto(newItem, as: .banner)
             }
         }
-        .alert("Discard Changes?", isPresented: $showDiscardAlert) {
-            Button("Keep Editing", role: .cancel) { }
-            Button("Discard", role: .destructive) {
+        // Leaving doesn't stop an upload, so say what actually happens instead of offering to discard
+        .alert("Photo still uploading", isPresented: $showLeaveDuringUploadAlert) {
+            Button("Keep editing", role: .cancel) { }
+            Button("Leave") {
                 dismiss()
             }
         } message: {
-            Text("You have unsaved changes. Are you sure you want to discard them?")
+            Text("If you leave now, the upload will finish in the background.")
+        }
+        .alert("Couldn't update photo", isPresented: photoErrorBinding) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(photoError ?? "")
         }
         .alert("Log Out", isPresented: $showLogoutConfirmation) {
             Button("Cancel", role: .cancel) { }
@@ -509,16 +480,83 @@ struct EditProfileView: View {
     }
     
     private func reloadUser() async {
-        if let firebaseUser = Auth.auth().currentUser {
-            if let firestoreUser = try? await FirebaseService.shared.getUser(
-                withId: firebaseUser.uid,
-                forceRefresh: true
-            ) {
-                await MainActor.run {
-                    self.currentUser = firestoreUser
-                }
+        guard let firebaseUser = Auth.auth().currentUser else { return }
+        if let firestoreUser = try? await FirebaseService.shared.getUser(withId: firebaseUser.uid, forceRefresh: true) {
+            currentUser = firestoreUser
+        }
+    }
+    
+    /// Writes the given fields and reloads the profile, so the list shows the new values when the edit screen closes.
+    private func saveProfile(displayName: String? = nil, username: String? = nil, bio: String? = nil) async throws {
+        try await FirebaseService.shared.updateUserProfile(
+            displayName: displayName,
+            username: username,
+            bio: bio,
+            location: nil
+        )
+        await reloadUser()
+    }
+    
+    // MARK: - Photos
+    
+    private enum PhotoKind {
+        case avatar
+        case banner
+        
+        /// The frame the preview fills, in points. The banner's width is generous so wide screens stay sharp.
+        var previewSize: CGSize {
+            switch self {
+            case .avatar: CGSize(width: 80, height: 80)
+            case .banner: CGSize(width: 600, height: 80)
             }
         }
+    }
+    
+    /// Shows a downsampled preview of the picked photo, then uploads the full image. On failure the
+    /// preview is removed and the error is shown.
+    private func uploadPhoto(_ item: PhotosPickerItem, as kind: PhotoKind) async {
+        guard let data = try? await item.loadTransferable(type: Data.self), let image = UIImage(data: data) else {
+            photoError = "That photo couldn't be opened. Please try another."
+            return
+        }
+        
+        activeUploads += 1
+        defer { activeUploads -= 1 }
+        
+        let preview = await PhotoPreview.make(from: data, filling: kind.previewSize, scale: displayScale)
+        setPreview(preview, for: kind)
+        
+        do {
+            switch kind {
+            case .avatar:
+                _ = try await FirebaseService.shared.uploadAvatarImage(image)
+            case .banner:
+                _ = try await FirebaseService.shared.uploadBannerImage(image)
+            }
+            await reloadUser()
+        } catch {
+            Self.logger.error("Photo upload failed: \(error.localizedDescription, privacy: .public)")
+            setPreview(nil, for: kind)
+            photoError = error.localizedDescription
+        }
+    }
+    
+    private func setPreview(_ preview: UIImage?, for kind: PhotoKind) {
+        switch kind {
+        case .avatar: selectedImage = preview
+        case .banner: selectedBanner = preview
+        }
+    }
+    
+    private var photoErrorBinding: Binding<Bool> {
+        Binding(
+            get: { photoError != nil },
+            set: { isPresented in
+                if !isPresented {
+                    photoError = nil
+                }
+            }
+        )
     }
     
     private func logout() {
@@ -526,21 +564,70 @@ struct EditProfileView: View {
             try Auth.auth().signOut()
             dismiss()
         } catch {
-            print("Error signing out: \(error.localizedDescription)")
+            Self.logger.error("Sign out failed: \(error.localizedDescription, privacy: .public)")
         }
+    }
+}
+
+// MARK: - Photo Preview
+
+/// Decodes a picked photo at the size its preview is drawn, off the main actor, so an 80pt circle doesn't
+/// decode and draw a full-resolution camera image on the main thread.
+private nonisolated enum PhotoPreview {
+    static func make(from data: Data, filling pointSize: CGSize, scale: CGFloat) async -> UIImage? {
+        await Task.detached(priority: .userInitiated) {
+            downsample(data, filling: pointSize, scale: scale)
+        }.value
+    }
+    
+    private static func downsample(_ data: Data, filling pointSize: CGSize, scale: CGFloat) -> UIImage? {
+        let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
+        guard let source = CGImageSourceCreateWithData(data as CFData, sourceOptions),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? CGFloat,
+              let height = properties[kCGImagePropertyPixelHeight] as? CGFloat,
+              width > 0, height > 0 else {
+            return nil
+        }
+        
+        // EXIF orientations 5 to 8 are rotated a quarter turn, so the drawn width is the stored height
+        let orientation = properties[kCGImagePropertyOrientation] as? UInt32 ?? 1
+        let isQuarterTurned = (5...8).contains(orientation)
+        let drawnWidth = isQuarterTurned ? height : width
+        let drawnHeight = isQuarterTurned ? width : height
+        
+        // The smallest size that still fills the frame at full sharpness, never larger than the original
+        let fillScale = max(pointSize.width * scale / drawnWidth, pointSize.height * scale / drawnHeight)
+        let maxPixelSize = (max(width, height) * min(fillScale, 1)).rounded(.up)
+        
+        let thumbnailOptions = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize
+        ] as CFDictionary
+        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbnailOptions) else {
+            return nil
+        }
+        return UIImage(cgImage: cgImage)
     }
 }
 
 // MARK: - Edit Detail Views
 
 struct EditDisplayNameView: View {
-    @Environment(\.dismiss) private var dismiss
     @State private var text: String
-    let onSave: (String) -> Void
+    private let originalValue: String
+    let onSave: (String) async throws -> Void
     
-    init(currentValue: String, onSave: @escaping (String) -> Void) {
+    init(currentValue: String, onSave: @escaping (String) async throws -> Void) {
         _text = State(initialValue: currentValue)
+        self.originalValue = currentValue
         self.onSave = onSave
+    }
+    
+    private var trimmedText: String {
+        text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
     
     var body: some View {
@@ -557,33 +644,20 @@ struct EditDisplayNameView: View {
         .background(Color(.systemGroupedBackground))
         .navigationTitle("Name")
         .navigationBarTitleDisplayMode(.inline)
-        .navigationBarBackButtonHidden(true)
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Button("Cancel") {
-                    dismiss()
-                }
-            }
-            
-            ToolbarItem(placement: .topBarTrailing) {
-                Button("Save") {
-                    onSave(text)
-                    dismiss()
-                }
-                .fontWeight(.semibold)
-                .disabled(text.isEmpty)
-            }
-        }
+        .modifier(EditFieldToolbar(canSave: !trimmedText.isEmpty, hasChanges: trimmedText != originalValue) {
+            try await onSave(trimmedText)
+        })
     }
 }
 
 struct EditBioView: View {
-    @Environment(\.dismiss) private var dismiss
     @State private var text: String
-    let onSave: (String) -> Void
+    private let originalValue: String
+    let onSave: (String) async throws -> Void
     
-    init(currentValue: String, onSave: @escaping (String) -> Void) {
+    init(currentValue: String, onSave: @escaping (String) async throws -> Void) {
         _text = State(initialValue: currentValue)
+        self.originalValue = currentValue
         self.onSave = onSave
     }
     
@@ -602,32 +676,21 @@ struct EditBioView: View {
         .background(Color(.systemGroupedBackground))
         .navigationTitle("Bio")
         .navigationBarTitleDisplayMode(.inline)
-        .navigationBarBackButtonHidden(true)
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Button("Cancel") {
-                    dismiss()
-                }
-            }
-            
-            ToolbarItem(placement: .topBarTrailing) {
-                Button("Save") {
-                    onSave(text)
-                    dismiss()
-                }
-                .fontWeight(.semibold)
-            }
-        }
+        // An empty bio is allowed: it clears the bio
+        .modifier(EditFieldToolbar(canSave: true, hasChanges: text != originalValue) {
+            try await onSave(text)
+        })
     }
 }
 
 struct EditUsernameView: View {
-    @Environment(\.dismiss) private var dismiss
     @State private var text: String
-    let onSave: (String) -> Void
+    private let originalValue: String
+    let onSave: (String) async throws -> Void
     
-    init(currentValue: String, onSave: @escaping (String) -> Void) {
+    init(currentValue: String, onSave: @escaping (String) async throws -> Void) {
         _text = State(initialValue: currentValue)
+        self.originalValue = currentValue
         self.onSave = onSave
     }
     
@@ -654,22 +717,9 @@ struct EditUsernameView: View {
         .background(Color(.systemGroupedBackground))
         .navigationTitle("Username")
         .navigationBarTitleDisplayMode(.inline)
-        .navigationBarBackButtonHidden(true)
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Button("Cancel") {
-                    dismiss()
-                }
-            }
-            
-            ToolbarItem(placement: .topBarTrailing) {
-                Button("Save") {
-                    onSave(text)
-                    dismiss()
-                }
-                .fontWeight(.semibold)
-            }
-        }
+        .modifier(EditFieldToolbar(canSave: !text.isEmpty, hasChanges: text != originalValue) {
+            try await onSave(text)
+        })
     }
     
     private func sanitizeUsername(_ username: String) -> String {
@@ -677,6 +727,91 @@ struct EditUsernameView: View {
         let allowedCharacters = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_"))
         let filtered = lowercased.unicodeScalars.filter { allowedCharacters.contains($0) }
         return String(String.UnicodeScalarView(filtered))
+    }
+}
+
+/// Cancel and Save for the edit screens. Save waits for the write: while it runs the button shows a spinner
+/// and is disabled; on success the screen closes, and on failure the error is shown and the edit is kept.
+private struct EditFieldToolbar: ViewModifier {
+    let canSave: Bool
+    let hasChanges: Bool
+    let save: () async throws -> Void
+    
+    @Environment(\.dismiss) private var dismiss
+    @State private var saveState = SaveState.idle
+    
+    private enum SaveState: Equatable {
+        case idle
+        case saving
+        case failed(String)
+    }
+    
+    private var failureMessage: String? {
+        if case .failed(let message) = saveState {
+            return message
+        }
+        return nil
+    }
+    
+    func body(content: Content) -> some View {
+        content
+            .navigationBarBackButtonHidden(true)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                }
+                
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        Task {
+                            await submit()
+                        }
+                    } label: {
+                        if saveState == .saving {
+                            ProgressView()
+                        } else {
+                            Text("Save")
+                        }
+                    }
+                    .fontWeight(.semibold)
+                    .disabled(!canSave || saveState == .saving)
+                }
+            }
+            .alert("Couldn't save", isPresented: failureBinding) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text(failureMessage ?? "")
+            }
+    }
+    
+    private var failureBinding: Binding<Bool> {
+        Binding(
+            get: { failureMessage != nil },
+            set: { isPresented in
+                if !isPresented {
+                    saveState = .idle
+                }
+            }
+        )
+    }
+    
+    private func submit() async {
+        // Nothing changed, so there is nothing to write
+        guard hasChanges else {
+            dismiss()
+            return
+        }
+        
+        saveState = .saving
+        do {
+            try await save()
+            saveState = .idle
+            dismiss()
+        } catch {
+            saveState = .failed(error.localizedDescription)
+        }
     }
 }
 
