@@ -21,17 +21,17 @@ struct ThreadedReply: Identifiable {
 @MainActor
 @Observable
 final class LoopDetailViewModel {
-    var loop: Loop
-    var replies: [Loop] = [] // Raw replies from Firebase
-    var threadedReplies: [ThreadedReply] = [] // Organized threaded structure
-    var isLoading = false
-    var isRefreshing = false
+    private(set) var loop: Loop
+    private(set) var replies: [Loop] = [] // Raw replies from Firebase
+    private(set) var threadedReplies: [ThreadedReply] = [] // Organized threaded structure
+    /// True until the first snapshot of replies arrives.
+    private(set) var isLoading = true
     var errorMessage: String?
 
     // Compose state for replies
     var showingCompose = false
     var composeDraft = LoopDraft()
-    var isPosting = false
+    private(set) var isPosting = false
 
     // Callback for when replies change (to notify parent feed)
     @ObservationIgnored var onRepliesChanged: (() -> Void)?
@@ -39,6 +39,9 @@ final class LoopDetailViewModel {
     private let currentUserId = Auth.auth().currentUser?.uid
 
     @ObservationIgnored private var listener: ListenerRegistration?
+    @ObservationIgnored private var snapshotTask: Task<Void, Never>?
+    /// The documents from the latest snapshot, so a refresh can rebuild replies without another query.
+    @ObservationIgnored private var latestDocuments: [QueryDocumentSnapshot] = []
     /// Top-level replies whose nested replies are showing, kept across rebuilds of the thread list.
     @ObservationIgnored private var expandedReplyIds: Set<String> = []
 
@@ -49,29 +52,73 @@ final class LoopDetailViewModel {
 
     deinit {
         listener?.remove()
+        snapshotTask?.cancel()
     }
 
     // MARK: - Data Loading
 
-    func loadReplies() async {
-        isLoading = true
-        errorMessage = nil
+    /// Starts the live listener on this loop's replies. It is the only source of replies: its first snapshot
+    /// loads them, and later snapshots carry new replies, likes and deletions, including this device's own.
+    /// Safe to call again; it only starts once.
+    func start() {
+        guard listener == nil else { return }
 
-        do {
-            // Fetch all replies for this loop
-            let fetched = try await FirebaseService.shared.getReplies(for: loop.id)
+        listener = Firestore.firestore()
+            .collection("loops")
+            .whereField("parentLoopId", isEqualTo: loop.id)
+            .order(by: "createdAt", descending: true)
+            .addSnapshotListener { [weak self] snapshot, error in
+                guard let self = self else { return }
+
+                if let error = error {
+                    // A listener stops after an error, so drop it and let a refresh start a new one
+                    self.listener?.remove()
+                    self.listener = nil
+                    self.errorMessage = error.localizedDescription
+                    self.isLoading = false
+                    return
+                }
+
+                guard let documents = snapshot?.documents else { return }
+
+                self.latestDocuments = documents
+                self.processReplyDocuments(documents)
+            }
+    }
+
+    /// Pull to refresh. Replies are already live, so this re-reads author profiles, or restarts the listener
+    /// if it stopped after an error.
+    func refresh() async {
+        guard listener != nil else {
+            start()
+            return
+        }
+        // Before the first snapshot there is nothing to rebuild, and an empty rebuild would end the loading state
+        guard !isLoading else { return }
+
+        FirebaseService.shared.invalidateUserCache()
+        processReplyDocuments(latestDocuments)
+        await snapshotTask?.value
+    }
+
+    /// Builds replies from `documents`. A newer snapshot cancels one that is still being processed.
+    private func processReplyDocuments(_ documents: [QueryDocumentSnapshot]) {
+        snapshotTask?.cancel()
+        snapshotTask = Task {
+            // Taken as is: snapshots already include this device's pending writes, such as a like in flight
+            let newReplies = await FirebaseService.shared.loops(from: documents)
+            guard !Task.isCancelled else { return }
 
             var transaction = Transaction()
             transaction.disablesAnimations = true
             withTransaction(transaction) {
-                replies = fetched
-                rebuildThreads()
+                if newReplies != replies {
+                    replies = newReplies
+                    rebuildThreads()
+                }
             }
-        } catch {
-            errorMessage = error.localizedDescription
+            isLoading = false
         }
-
-        isLoading = false
     }
 
     /// Groups `replies` into threads: top-level replies newest first, each with its nested replies oldest first.
@@ -108,47 +155,6 @@ final class LoopDetailViewModel {
         }
     }
 
-    func refreshReplies() async {
-        isRefreshing = true
-        await loadReplies()
-        isRefreshing = false
-    }
-
-    func startListeningForReplies() {
-        listener?.remove()
-
-        listener = Firestore.firestore()
-            .collection("loops")
-            .whereField("parentLoopId", isEqualTo: loop.id)
-            .order(by: "createdAt", descending: true)
-            .addSnapshotListener { [weak self] snapshot, error in
-                guard let self = self else { return }
-
-                if let error = error {
-                    self.errorMessage = error.localizedDescription
-                    return
-                }
-
-                guard let documents = snapshot?.documents else { return }
-
-                Task {
-                    await self.processReplyDocuments(documents)
-                }
-            }
-    }
-
-    private func processReplyDocuments(_ documents: [QueryDocumentSnapshot]) async {
-        // Taken as is: snapshots already include this device's pending writes, such as a like in flight
-        let newReplies = await FirebaseService.shared.loops(from: documents)
-
-        var transaction = Transaction()
-        transaction.disablesAnimations = true
-        withTransaction(transaction) {
-            replies = newReplies
-            rebuildThreads()
-        }
-    }
-
     // MARK: - Compose Actions
 
     func showReplyCompose() {
@@ -173,7 +179,7 @@ final class LoopDetailViewModel {
     }
 
     func postReply() async {
-        guard composeDraft.isValid, composeDraft.isWithinCharacterLimit else { return }
+        guard composeDraft.isValid, composeDraft.isWithinCharacterLimit, !isPosting else { return }
 
         isPosting = true
 
@@ -186,11 +192,8 @@ final class LoopDetailViewModel {
                 replyToReplyId: composeDraft.replyToReplyId
             )
 
-            // Success - clear the compose state
+            // Success - clear the compose state. The listener shows the new reply as soon as it is written.
             hideCompose()
-
-            // Refresh replies to show the new one
-            await loadReplies()
 
             // Notify parent that replies changed
             onRepliesChanged?()

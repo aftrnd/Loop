@@ -376,7 +376,7 @@ struct LoopDetailView: View {
                 }
             }
             .refreshable {
-                await viewModel.refreshReplies()
+                await viewModel.refresh()
             }
         }
         .sheet(isPresented: $viewModel.showingCompose) {
@@ -405,8 +405,7 @@ struct LoopDetailView: View {
             }
         }
         .task {
-            await viewModel.loadReplies()
-            viewModel.startListeningForReplies()
+            viewModel.start()
         }
     }
 }
