@@ -1672,113 +1672,12 @@ struct ProfileView: View {
         }
     }
     
-    private var profilePostsTab: some View {
-        profileFeedView(loops: feedViewModel.posts, isLoading: feedViewModel.isLoadingPosts, onRefresh: {
-            await feedViewModel.refreshPosts()
-        })
-    }
-    
-    private var profileLikesTab: some View {
-        profileFeedView(loops: feedViewModel.likedPosts, isLoading: feedViewModel.isLoadingLikes, onRefresh: {
-            await feedViewModel.refreshLikedPosts()
-        })
-    }
-    
     private var profilePostsTabUnified: some View {
         profileFeedViewUnified(loops: feedViewModel.posts, isLoading: feedViewModel.isLoadingPosts)
     }
     
     private var profileLikesTabUnified: some View {
         profileFeedViewUnified(loops: feedViewModel.likedPosts, isLoading: feedViewModel.isLoadingLikes)
-    }
-    
-    private func profileFeedView(loops: [Loop], isLoading: Bool, onRefresh: @escaping () async -> Void) -> some View {
-        Group {
-            if isLoading && loops.isEmpty {
-                VStack(spacing: 16) {
-                    ProgressView()
-                    Text("Loading...")
-                        .foregroundColor(.secondary)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding(.top, 100)
-                .background(Color(.systemBackground))
-            } else if loops.isEmpty {
-                VStack(spacing: 16) {
-                    Image(systemName: selectedTab == .posts ? "square.and.pencil" : "heart")
-                        .font(.system(size: 50))
-                        .foregroundColor(.secondary)
-                    Text(selectedTab == .posts ? "No posts yet" : "No likes yet")
-                        .font(.headline)
-                        .foregroundColor(.secondary)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding(.top, 100)
-                .background(Color(.systemBackground))
-            } else {
-                // Use FeedListView for consistency with HomeView
-                // Pass 0 for topContentMargin since we don't have a nav bar - content should start naturally below tabs
-                FeedListView(
-                    coordinateSpaceName: "profileFeed",
-                    onRefresh: onRefresh,
-                    scrollOffset: .constant(0),
-                    contentHeight: .constant(0),
-                    scrollViewHeight: .constant(0),
-                    topContentMargin: 0
-                ) {
-                    // Posts section with dividers (exact same structure as HomeView)
-                    ForEach(Array(loops.enumerated()), id: \.element.id) { index, loop in
-                        VStack(spacing: 0) {
-                            // PostCard with same padding as HomeView
-                            PostCard(
-                                loop: loop,
-                                isLiked: feedViewModel.isLikedByCurrentUser(loop),
-                                onLike: {
-                                    Task {
-                                        let wasLiked = feedViewModel.isLikedByCurrentUser(loop)
-                                        
-                                        do {
-                                            if wasLiked {
-                                                try await FirebaseService.shared.unlikeLoop(loop.id)
-                                                // Update local state after successful unlike
-                                                feedViewModel.updateLoopLikeState(loopId: loop.id, isLiked: false)
-                                            } else {
-                                                try await FirebaseService.shared.likeLoop(loop.id)
-                                                // Update local state after successful like
-                                                feedViewModel.updateLoopLikeState(loopId: loop.id, isLiked: true)
-                                            }
-                                        } catch {
-                                            print("❌ Error toggling like: \(error.localizedDescription)")
-                                        }
-                                    }
-                                },
-                                onComment: {
-                                    // Handle comment tap
-                                },
-                                onDelete: feedViewModel.canDeleteLoop(loop) ? {
-                                    Task {
-                                        await feedViewModel.deleteLoop(loop)
-                                    }
-                                } : nil,
-                                onAvatarTap: nil,
-                                showDebugOverlays: showLayoutDebugOverlays
-                            )
-                            .padding(.top, index == 0 ? 0 : 5)
-                            .padding(.bottom, index == loops.count - 1 ? 0 : 5)
-                            
-                            // Divider between posts (exact same as HomeView)
-                            if index < loops.count - 1 {
-                                PostDivider()
-                            }
-                        }
-                        .listRowSeparator(.hidden)
-                        .listRowBackground(Color.clear)
-                        .listRowInsets(EdgeInsets(top: 0, leading: 10, bottom: 0, trailing: 10))
-                    }
-                }
-                .background(Color(.systemBackground))
-            }
-        }
     }
     
     private func profileFeedViewUnified(loops: [Loop], isLoading: Bool) -> some View {

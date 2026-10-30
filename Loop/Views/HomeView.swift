@@ -3,10 +3,7 @@ import SwiftUI
 /// HomeView: Home feed using modular component architecture
 /// Built with atomic components (PostHeader, PostContent, PostActions) + composite (PostCard)
 struct HomeView: View {
-    @StateObject private var viewModel = HomeFeedViewModel()
-    @State private var scrollOffset: CGFloat = 0
-    @State private var contentHeight: CGFloat = 0
-    @State private var scrollViewHeight: CGFloat = 0
+    @State private var viewModel = HomeFeedViewModel()
     @State private var profileUserToShow: ProfileUser?
     @State private var loopToShowDetail: Loop?
     
@@ -57,6 +54,9 @@ struct HomeView: View {
                 }
                 .toolbarBackground(.automatic, for: .navigationBar)
         }
+        .task {
+            viewModel.start()
+        }
         .sheet(isPresented: $viewModel.showingCompose) {
             ComposeLoopView(
                 draft: $viewModel.composeDraft,
@@ -83,7 +83,7 @@ struct HomeView: View {
                 }
             )
         }
-        .alert("Error", isPresented: .constant(viewModel.errorMessage != nil)) {
+        .alert("Error", isPresented: errorAlertBinding) {
             Button("OK") {
                 viewModel.clearError()
             }
@@ -94,17 +94,24 @@ struct HomeView: View {
         }
     }
     
+    private var errorAlertBinding: Binding<Bool> {
+        Binding(
+            get: { viewModel.errorMessage != nil },
+            set: { isPresented in
+                if !isPresented {
+                    viewModel.clearError()
+                }
+            }
+        )
+    }
+    
     // MARK: - Feed Content
     
     private var feedContent: some View {
         FeedListView(
-            coordinateSpaceName: "home2Feed",
             onRefresh: {
                 await viewModel.refreshFeed()
-            },
-            scrollOffset: $scrollOffset,
-            contentHeight: $contentHeight,
-            scrollViewHeight: $scrollViewHeight
+            }
         ) {
             if viewModel.isLoading && viewModel.loops.isEmpty {
                 loadingView
@@ -120,8 +127,13 @@ struct HomeView: View {
     
     @ViewBuilder
     private var postsSection: some View {
-        ForEach(Array(viewModel.loops.enumerated()), id: \.element.id) { index, loop in
+        let firstLoopId = viewModel.loops.first?.id
+        let lastLoopId = viewModel.loops.last?.id
+        
+        ForEach(viewModel.loops) { loop in
             let replies = viewModel.replyPreviews[loop.id]
+            let isFirst = loop.id == firstLoopId
+            let isLast = loop.id == lastLoopId
             
             VStack(spacing: 0) {
                 // Single PostCard handles both cases
@@ -167,11 +179,11 @@ struct HomeView: View {
                     },
                     showDebugOverlays: showLayoutDebugOverlays
                 )
-                .padding(.top, index == 0 ? 0 : 5)
-                .padding(.bottom, index == viewModel.loops.count - 1 ? 0 : 5)
+                .padding(.top, isFirst ? 0 : 5)
+                .padding(.bottom, isLast ? 0 : 5)
                 
                 // Divider between posts
-                if index < viewModel.loops.count - 1 {
+                if !isLast {
                     PostDivider()
                 }
             }
@@ -180,7 +192,7 @@ struct HomeView: View {
             .listRowInsets(EdgeInsets(top: 0, leading: 10, bottom: 0, trailing: 10))
             .onAppear {
                 // Load more content when near the end
-                if loop.id == viewModel.loops.last?.id {
+                if isLast {
                     Task {
                         await viewModel.loadMoreContent()
                     }
@@ -189,7 +201,7 @@ struct HomeView: View {
         }
         
         // Loading more indicator
-        if viewModel.isLoading && !viewModel.loops.isEmpty {
+        if viewModel.isLoadingMore {
             HStack {
                 Spacer()
                 ProgressView()

@@ -4,11 +4,16 @@ import FirebaseStorage
 import FirebaseFunctions
 import Foundation
 import UIKit
+import os
 
 class FirebaseService {
     static let shared = FirebaseService()
     private let db = Firestore.firestore()
     private let storage = Storage.storage()
+    private let logger = Logger(subsystem: "com.nejack.Loop", category: "FirebaseService")
+
+    /// Author profiles fetched this session, keyed by user ID. Shared by every feed so a profile is read once.
+    private var userCache: [String: User] = [:]
 
     private init() {}
 
@@ -32,16 +37,46 @@ class FirebaseService {
         
         guard let data = doc.data() else { return nil }
         
-        // Parse badge type from string
-        let badgeType: BadgeType?
-        if let badgeString = data["badgeType"] as? String {
-            badgeType = BadgeType(rawValue: badgeString)
-        } else {
-            badgeType = nil
+        let user = Self.makeUser(id: userId, data: data)
+        userCache[userId] = user
+        return user
+    }
+    
+    /// Returns profiles for `ids`, reading from the session cache and fetching the rest in batched queries.
+    func users(withIds ids: [String]) async -> [String: User] {
+        let uniqueIds = Array(Set(ids))
+        let missingIds = uniqueIds.filter { userCache[$0] == nil }
+        
+        // Firestore allows up to 30 values in an `in` filter
+        for start in stride(from: 0, to: missingIds.count, by: 30) {
+            let batch = Array(missingIds[start..<min(start + 30, missingIds.count)])
+            do {
+                let snapshot = try await db.collection("users")
+                    .whereField(FieldPath.documentID(), in: batch)
+                    .getDocuments()
+                for document in snapshot.documents {
+                    userCache[document.documentID] = Self.makeUser(id: document.documentID, data: document.data())
+                }
+            } catch {
+                logger.error("Author profile fetch failed: \(error.localizedDescription, privacy: .public)")
+            }
         }
-
+        
+        return uniqueIds.reduce(into: [:]) { result, id in
+            result[id] = userCache[id]
+        }
+    }
+    
+    /// Drops cached author profiles so the next fetch reads fresh names and avatars.
+    func invalidateUserCache() {
+        userCache.removeAll()
+    }
+    
+    private static func makeUser(id: String, data: [String: Any]) -> User {
+        let badgeType = (data["badgeType"] as? String).flatMap(BadgeType.init(rawValue:))
+        
         return User(
-            id: userId,
+            id: id,
             phoneNumber: data["phoneNumber"] as? String ?? "",
             displayName: data["displayName"] as? String,
             username: data["username"] as? String,
@@ -168,6 +203,7 @@ class FirebaseService {
         
         if !updateData.isEmpty {
             try await userRef.updateData(updateData)
+            userCache[userId] = nil
         }
     }
     
@@ -219,6 +255,7 @@ class FirebaseService {
         // Update user document with avatar URL
         let userRef = db.collection("users").document(userId)
         try await userRef.updateData(["avatarURL": downloadURL.absoluteString])
+        userCache[userId] = nil
         
         return downloadURL.absoluteString
     }
@@ -255,6 +292,7 @@ class FirebaseService {
         // Update user document with banner URL
         let userRef = db.collection("users").document(userId)
         try await userRef.updateData(["bannerURL": downloadURL.absoluteString])
+        userCache[userId] = nil
         
         return downloadURL.absoluteString
     }
@@ -1189,54 +1227,10 @@ class FirebaseService {
     
     func getLoop(withId loopId: String) async throws -> Loop? {
         let doc = try await db.collection("loops").document(loopId).getDocument()
-        guard let data = doc.data() else { return nil }
+        guard let data = doc.data(), let loop = Self.parseLoop(id: doc.documentID, data: data) else { return nil }
         
-        guard let authorId = data["authorId"] as? String,
-              let content = data["content"] as? String,
-              let createdAtTimestamp = data["createdAt"] as? Timestamp else {
-            return nil
-        }
-        
-        // Parse media
-        let mediaArray = data["media"] as? [[String: Any]] ?? []
-        let media = mediaArray.compactMap { mediaData -> LoopMedia? in
-            guard let id = mediaData["id"] as? String,
-                  let typeString = mediaData["type"] as? String,
-                  let type = LoopMediaType(rawValue: typeString),
-                  let url = mediaData["url"] as? String else {
-                return nil
-            }
-            
-            return LoopMedia(
-                id: id,
-                type: type,
-                url: url,
-                thumbnailURL: mediaData["thumbnailURL"] as? String,
-                width: mediaData["width"] as? Double,
-                height: mediaData["height"] as? Double
-            )
-        }
-        
-        // Fetch author information
-        let author = try? await getUser(withId: authorId)
-        
-        return Loop(
-            id: doc.documentID,
-            authorId: authorId,
-            content: content,
-            media: media,
-            createdAt: createdAtTimestamp.dateValue(),
-            updatedAt: (data["updatedAt"] as? Timestamp)?.dateValue() ?? createdAtTimestamp.dateValue(),
-            likes: data["likes"] as? [String] ?? [],
-            replies: data["replies"] as? [String] ?? [],
-            isReply: data["isReply"] as? Bool ?? false,
-            parentLoopId: data["parentLoopId"] as? String,
-            replyToReplyId: data["replyToReplyId"] as? String,
-            authorDisplayName: author?.displayName,
-            authorUsername: author?.username,
-            authorAvatarURL: author?.avatarURL,
-            authorBadgeType: author?.badgeType
-        )
+        let authors = await users(withIds: [loop.authorId])
+        return loop.withAuthor(authors[loop.authorId])
     }
     
     func getReplies(for loopId: String) async throws -> [Loop] {
@@ -1245,26 +1239,26 @@ class FirebaseService {
             .order(by: "createdAt", descending: true) // Newest first (Reddit-style)
             .getDocuments()
         
-        var replies: [Loop] = []
-        for doc in snapshot.documents {
-            if let loop = try? await parseLoopFromDocument(doc) {
-                replies.append(loop)
-            }
-        }
-        
-        return replies
+        return await loops(from: snapshot.documents)
     }
     
-    private func parseLoopFromDocument(_ doc: QueryDocumentSnapshot) async throws -> Loop? {
-        let data = doc.data()
-        
+    // MARK: - Loop Parsing
+    
+    /// Builds loops from query documents and attaches author profiles fetched in one batch.
+    func loops(from documents: [QueryDocumentSnapshot]) async -> [Loop] {
+        let parsed = documents.compactMap { Self.parseLoop(id: $0.documentID, data: $0.data()) }
+        let authors = await users(withIds: parsed.map(\.authorId))
+        return parsed.map { $0.withAuthor(authors[$0.authorId]) }
+    }
+    
+    /// Parses a loop document without author details. Returns nil when required fields are missing.
+    static func parseLoop(id: String, data: [String: Any]) -> Loop? {
         guard let authorId = data["authorId"] as? String,
               let content = data["content"] as? String,
               let createdAtTimestamp = data["createdAt"] as? Timestamp else {
             return nil
         }
         
-        // Parse media
         let mediaArray = data["media"] as? [[String: Any]] ?? []
         let media = mediaArray.compactMap { mediaData -> LoopMedia? in
             guard let id = mediaData["id"] as? String,
@@ -1284,11 +1278,8 @@ class FirebaseService {
             )
         }
         
-        // Fetch author information
-        let author = try? await getUser(withId: authorId)
-        
         return Loop(
-            id: doc.documentID,
+            id: id,
             authorId: authorId,
             content: content,
             media: media,
@@ -1298,11 +1289,7 @@ class FirebaseService {
             replies: data["replies"] as? [String] ?? [],
             isReply: data["isReply"] as? Bool ?? false,
             parentLoopId: data["parentLoopId"] as? String,
-            replyToReplyId: data["replyToReplyId"] as? String,
-            authorDisplayName: author?.displayName,
-            authorUsername: author?.username,
-            authorAvatarURL: author?.avatarURL,
-            authorBadgeType: author?.badgeType
+            replyToReplyId: data["replyToReplyId"] as? String
         )
     }
     
@@ -1349,42 +1336,16 @@ class FirebaseService {
             .order(by: "createdAt", descending: true)
             .getDocuments()
         
-        var loops: [Loop] = []
-        for doc in snapshot.documents {
-            if let loop = try? await parseLoopFromDocument(doc) {
-                loops.append(loop)
-            }
-        }
-        
-        return loops
+        return await loops(from: snapshot.documents)
     }
     
-    /// Fetches all loops liked by a specific user
+    /// Fetches all loops liked by a specific user, newest first
     func getUserLikedLoops(userId: String) async throws -> [Loop] {
-        // Note: Firestore doesn't support querying arrays directly for "contains"
-        // We need to fetch all loops and filter client-side, or use a different data structure
-        // For now, we'll fetch all loops and filter (this is not efficient for large datasets)
-        // In production, you might want to maintain a separate collection of user likes
-        
+        // Sorted on the device rather than with `order(by:)`, which would need a composite index
         let snapshot = try await db.collection("loops")
-            .order(by: "createdAt", descending: true)
-            .limit(to: 1000) // Limit to prevent excessive reads
+            .whereField("likes", arrayContains: userId)
             .getDocuments()
         
-        var likedLoops: [Loop] = []
-        for doc in snapshot.documents {
-            let data = doc.data()
-            guard let likes = data["likes"] as? [String],
-                  likes.contains(userId) else {
-                continue
-            }
-            
-            if let loop = try? await parseLoopFromDocument(doc) {
-                likedLoops.append(loop)
-            }
-        }
-        
-        // Sort by creation date (most recent first)
-        return likedLoops.sorted { $0.createdAt > $1.createdAt }
+        return await loops(from: snapshot.documents).sorted { $0.createdAt > $1.createdAt }
     }
 }

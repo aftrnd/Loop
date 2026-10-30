@@ -148,13 +148,7 @@ class LoopDetailViewModel: ObservableObject {
     }
     
     private func processReplyDocuments(_ documents: [QueryDocumentSnapshot]) async {
-        var newReplies: [Loop] = []
-        
-        for doc in documents {
-            if let reply = await parseLoopFromDocument(doc) {
-                newReplies.append(reply)
-            }
-        }
+        let newReplies = await FirebaseService.shared.loops(from: documents)
         
         // Preserve optimistic states for replies with pending operations
         var mergedReplies: [Loop] = []
@@ -182,57 +176,6 @@ class LoopDetailViewModel: ObservableObject {
         
         // Re-organize threaded structure
         organizeThreadedReplies()
-    }
-    
-    private func parseLoopFromDocument(_ doc: QueryDocumentSnapshot) async -> Loop? {
-        let data = doc.data()
-        
-        guard let authorId = data["authorId"] as? String,
-              let content = data["content"] as? String,
-              let createdAtTimestamp = data["createdAt"] as? Timestamp else {
-            return nil
-        }
-        
-        // Parse media
-        let mediaArray = data["media"] as? [[String: Any]] ?? []
-        let media = mediaArray.compactMap { mediaData -> LoopMedia? in
-            guard let id = mediaData["id"] as? String,
-                  let typeString = mediaData["type"] as? String,
-                  let type = LoopMediaType(rawValue: typeString),
-                  let url = mediaData["url"] as? String else {
-                return nil
-            }
-            
-            return LoopMedia(
-                id: id,
-                type: type,
-                url: url,
-                thumbnailURL: mediaData["thumbnailURL"] as? String,
-                width: mediaData["width"] as? Double,
-                height: mediaData["height"] as? Double
-            )
-        }
-        
-        // Fetch author information
-        let author = try? await FirebaseService.shared.getUser(withId: authorId)
-        
-        return Loop(
-            id: doc.documentID,
-            authorId: authorId,
-            content: content,
-            media: media,
-            createdAt: createdAtTimestamp.dateValue(),
-            updatedAt: (data["updatedAt"] as? Timestamp)?.dateValue() ?? createdAtTimestamp.dateValue(),
-            likes: data["likes"] as? [String] ?? [],
-            replies: data["replies"] as? [String] ?? [],
-            isReply: data["isReply"] as? Bool ?? false,
-            parentLoopId: data["parentLoopId"] as? String,
-            replyToReplyId: data["replyToReplyId"] as? String,
-            authorDisplayName: author?.displayName,
-            authorUsername: author?.username,
-            authorAvatarURL: author?.avatarURL,
-            authorBadgeType: author?.badgeType
-        )
     }
     
     // MARK: - Compose Actions
