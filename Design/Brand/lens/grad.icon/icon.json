@@ -1,0 +1,7 @@
+{"fill-specializations":[{"value":{"solid":"extended-gray:1.00000,1.00000"}}],
+ "groups":[
+  {"layers":[{"name":"lens","image-name":"lens.svg","glass":true,"fill-specializations":[{"value":{"solid":"extended-gray:1.00000,0.00100"}}],"opacity-specializations":[{"value":1}],"position":{"scale":1,"translation-in-points":[0,0]}}],
+   "lighting":"individual","shadow":{"kind":"none","opacity":0},"specular":false,"translucency":{"enabled":true,"value":1},"refractivity":{"enabled":true,"depth":0.15,"strength":0.15}},
+  {"layers":[{"name":"ramp","image-name":"ramp.svg","glass":false,"opacity-specializations":[{"value":1}],"position":{"scale":1,"translation-in-points":[0,0]}}],
+   "lighting":"individual","shadow":{"kind":"none","opacity":0},"specular":false,"translucency":{"enabled":false,"value":0}}],
+ "supported-platforms":{"squares":"shared"}}
