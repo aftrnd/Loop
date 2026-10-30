@@ -18,6 +18,45 @@
       "blur-material" : 0.05,
       "layers" : [
         {
+          "blend-mode-specializations" : [
+            {
+              "value" : "normal"
+            },
+            {
+              "appearance" : "dark",
+              "value" : "plus-lighter"
+            }
+          ],
+          "glass" : false,
+          "hidden-specializations" : [
+            {
+              "value" : false
+            },
+            {
+              "appearance" : "tinted",
+              "value" : true
+            }
+          ],
+          "image-name" : "sheen.png",
+          "name" : "sheen",
+          "opacity-specializations" : [
+            {
+              "value" : 0.45
+            },
+            {
+              "appearance" : "dark",
+              "value" : 0.55
+            }
+          ],
+          "position" : {
+            "scale" : 0.5,
+            "translation-in-points" : [
+              0,
+              0
+            ]
+          }
+        },
+        {
           "fill-specializations" : [
             {
               "value" : {
