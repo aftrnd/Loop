@@ -934,17 +934,18 @@ class FirebaseService {
             loopData["replyToReplyId"] = replyToReplyId
         }
         
-        try await loopRef.setData(loopData)
-        
-        // If this is a reply, update the parent loop's replies array
+        // A reply and its entry in the parent's replies array are written together, so neither can land alone
+        let batch = db.batch()
+        batch.setData(loopData, forDocument: loopRef)
+
         if isReply, let parentLoopId = parentLoopId {
             let parentLoopRef = db.collection("loops").document(parentLoopId)
-            try await parentLoopRef.updateData([
+            batch.updateData([
                 "replies": FieldValue.arrayUnion([loopId])
-            ])
+            ], forDocument: parentLoopRef)
         }
-        
-        print("✅ Successfully created loop: \(loopId)")
+
+        try await batch.commit()
     }
     
     func likeLoop(_ loopId: String) async throws {
@@ -1005,8 +1006,6 @@ class FirebaseService {
         }
         
         try await batch.commit()
-        
-        print("✅ Successfully deleted loop: \(loopId) - nested replies will be cleaned up by Cloud Function")
     }
     
     func getLoop(withId loopId: String) async throws -> Loop? {
