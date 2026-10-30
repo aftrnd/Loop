@@ -32,9 +32,7 @@ struct HomeView: View {
                     }
                     
                     ToolbarItem(placement: .principal) {
-                        Text("Loop")
-                            .font(.headline)
-                            .fontWeight(.semibold)
+                        LoopWordmark()
                     }
                     
                     if showDebugOverlayButton {
