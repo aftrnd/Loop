@@ -20,6 +20,7 @@ final class ProfileFeedViewModel {
     
     let userId: String
     
+    private let currentUserId = Auth.auth().currentUser?.uid
     private let logger = Logger(subsystem: "com.nejack.Loop", category: "ProfileFeedViewModel")
     
     /// Tabs whose results are loaded. Each tab is fetched once, so switching back to it doesn't refetch.
@@ -48,7 +49,7 @@ final class ProfileFeedViewModel {
             loadedTabs.insert(tab)
         } catch {
             logger.error("Profile \(tab.rawValue, privacy: .public) load failed: \(error.localizedDescription, privacy: .public)")
-            errorMessage = error.localizedDescription
+            errorMessage = tab == .posts ? "Couldn't load posts. Please try again." : "Couldn't load likes. Please try again."
         }
     }
     
@@ -73,12 +74,12 @@ final class ProfileFeedViewModel {
     }
     
     func isLikedByCurrentUser(_ loop: Loop) -> Bool {
-        guard let currentUserId = Auth.auth().currentUser?.uid else { return false }
+        guard let currentUserId else { return false }
         return loop.likes.contains(currentUserId)
     }
     
     func canDeleteLoop(_ loop: Loop) -> Bool {
-        guard let currentUserId = Auth.auth().currentUser?.uid else { return false }
+        guard let currentUserId else { return false }
         return loop.authorId == currentUserId
     }
     
@@ -107,76 +108,50 @@ final class ProfileFeedViewModel {
     
     // MARK: - Like Operations
     
-    /// Updates a loop's like state in both posts and likedPosts arrays
-    func updateLoopLikeState(loopId: String, isLiked: Bool) {
-        guard let currentUserId = Auth.auth().currentUser?.uid else { return }
+    /// Flips the like locally, then writes it, and reverts if the write fails, as the home feed does.
+    /// Repeat taps read the current state rather than the row's captured copy, so they alternate.
+    func toggleLike(for loop: Loop) async {
+        guard let currentUserId else { return }
         
-        // Update in posts array
-        if let index = posts.firstIndex(where: { $0.id == loopId }) {
-            var updatedLoop = posts[index]
-            var newLikes = updatedLoop.likes
-            
-            if isLiked {
-                if !newLikes.contains(currentUserId) {
-                    newLikes.append(currentUserId)
-                }
-            } else {
-                newLikes.removeAll { $0 == currentUserId }
-            }
-            
-            updatedLoop = Loop(
-                id: updatedLoop.id,
-                authorId: updatedLoop.authorId,
-                content: updatedLoop.content,
-                media: updatedLoop.media,
-                createdAt: updatedLoop.createdAt,
-                updatedAt: updatedLoop.updatedAt,
-                likes: newLikes,
-                replies: updatedLoop.replies,
-                isReply: updatedLoop.isReply,
-                parentLoopId: updatedLoop.parentLoopId,
-                replyToReplyId: updatedLoop.replyToReplyId,
-                authorDisplayName: updatedLoop.authorDisplayName,
-                authorUsername: updatedLoop.authorUsername,
-                authorAvatarURL: updatedLoop.authorAvatarURL,
-                authorBadgeType: updatedLoop.authorBadgeType
-            )
-            
-            posts[index] = updatedLoop
+        let current = posts.first { $0.id == loop.id } ?? likedPosts.first { $0.id == loop.id } ?? loop
+        let wasLiked = current.likes.contains(currentUserId)
+        setLiked(!wasLiked, loopId: loop.id, userId: currentUserId)
+        
+        // Your own Likes tab gains or loses this post, so refetch it the next time it is shown
+        if userId == currentUserId {
+            loadedTabs.remove(.likes)
         }
         
-        // Update in likedPosts array
-        if let index = likedPosts.firstIndex(where: { $0.id == loopId }) {
-            var updatedLoop = likedPosts[index]
-            var newLikes = updatedLoop.likes
-            
-            if isLiked {
-                if !newLikes.contains(currentUserId) {
-                    newLikes.append(currentUserId)
-                }
+        do {
+            if wasLiked {
+                try await FirebaseService.shared.unlikeLoop(loop.id)
             } else {
-                newLikes.removeAll { $0 == currentUserId }
+                try await FirebaseService.shared.likeLoop(loop.id)
             }
-            
-            updatedLoop = Loop(
-                id: updatedLoop.id,
-                authorId: updatedLoop.authorId,
-                content: updatedLoop.content,
-                media: updatedLoop.media,
-                createdAt: updatedLoop.createdAt,
-                updatedAt: updatedLoop.updatedAt,
-                likes: newLikes,
-                replies: updatedLoop.replies,
-                isReply: updatedLoop.isReply,
-                parentLoopId: updatedLoop.parentLoopId,
-                replyToReplyId: updatedLoop.replyToReplyId,
-                authorDisplayName: updatedLoop.authorDisplayName,
-                authorUsername: updatedLoop.authorUsername,
-                authorAvatarURL: updatedLoop.authorAvatarURL,
-                authorBadgeType: updatedLoop.authorBadgeType
-            )
-            
-            likedPosts[index] = updatedLoop
+        } catch {
+            logger.error("Like change failed: \(error.localizedDescription, privacy: .public)")
+            setLiked(wasLiked, loopId: loop.id, userId: currentUserId)
+            errorMessage = "Couldn't update like. Please try again."
+        }
+    }
+    
+    /// Sets the like in both lists. Animated, as in the home feed, so the heart morphs and the count rolls.
+    private func setLiked(_ liked: Bool, loopId: String, userId: String) {
+        withAnimation(.snappy(duration: 0.3)) {
+            for index in posts.indices where posts[index].id == loopId && posts[index].likes.contains(userId) != liked {
+                if liked {
+                    posts[index].likes.append(userId)
+                } else {
+                    posts[index].likes.removeAll { $0 == userId }
+                }
+            }
+            for index in likedPosts.indices where likedPosts[index].id == loopId && likedPosts[index].likes.contains(userId) != liked {
+                if liked {
+                    likedPosts[index].likes.append(userId)
+                } else {
+                    likedPosts[index].likes.removeAll { $0 == userId }
+                }
+            }
         }
     }
 }

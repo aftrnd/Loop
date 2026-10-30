@@ -273,7 +273,10 @@ struct ProfileView: View {
     }
 
     private var profileNavigationStack: some View {
-        NavigationStack(path: $navigationPath) {
+        // Read during the body so the alert appears when either source sets an error
+        let errorMessage = actionError ?? feedViewModel.errorMessage
+        
+        return NavigationStack(path: $navigationPath) {
             profileGeometryContent
                 .modifier(ProfileNavigationModifiers(
                     isOwnProfile: isOwnProfile,
@@ -285,10 +288,10 @@ struct ProfileView: View {
                 .task {
                     await loadUser()
                 }
-                .alert("Error", isPresented: actionErrorBinding) {
+                .alert("Error", isPresented: errorAlertBinding(isPresented: errorMessage != nil)) {
                     Button("OK", role: .cancel) {}
                 } message: {
-                    Text(actionError ?? "")
+                    Text(errorMessage ?? "")
                 }
                 .presentationDetents(supportedDetents, selection: $currentDetent)
                 .presentationDragIndicator(.visible)
@@ -600,12 +603,14 @@ struct ProfileView: View {
         currentUser = user
     }
     
-    private var actionErrorBinding: Binding<Bool> {
+    /// Presents follow, message and feed errors in one alert; dismissing it clears them all.
+    private func errorAlertBinding(isPresented: Bool) -> Binding<Bool> {
         Binding(
-            get: { actionError != nil },
-            set: { isPresented in
-                if !isPresented {
+            get: { isPresented },
+            set: { newValue in
+                if !newValue {
                     actionError = nil
+                    feedViewModel.clearError()
                 }
             }
         )
@@ -1205,19 +1210,7 @@ private struct ProfileFeedSection: View {
                                 isLiked: viewModel.isLikedByCurrentUser(loop),
                                 onLike: {
                                     Task {
-                                        let wasLiked = viewModel.isLikedByCurrentUser(loop)
-                                        
-                                        do {
-                                            if wasLiked {
-                                                try await FirebaseService.shared.unlikeLoop(loop.id)
-                                                viewModel.updateLoopLikeState(loopId: loop.id, isLiked: false)
-                                            } else {
-                                                try await FirebaseService.shared.likeLoop(loop.id)
-                                                viewModel.updateLoopLikeState(loopId: loop.id, isLiked: true)
-                                            }
-                                        } catch {
-                                            print("❌ Error toggling like: \(error.localizedDescription)")
-                                        }
+                                        await viewModel.toggleLike(for: loop)
                                     }
                                 },
                                 onComment: {
