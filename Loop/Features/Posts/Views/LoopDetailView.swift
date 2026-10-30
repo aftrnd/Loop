@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct LoopDetailView: View {
-    @StateObject private var viewModel: LoopDetailViewModel
+    @State private var viewModel: LoopDetailViewModel
     @Environment(\.dismiss) private var dismiss
     @State private var profileUserToShow: ProfileUser?
     @State private var replyHeights: [String: CGFloat] = [:] // Store actual heights by reply ID
@@ -10,7 +10,7 @@ struct LoopDetailView: View {
     @AppStorage("showLayoutDebugOverlays") private var showDebugOverlay = false
     
     init(loop: Loop, onRepliesChanged: (() -> Void)? = nil) {
-        _viewModel = StateObject(wrappedValue: LoopDetailViewModel(loop: loop, onRepliesChanged: onRepliesChanged))
+        _viewModel = State(initialValue: LoopDetailViewModel(loop: loop, onRepliesChanged: onRepliesChanged))
     }
     
     // Helper function to calculate conversation line height

@@ -1,6 +1,5 @@
 import Foundation
 import SwiftUI
-import Combine
 import FirebaseFirestore
 import FirebaseAuth
 
@@ -22,29 +21,30 @@ struct ThreadedReply: Identifiable {
 }
 
 @MainActor
-class LoopDetailViewModel: ObservableObject {
-    @Published var loop: Loop
-    @Published var replies: [Loop] = [] // Raw replies from Firebase
-    @Published var threadedReplies: [ThreadedReply] = [] // Organized threaded structure
-    @Published var isLoading = false
-    @Published var isRefreshing = false
-    @Published var errorMessage: String?
+@Observable
+final class LoopDetailViewModel {
+    var loop: Loop
+    var replies: [Loop] = [] // Raw replies from Firebase
+    var threadedReplies: [ThreadedReply] = [] // Organized threaded structure
+    var isLoading = false
+    var isRefreshing = false
+    var errorMessage: String?
     
     // Compose state for replies
-    @Published var showingCompose = false
-    @Published var composeDraft = LoopDraft()
-    @Published var isPosting = false
+    var showingCompose = false
+    var composeDraft = LoopDraft()
+    var isPosting = false
     
     // Optimistic updates tracking for likes
-    @Published private(set) var pendingLikeOperations: Set<String> = []
-    private var completedLikeOperations: Set<String> = []
-    private var likeTimeoutTasks: [String: Task<Void, Never>] = [:]
+    private(set) var pendingLikeOperations: Set<String> = []
+    @ObservationIgnored private var completedLikeOperations: Set<String> = []
+    @ObservationIgnored private var likeTimeoutTasks: [String: Task<Void, Never>] = [:]
     private let operationTimeout: TimeInterval = 2.0
     
     // Callback for when replies change (to notify parent feed)
-    var onRepliesChanged: (() -> Void)?
+    @ObservationIgnored var onRepliesChanged: (() -> Void)?
     
-    private var listener: ListenerRegistration?
+    @ObservationIgnored private var listener: ListenerRegistration?
     
     init(loop: Loop, onRepliesChanged: (() -> Void)? = nil) {
         self.loop = loop
