@@ -5,6 +5,7 @@ struct MainTabView: View {
     @State private var chatsViewModel = ChatsListViewModel()
     @State private var selectedTab = "Home" // Default to Home tab
     @State private var photoViewerManager = PhotoViewerManager()
+    @AppStorage("showLayoutGrid") private var showLayoutGrid = false
     
     var filteredChats: [Chat] {
         if searchText.isEmpty {
@@ -120,6 +121,13 @@ struct MainTabView: View {
                 .ignoresSafeArea()
                 .zIndex(999) // Ensure it's on top of everything
             }
+            
+            #if DEBUG
+            if showLayoutGrid {
+                LayoutGridOverlay()
+                    .zIndex(1000)
+            }
+            #endif
         }
     }
 }
