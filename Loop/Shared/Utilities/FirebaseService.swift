@@ -229,25 +229,18 @@ class FirebaseService {
             throw NSError(domain: "FirebaseService", code: 2, userInfo: [NSLocalizedDescriptionKey: "No authenticated user"])
         }
         
-        // Resize image to max 512x512 for avatars (maintains aspect ratio)
-        guard let resizedImage = image.resizedForAvatar() else {
-            throw NSError(domain: "FirebaseService", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to resize image"])
-        }
-        
-        // Compress resized image to JPEG (0.8 quality for crisp results)
-        guard let imageData = resizedImage.jpegData(compressionQuality: 0.8) else {
-            throw NSError(domain: "FirebaseService", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to compress image"])
-        }
-        
+        // Scaled to fit 512x512 and encoded off the main actor
+        let encoded = try await ImageUploadEncoder.encode(.image(image), as: .avatar)
+
         // Create storage reference
         let storageRef = storage.reference()
         let avatarRef = storageRef.child("users/\(userId)/avatar.jpg")
-        
-        // Upload image
+
+        // Upload image. The path is reused for every new avatar, so it gets no long-lived cache header.
         let metadata = StorageMetadata()
         metadata.contentType = "image/jpeg"
-        
-        _ = try await avatarRef.putDataAsync(imageData, metadata: metadata)
+
+        _ = try await avatarRef.putDataAsync(encoded.data, metadata: metadata)
         
         // Get download URL
         let downloadURL = try await avatarRef.downloadURL()
@@ -266,25 +259,18 @@ class FirebaseService {
             throw NSError(domain: "FirebaseService", code: 2, userInfo: [NSLocalizedDescriptionKey: "No authenticated user"])
         }
         
-        // Resize image to max 1920x1080 for banners (maintains aspect ratio)
-        guard let resizedImage = image.resizedForBanner() else {
-            throw NSError(domain: "FirebaseService", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to resize image"])
-        }
-        
-        // Compress resized image to JPEG (0.85 quality for banners)
-        guard let imageData = resizedImage.jpegData(compressionQuality: 0.85) else {
-            throw NSError(domain: "FirebaseService", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to compress image"])
-        }
-        
+        // Scaled to fit 1920x1080 and encoded off the main actor
+        let encoded = try await ImageUploadEncoder.encode(.image(image), as: .banner)
+
         // Create storage reference
         let storageRef = storage.reference()
         let bannerRef = storageRef.child("users/\(userId)/banner.jpg")
-        
-        // Upload image
+
+        // Upload image. The path is reused for every new banner, so it gets no long-lived cache header.
         let metadata = StorageMetadata()
         metadata.contentType = "image/jpeg"
-        
-        _ = try await bannerRef.putDataAsync(imageData, metadata: metadata)
+
+        _ = try await bannerRef.putDataAsync(encoded.data, metadata: metadata)
         
         // Get download URL
         let downloadURL = try await bannerRef.downloadURL()
@@ -1091,37 +1077,36 @@ class FirebaseService {
         )
     }
     
-    /// Uploads a loop media file and returns the download URL
-    func uploadLoopMedia(_ image: UIImage, type: LoopMediaType) async throws -> LoopMedia {
+    /// Uploads a post photo, scaled to fit 2048x2048, and returns its media record
+    func uploadLoopMedia(_ source: UploadImageSource) async throws -> LoopMedia {
         guard let userId = Auth.auth().currentUser?.uid else {
             throw NSError(domain: "FirebaseService", code: 2, userInfo: [NSLocalizedDescriptionKey: "No authenticated user"])
         }
-        
-        // Compress image to JPEG (0.8 quality for posts)
-        guard let imageData = image.jpegData(compressionQuality: 0.8) else {
-            throw NSError(domain: "FirebaseService", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to compress image"])
-        }
-        
+
+        // Decoded, scaled and encoded off the main actor
+        let encoded = try await ImageUploadEncoder.encode(source, as: .post)
+
         // Create storage reference
         let storageRef = storage.reference()
         let mediaId = UUID().uuidString
         let mediaRef = storageRef.child("loops/\(userId)/\(mediaId).jpg")
-        
-        // Upload image
+
+        // Upload image. Every upload gets a new path that is never overwritten, so caches can keep it indefinitely.
         let metadata = StorageMetadata()
         metadata.contentType = "image/jpeg"
-        
-        _ = try await mediaRef.putDataAsync(imageData, metadata: metadata)
-        
+        metadata.cacheControl = "public, max-age=31536000, immutable"
+
+        _ = try await mediaRef.putDataAsync(encoded.data, metadata: metadata)
+
         // Get download URL
         let downloadURL = try await mediaRef.downloadURL()
-        
+
         return LoopMedia(
             id: mediaId,
-            type: type,
+            type: .image,
             url: downloadURL.absoluteString,
-            width: Double(image.size.width),
-            height: Double(image.size.height)
+            width: Double(encoded.pixelWidth),
+            height: Double(encoded.pixelHeight)
         )
     }
     

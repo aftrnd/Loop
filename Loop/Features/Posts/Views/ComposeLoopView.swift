@@ -268,11 +268,10 @@ struct ComposeLoopView: View {
         
         for photo in photos {
             do {
-                if let data = try await photo.loadTransferable(type: Data.self),
-                   let uiImage = UIImage(data: data) {
-                    
+                if let data = try await photo.loadTransferable(type: Data.self) {
+
                     // Upload to Firebase and get LoopMedia
-                    let loopMedia = try await FirebaseService.shared.uploadLoopMedia(uiImage, type: .image)
+                    let loopMedia = try await FirebaseService.shared.uploadLoopMedia(.data(data))
                     
                     // Add to draft
                     await MainActor.run {
@@ -293,7 +292,7 @@ struct ComposeLoopView: View {
         
         do {
             // Upload to Firebase and get LoopMedia
-            let loopMedia = try await FirebaseService.shared.uploadLoopMedia(image, type: .image)
+            let loopMedia = try await FirebaseService.shared.uploadLoopMedia(.image(image))
             
             // Add to draft
             await MainActor.run {
