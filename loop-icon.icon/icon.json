@@ -1,83 +1,100 @@
 {
-  "fill-specializations": [
+  "features" : [
+    "refractivity"
+  ],
+  "fill-specializations" : [
     {
-      "value": {
-        "solid": "extended-gray:1.00000,1.00000"
+      "value" : {
+        "solid" : "extended-gray:1.00000,1.00000"
       }
     },
     {
-      "appearance": "dark",
-      "value": {
-        "solid": "extended-gray:0.04314,1.00000"
-      }
+      "appearance" : "dark",
+      "value" : "system-dark"
     }
   ],
-  "groups": [
+  "groups" : [
     {
-      "name": "Echo",
-      "layers": [
+      "layers" : [
         {
-          "name": "echo",
-          "image-name": "echo.svg",
-          "glass": true,
-          "fill-specializations": [
+          "fill-specializations" : [
             {
-              "value": {
-                "solid": "extended-gray:0.04314,0.16000"
+              "value" : {
+                "solid" : "extended-gray:0.04314,0.16000"
               }
             },
             {
-              "appearance": "dark",
-              "value": {
-                "solid": "extended-gray:1.00000,0.14000"
+              "appearance" : "dark",
+              "value" : {
+                "solid" : "extended-gray:1.00000,0.14000"
               }
             },
             {
-              "appearance": "tinted",
-              "value": {
-                "solid": "extended-gray:1.00000,0.10000"
+              "appearance" : "tinted",
+              "value" : {
+                "solid" : "extended-gray:1.00000,0.10000"
               }
             }
-          ]
+          ],
+          "glass" : true,
+          "image-name" : "echo.svg",
+          "name" : "echo"
         }
       ],
-      "refractivity": {
-        "enabled": true,
-        "depth": 0.4,
-        "strength": 0.25
+      "name" : "Echo",
+      "refractivity" : {
+        "depth" : 0.4,
+        "enabled" : true,
+        "strength" : 0.25
+      },
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.3
       }
     },
     {
-      "name": "Said",
-      "layers": [
+      "layers" : [
         {
-          "name": "said",
-          "image-name": "said.svg",
-          "glass": true,
-          "fill-specializations": [
+          "fill-specializations" : [
             {
-              "value": {
-                "solid": "extended-gray:0.04314,1.00000"
+              "value" : {
+                "solid" : "extended-gray:0.04314,1.00000"
               }
             },
             {
-              "appearance": "dark",
-              "value": {
-                "solid": "extended-gray:1.00000,1.00000"
+              "appearance" : "dark",
+              "value" : {
+                "solid" : "extended-gray:1.00000,1.00000"
               }
             },
             {
-              "appearance": "tinted",
-              "value": {
-                "solid": "extended-gray:1.00000,1.00000"
+              "appearance" : "tinted",
+              "value" : {
+                "solid" : "extended-gray:1.00000,1.00000"
               }
             }
-          ]
+          ],
+          "glass" : true,
+          "image-name" : "said.svg",
+          "name" : "said"
         }
-      ]
+      ],
+      "name" : "Said",
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.3
+      }
     }
   ],
-  "supported-platforms": {
-    "squares": "shared"
+  "supported-platforms" : {
+    "squares" : "shared"
   }
 }
