@@ -1,207 +1,150 @@
 import Foundation
 import SwiftUI
 import FirebaseFirestore
-import UIKit
 import UserNotifications
+import os
 
 @MainActor
 @Observable
 final class ChatsListViewModel {
+    /// The pinned grid has two rows of three.
+    static let maxPinnedChats = 6
+
     private(set) var pinned: [Chat] = []
     private(set) var recent: [Chat] = []
     private(set) var isLoadingInitialData = true
-    private var chatListener: ListenerRegistration?
-    private let pinnedChatsKey = "pinnedChatIDs"
-    
-    // Computed property for total unread message count
+
     var totalUnreadCount: Int {
-        let allChats = pinned + recent
-        let total = allChats.reduce(0) { $0 + $1.unreadCount }
-        if total > 0 {
-            print("🔴 Total unread count: \(total)")
-            for chat in allChats where chat.unreadCount > 0 {
-                print("   - Chat '\(chat.displayTitle)': \(chat.unreadCount) unread")
-            }
-        }
-        
-        // Update app icon badge
-        updateAppBadge(count: total)
-        
-        return total
-    }
-    
-    // Update app icon badge count
-    private func updateAppBadge(count: Int) {
-        Task { @MainActor in
-            UNUserNotificationCenter.current().setBadgeCount(count)
-            print("📱 App badge count updated to: \(count)")
-        }
+        pinned.reduce(0) { $0 + $1.unreadCount } + recent.reduce(0) { $0 + $1.unreadCount }
     }
 
-    init() {
-        Task {
-            await loadInitialChats()
-        }
-        setupRealTimeUpdates()
+    var canPinMoreChats: Bool {
+        pinned.count < Self.maxPinnedChats
     }
 
-    // MARK: - Helper Methods
+    private let pinnedChatsKey = "pinnedChatIDs"
+    private let logger = Logger(subsystem: "com.nejack.Loop", category: "ChatsListViewModel")
 
-    @MainActor
+    @ObservationIgnored private var chatListener: ListenerRegistration?
+    @ObservationIgnored private var snapshotTask: Task<Void, Never>?
+    /// The latest snapshot from the listener, kept so pull to refresh can re-resolve profiles without a new read.
+    @ObservationIgnored private var latestDocuments: [QueryDocumentSnapshot]?
+    /// Every visible chat, newest first, as of the latest snapshot.
+    @ObservationIgnored private var chats: [Chat] = []
+    @ObservationIgnored private var pinnedIDs: Set<UUID> = []
+    @ObservationIgnored private var appliedBadgeCount: Int?
+
     deinit {
         chatListener?.remove()
     }
 
-    private func loadInitialChats() async {
-        isLoadingInitialData = true
-        print("🔵 Loading initial chat data...")
-        do {
-            let chats = try await FirebaseService.shared.getChats()
-            print("✅ Loaded \(chats.count) chats with user data")
-            mergeChats(chats)
-            applyStoredPinnedState()
-            isLoadingInitialData = false
-        } catch {
-            print("❌ Error loading initial chats: \(error)")
-            isLoadingInitialData = false
-        }
-    }
-    
-    private func loadChats() {
-        Task {
-            do {
-                let chats = try await FirebaseService.shared.getChats()
-                mergeChats(chats)
-                applyStoredPinnedState()
-            } catch {
-                print("Error loading chats: \(error)")
+    // MARK: - Loading
+
+    /// Starts the live listener on the user's chats. Safe to call again; it only starts once.
+    func start() {
+        guard chatListener == nil else { return }
+
+        pinnedIDs = loadPinnedIDs()
+        chatListener = FirebaseService.shared.listenForChats { [weak self] result in
+            guard let self else { return }
+
+            switch result {
+            case .success(let documents):
+                self.resolve(documents)
+            case .failure(let error):
+                self.logger.error("Chat listener failed: \(error.localizedDescription, privacy: .public)")
+                self.isLoadingInitialData = false
             }
         }
+
+        if chatListener == nil {
+            // Nobody is signed in, so there is nothing to load
+            isLoadingInitialData = false
+        }
     }
 
-    private func savePinnedChatsToStorage() {
-        let pinnedIDs = pinned.map { $0.id.uuidString }
-        UserDefaults.standard.set(pinnedIDs, forKey: pinnedChatsKey)
+    /// Re-reads the chat partners' profiles. The chats themselves are already live through the listener.
+    func refreshChats() async {
+        FirebaseService.shared.invalidateUserCache()
+        guard let latestDocuments else { return }
+        await resolve(latestDocuments).value
     }
 
+    /// Turns a snapshot into chats. A newer snapshot cancels one that is still waiting on profiles.
+    @discardableResult
+    private func resolve(_ documents: [QueryDocumentSnapshot]) -> Task<Void, Never> {
+        latestDocuments = documents
+        snapshotTask?.cancel()
 
-    private func applyStoredPinnedState() {
-        guard let pinnedIDs = UserDefaults.standard.stringArray(forKey: pinnedChatsKey) else {
-            return
+        let task = Task {
+            let chats = await FirebaseService.shared.chats(from: documents)
+            guard !Task.isCancelled else { return }
+            self.chats = chats
+            self.applyPinnedState()
+            self.isLoadingInitialData = false
         }
+        snapshotTask = task
+        return task
+    }
 
-        let uuids = pinnedIDs.compactMap { UUID(uuidString: $0) }
+    // MARK: - Pinning
 
-        // Only apply changes if there are actually stored pinned chats
-        if uuids.isEmpty {
-            return
-        }
-
-        // Create a set of all available chats for quick lookup
-        let allChats = recent + pinned
-
-        // Create dictionary with proper duplicate handling
-        var allChatDict: [UUID: Chat] = [:]
-        for chat in allChats {
-            allChatDict[chat.id] = chat  // Last one wins in case of duplicates
-        }
-
-        // Determine which chats should be pinned vs recent
+    /// Splits `chats` into pinned and recent, both newest first, and assigns only what changed.
+    private func applyPinnedState() {
         var newPinned: [Chat] = []
         var newRecent: [Chat] = []
 
-        for chat in allChats {
-            if uuids.contains(chat.id) {
-                // This chat should be pinned
+        for chat in chats {
+            if pinnedIDs.contains(chat.id) && newPinned.count < Self.maxPinnedChats {
                 newPinned.append(chat)
             } else {
-                // This chat should be in recents
                 newRecent.append(chat)
             }
         }
 
-        // Remove duplicates and sort by most recent message
-        newPinned = removeDuplicates(newPinned)
-            .sorted { $0.lastMessageTime > $1.lastMessageTime }
-        newRecent = removeDuplicates(newRecent)
-            .sorted { $0.lastMessageTime > $1.lastMessageTime }
-
-        // Only update if there are actually changes needed
-        let currentPinnedIDs = Set(pinned.map { $0.id })
-        let targetPinnedIDs = Set(newPinned.map { $0.id })
-
-        if currentPinnedIDs != targetPinnedIDs {
-            // Apply the changes
+        if newPinned != pinned {
             pinned = newPinned
+        }
+        if newRecent != recent {
             recent = newRecent
-
-            print("🔄 DEBUG: Applied stored pinned state - Pinned: \(pinned.count), Recent: \(recent.count)")
-        } else {
-            print("🔄 DEBUG: Stored pinned state already correct - no changes needed")
         }
+        updateAppBadge()
     }
 
-    func setupRealTimeUpdates() {
-        chatListener = FirebaseService.shared.listenForChats { [weak self] chats in
-            self?.mergeChats(chats)
-        }
+    func pinChat(_ chat: Chat) {
+        guard canPinMoreChats else { return }
+        pinnedIDs.insert(chat.id)
+        applyPinnedState()
+        savePinnedChatsToStorage()
     }
 
-    private func removeDuplicates(_ chats: [Chat]) -> [Chat] {
-        var seenIDs = Set<UUID>()
-        return chats.filter { chat in
-            if seenIDs.contains(chat.id) {
-                return false
-            } else {
-                seenIDs.insert(chat.id)
-                return true
-            }
-        }
+    func unpinChat(_ chat: Chat) {
+        pinnedIDs.remove(chat.id)
+        applyPinnedState()
+        savePinnedChatsToStorage()
     }
 
-
-    private func mergeChats(_ newChats: [Chat]) {
-        // Create dictionaries with proper duplicate handling
-        var newChatDict: [UUID: Chat] = [:]
-        for chat in newChats {
-            newChatDict[chat.id] = chat  // Last one wins for duplicates
-        }
-
-        // Create a dictionary of existing chats by ID for quick lookup
-        var existingChatDict: [UUID: Chat] = [:]
-        for chat in recent {
-            existingChatDict[chat.id] = chat  // Last one wins for duplicates
-        }
-
-        // Track if we actually made changes
-        var changesMade = false
-
-        // Merge new chats - update existing or add new
-        for (id, chat) in newChatDict {
-            existingChatDict[id] = chat
-            changesMade = true
-        }
-
-        // Only update if we actually made changes
-        if changesMade {
-            // Update the recent array with merged chats, sorted by most recent message
-            recent = removeDuplicates(Array(existingChatDict.values))
-                .sorted { $0.lastMessageTime > $1.lastMessageTime }
-
-            // Also update pinned chats if they exist in the new data
-            var pinnedChatDict: [UUID: Chat] = [:]
-            for chat in pinned {
-                pinnedChatDict[chat.id] = chat
-            }
-            for (id, chat) in newChatDict where pinnedChatDict[id] != nil {
-                pinnedChatDict[id] = chat
-            }
-            pinned = removeDuplicates(Array(pinnedChatDict.values))
-                .sorted { $0.lastMessageTime > $1.lastMessageTime }
-        }
+    private func loadPinnedIDs() -> Set<UUID> {
+        let stored = UserDefaults.standard.stringArray(forKey: pinnedChatsKey) ?? []
+        return Set(stored.compactMap(UUID.init(uuidString:)))
     }
 
-    // MARK: - Public Methods
+    private func savePinnedChatsToStorage() {
+        // Only chats the grid shows stay pinned
+        pinnedIDs = Set(pinned.map(\.id))
+        UserDefaults.standard.set(pinned.map(\.id.uuidString), forKey: pinnedChatsKey)
+    }
+
+    // MARK: - Badge
+
+    private func updateAppBadge() {
+        let count = totalUnreadCount
+        guard count != appliedBadgeCount else { return }
+        appliedBadgeCount = count
+        UNUserNotificationCenter.current().setBadgeCount(count)
+    }
+
+    // MARK: - Chat Actions
 
     func createChat(with phoneNumber: String, displayName: String) async throws {
         guard FirebaseService.shared.getCurrentUser()?.id != nil else {
@@ -210,12 +153,12 @@ final class ChatsListViewModel {
 
         // Format phone number to match Firebase format (assuming US: +1XXXXXXXXXX)
         let formattedPhone = formatPhoneNumber(phoneNumber)
-        
+
         // Look up user by phone number
         guard let otherUser = try await FirebaseService.shared.getUserByPhoneNumber(formattedPhone) else {
             throw NSError(domain: "ChatsListViewModel", code: 2, userInfo: [NSLocalizedDescriptionKey: "User with phone number \(phoneNumber) not found. They may need to sign up first."])
         }
-        
+
         // Use the actual display name from their profile, or fall back to generated name
         let chatTitle = otherUser.displayName ?? displayName
 
@@ -225,11 +168,11 @@ final class ChatsListViewModel {
         // Don't immediately add to local state - let the real-time listener handle it
         // This prevents duplicates and ensures consistency with database state
     }
-    
+
     private func formatPhoneNumber(_ phoneNumber: String) -> String {
         // Remove all non-digit characters
         let digits = phoneNumber.replacingOccurrences(of: "[^0-9]", with: "", options: .regularExpression)
-        
+
         // Validate we have enough digits for a US phone number
         guard digits.count == 10 else {
             // If already formatted with country code, return as is
@@ -238,83 +181,18 @@ final class ChatsListViewModel {
             }
             return phoneNumber // Return original if can't format
         }
-        
+
         // Format as +1XXXXXXXXXX for Firebase
         return "+1" + digits
     }
 
-    func refreshChats() async {
-        do {
-            print("🔄 Fetching fresh chat data from Firebase...")
-            let chats = try await FirebaseService.shared.getChats()
-            print("✅ Received \(chats.count) chats with fresh data")
-            
-            // Update display names, avatars, and latest messages
-            mergeChats(chats)
-            applyStoredPinnedState()
-            
-            // Small delay to ensure smooth refresh animation
-            try? await Task.sleep(nanoseconds: 300_000_000) // 0.3 seconds
-            
-            print("✅ Chats refreshed successfully")
-        } catch {
-            print("❌ Error refreshing chats: \(error)")
-        }
-    }
-    
     func deleteChat(withId id: UUID) async throws {
-        // Find the chat to get its ID string for database deletion
-        let chatToDelete = (pinned + recent).first { $0.id == id }
-        guard let chatId = chatToDelete?.id.uuidString else { return }
+        // Deleting hides the chat for this user; the listener then drops it as well
+        try await FirebaseService.shared.deleteChat(withId: id.uuidString)
 
-        // Delete from database
-        try await FirebaseService.shared.deleteChat(withId: chatId)
-
-        // Remove from local state
-        pinned.removeAll { $0.id == id }
-        recent.removeAll { $0.id == id }
-
-        // Save pinned state to UserDefaults (removes deleted chat from stored pins)
+        chats.removeAll { $0.id == id }
+        pinnedIDs.remove(id)
+        applyPinnedState()
         savePinnedChatsToStorage()
-    }
-    
-    func deletePinnedChats(at offsets: IndexSet) {
-        pinned.remove(atOffsets: offsets)
-        savePinnedChatsToStorage()
-    }
-    
-    func deleteRecentChats(at offsets: IndexSet) {
-        recent.remove(atOffsets: offsets)
-    }
-
-    func pinChat(_ chat: Chat) {
-        // Remove from recent if it exists there
-        recent.removeAll { $0.id == chat.id }
-
-        // Add to pinned if not already there
-        if !pinned.contains(where: { $0.id == chat.id }) {
-            pinned.append(chat)
-        }
-
-        // Save pinned state to UserDefaults
-        savePinnedChatsToStorage()
-    }
-
-    func unpinChat(_ chat: Chat) {
-        // Remove from pinned
-        pinned.removeAll { $0.id == chat.id }
-
-        // Add to recent and re-sort by most recent message
-        recent.removeAll { $0.id == chat.id } // Remove if it exists
-        recent.append(chat)
-        recent.sort { $0.lastMessageTime > $1.lastMessageTime }
-
-        // Save pinned state to UserDefaults
-        savePinnedChatsToStorage()
-    }
-
-    func isChatPinned(_ chat: Chat) -> Bool {
-        pinned.contains(where: { $0.id == chat.id })
     }
 }
-

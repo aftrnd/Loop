@@ -468,78 +468,60 @@ class FirebaseService {
         print("✅ Chat hidden for user: \(currentUserId)")
     }
 
-    func getChats() async throws -> [Chat] {
+    // MARK: - Chat Parsing
+
+    /// Builds a chat from its document. Returns nil for malformed chats and for chats the current user has hidden.
+    /// The other participant's profile fields are filled in by `chats(from:)`.
+    static func parseChat(id documentID: String, data: [String: Any], currentUserId: String) -> Chat? {
+        guard let title = data["title"] as? String else { return nil }
+
+        // Deleting a chat hides it for that user; the conversation stays in Firestore
+        let hiddenFor = data["hiddenFor"] as? [String] ?? []
+        guard !hiddenFor.contains(currentUserId) else { return nil }
+
+        let chatId = data["id"] as? String ?? documentID
+        let participants = data["participants"] as? [String] ?? []
+        let lastMessageTime = data["lastMessageTime"] as? Timestamp
+
+        // `createChat` stores a placeholder preview. Until the first message, lastMessageTime still equals
+        // createdAt, and the list shows no preview for those chats.
+        let hasMessages = lastMessageTime != (data["createdAt"] as? Timestamp)
+        let lastMessage = hasMessages ? (data["lastMessage"] as? String ?? "") : ""
+
+        return Chat(
+            id: UUID(uuidString: chatId) ?? UUID(),
+            title: title,
+            lastMessagePreview: lastMessage,
+            unreadCount: data["unreadCount_\(currentUserId)"] as? Int ?? 0,
+            messages: [],
+            lastMessageTime: lastMessageTime?.dateValue() ?? Date(),
+            participants: participants,
+            otherParticipantId: participants.first { $0 != currentUserId }
+        )
+    }
+
+    /// Parses chat documents and attaches each 1:1 partner's profile, read through the batched user cache.
+    func chats(from documents: [QueryDocumentSnapshot]) async -> [Chat] {
         guard let currentUserId = Auth.auth().currentUser?.uid else { return [] }
 
-        let snapshot = try await db.collection("chats")
-            .whereField("participants", arrayContains: currentUserId)
-            .order(by: "lastMessageTime", descending: true)
-            .getDocuments()
-
-        // Use async map to fetch user data for 1:1 chats
-        var chats: [Chat] = []
-        for doc in snapshot.documents {
-            let data = doc.data()
-            guard let title = data["title"] as? String else {
-                continue
-            }
-            
-            // Skip chats that are hidden for this user
-            let hiddenFor = data["hiddenFor"] as? [String] ?? []
-            if hiddenFor.contains(currentUserId) {
-                continue
-            }
-
-            // Read per-user unread count
-            let unreadFieldName = "unreadCount_\(currentUserId)"
-            let unreadCount = data[unreadFieldName] as? Int ?? 0
-            let chatId = data["id"] as? String ?? doc.documentID
-            let participants = data["participants"] as? [String] ?? []
-            let otherParticipantId = participants.first { $0 != currentUserId }
-            
-            if unreadCount > 0 {
-                print("📩 Chat \(title) has \(unreadCount) unread messages")
-            }
-            
-            // Fetch the actual most recent message from messages subcollection
-            let messagesSnapshot = try? await db.collection("chats")
-                .document(chatId)
-                .collection("messages")
-                .order(by: "timestamp", descending: true)
-                .limit(to: 1)
-                .getDocuments()
-            
-            let lastMessage = messagesSnapshot?.documents.first?.data()["content"] as? String ?? ""
-            let timestamp = (messagesSnapshot?.documents.first?.data()["timestamp"] as? Timestamp)?.dateValue() ?? (data["lastMessageTime"] as? Timestamp)?.dateValue() ?? Date()
-            
-            // For 1:1 chats, fetch the other user's current display name and avatar
-            var otherParticipantDisplayName: String?
-            var otherParticipantAvatarURL: String?
-            var otherParticipantBadgeType: BadgeType?
-            if participants.count == 2, let otherUserId = otherParticipantId {
-                if let otherUser = try? await getUser(withId: otherUserId) {
-                    otherParticipantDisplayName = otherUser.displayName
-                    otherParticipantAvatarURL = otherUser.avatarURL
-                    otherParticipantBadgeType = otherUser.badgeType
-                }
-            }
-
-            chats.append(Chat(
-                id: UUID(uuidString: chatId) ?? UUID(),
-                title: title,
-                lastMessagePreview: lastMessage,
-                unreadCount: unreadCount,
-                messages: [],
-                lastMessageTime: timestamp,
-                participants: participants,
-                otherParticipantId: otherParticipantId,
-                otherParticipantDisplayName: otherParticipantDisplayName,
-                otherParticipantAvatarURL: otherParticipantAvatarURL,
-                otherParticipantBadgeType: otherParticipantBadgeType
-            ))
+        let parsed = documents.compactMap {
+            Self.parseChat(id: $0.documentID, data: $0.data(), currentUserId: currentUserId)
         }
-        
-        return chats
+        let partnerIds = parsed.compactMap { $0.participants.count == 2 ? $0.otherParticipantId : nil }
+        let partners = await users(withIds: partnerIds)
+
+        return parsed.map { chat in
+            guard chat.participants.count == 2,
+                  let partnerId = chat.otherParticipantId,
+                  let partner = partners[partnerId] else {
+                return chat
+            }
+            var chat = chat
+            chat.otherParticipantDisplayName = partner.displayName
+            chat.otherParticipantAvatarURL = partner.avatarURL
+            chat.otherParticipantBadgeType = partner.badgeType
+            return chat
+        }
     }
 
     // MARK: - Message Operations
@@ -891,91 +873,19 @@ class FirebaseService {
 
     // MARK: - Real-time Listeners
 
-    func listenForChats(completion: @escaping ([Chat]) -> Void) -> ListenerRegistration {
-        guard let currentUserId = Auth.auth().currentUser?.uid else {
-            return db.collection("chats").addSnapshotListener { _, _ in }
-        }
+    /// Listens to the current user's chats, newest first, and hands over the raw documents.
+    /// Resolve them with `chats(from:)`. Returns nil when nobody is signed in.
+    func listenForChats(onSnapshot: @escaping (Result<[QueryDocumentSnapshot], Error>) -> Void) -> ListenerRegistration? {
+        guard let currentUserId = Auth.auth().currentUser?.uid else { return nil }
 
         return db.collection("chats")
             .whereField("participants", arrayContains: currentUserId)
             .order(by: "lastMessageTime", descending: true)
-            .addSnapshotListener { [weak self] snapshot, error in
-                guard let self = self else { return }
-                guard let documents = snapshot?.documents else {
-                    print("Error fetching chats: \(error?.localizedDescription ?? "Unknown error")")
-                    return
-                }
-
-                // Parse basic chat data first
-                let chatData: [(data: [String: Any], doc: QueryDocumentSnapshot)] = documents.compactMap { doc in
-                    let data = doc.data()
-                    guard data["title"] != nil else {
-                        return nil
-                    }
-                    return (data: data, doc: doc)
-                }
-                
-                // Fetch user data and latest message asynchronously for each chat
-                Task {
-                    var chats: [Chat] = []
-                    
-                    for (data, doc) in chatData {
-                        guard let title = data["title"] as? String else {
-                            continue
-                        }
-                        
-                        // Skip chats that are hidden for this user
-                        let hiddenFor = data["hiddenFor"] as? [String] ?? []
-                        if hiddenFor.contains(currentUserId) {
-                            continue
-                        }
-                        
-                        // Read per-user unread count
-                        let unreadFieldName = "unreadCount_\(currentUserId)"
-                        let unreadCount = data[unreadFieldName] as? Int ?? 0
-                        let chatId = data["id"] as? String ?? doc.documentID
-                        let participants = data["participants"] as? [String] ?? []
-                        let otherParticipantId = participants.first { $0 != currentUserId }
-                        
-                        // Fetch the actual most recent message from messages subcollection
-                        let messagesSnapshot = try? await self.db.collection("chats")
-                            .document(chatId)
-                            .collection("messages")
-                            .order(by: "timestamp", descending: true)
-                            .limit(to: 1)
-                            .getDocuments()
-                        
-                        let lastMessage = messagesSnapshot?.documents.first?.data()["content"] as? String ?? ""
-                        let timestamp = (messagesSnapshot?.documents.first?.data()["timestamp"] as? Timestamp)?.dateValue() ?? (data["lastMessageTime"] as? Timestamp)?.dateValue() ?? Date()
-                        
-                        // For 1:1 chats, fetch the other user's current display name and avatar
-                        var otherParticipantDisplayName: String?
-                        var otherParticipantAvatarURL: String?
-                        var otherParticipantBadgeType: BadgeType?
-                        if participants.count == 2, let otherUserId = otherParticipantId {
-                            if let otherUser = try? await self.getUser(withId: otherUserId) {
-                                otherParticipantDisplayName = otherUser.displayName
-                                otherParticipantAvatarURL = otherUser.avatarURL
-                                otherParticipantBadgeType = otherUser.badgeType
-                            }
-                        }
-                        
-                        chats.append(Chat(
-                            id: UUID(uuidString: chatId) ?? UUID(),
-                            title: title,
-                            lastMessagePreview: lastMessage,
-                            unreadCount: unreadCount,
-                            messages: [],
-                            lastMessageTime: timestamp,
-                            participants: participants,
-                            otherParticipantId: otherParticipantId,
-                            otherParticipantDisplayName: otherParticipantDisplayName,
-                            otherParticipantAvatarURL: otherParticipantAvatarURL,
-                            otherParticipantBadgeType: otherParticipantBadgeType
-                        ))
-                    }
-                    
-                    completion(chats)
+            .addSnapshotListener { snapshot, error in
+                if let error {
+                    onSnapshot(.failure(error))
+                } else {
+                    onSnapshot(.success(snapshot?.documents ?? []))
                 }
             }
     }

@@ -29,7 +29,7 @@ struct MainTabView: View {
                 Tab("Messages", systemImage: "message", value: "Messages") {
                     ChatsListView()
                 }
-                .badge(chatsViewModel.totalUnreadCount > 0 ? chatsViewModel.totalUnreadCount : 0)
+                .badge(chatsViewModel.totalUnreadCount)
                 
                 // Search Tab - Uses .search role for native iOS 26 behavior
                 Tab("Search", systemImage: "magnifyingglass", value: "Search", role: .search) {
@@ -103,6 +103,7 @@ struct MainTabView: View {
             // button, apart from the other tabs, with this set (checked in the iOS 27.0 simulator).
             .tabViewSearchActivation(.searchTabSelection)
             .environment(photoViewerManager)
+            .environment(chatsViewModel)
             
             // Global photo viewer overlay - displays at root level for true full screen
             if photoViewerManager.isPresented {
@@ -128,6 +129,10 @@ struct MainTabView: View {
                     .zIndex(1000)
             }
             #endif
+        }
+        .task {
+            // One chat listener for the whole app: it feeds the Messages tab, its badge and search
+            chatsViewModel.start()
         }
     }
 }

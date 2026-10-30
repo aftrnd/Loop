@@ -2,11 +2,7 @@ import SwiftUI
 import UIKit
 
 struct ChatsListView: View {
-    @State private var viewModel = ChatsListViewModel()
-    @State private var topDistance: CGFloat = 0
-    @State private var scrollOffset: CGFloat = 0
-    @State private var contentHeight: CGFloat = 0
-    @State private var scrollViewHeight: CGFloat = 0
+    @Environment(ChatsListViewModel.self) private var viewModel
     @State private var navigationPath = NavigationPath()
     @State private var showNewMessage = false
     @State private var showProfile = false
@@ -22,13 +18,7 @@ struct ChatsListView: View {
     }
     
     // MARK: - Methods
-    
-    private func refreshChats() async {
-        print("🔄 Pull-to-refresh triggered...")
-        await viewModel.refreshChats()
-        print("✅ Pull-to-refresh completed")
-    }
-    
+
     private var mainView: some View {
         NavigationStack(path: $navigationPath) {
             ZStack {
@@ -128,19 +118,12 @@ struct ChatsListView: View {
     private var chatListView: some View {
         GeometryReader { scrollGeometry in
             List {
-                // Scroll sentinel
-                GeometryReader { geo in
-                    let topMinY = geo.frame(in: .named("loopScroll")).minY
-                    Color.clear
-                        .onChange(of: topMinY) { _, newValue in
-                            let offset = max(0, -newValue)
-                            scrollOffset = offset
-                        }
-                }
-                .frame(height: 0)
-                .listRowSeparator(.hidden)
-                .listRowBackground(Color.clear)
-                .listRowInsets(EdgeInsets())
+                // Zero-height first row, kept so the list's top spacing stays as designed
+                Color.clear
+                    .frame(height: 0)
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets())
                 // Show loading indicator while initial data loads
                 if viewModel.isLoadingInitialData {
                     HStack {
@@ -199,12 +182,14 @@ struct ChatsListView: View {
                     .listRowBackground(Color.clear)
                     .listRowInsets(EdgeInsets(top: 0, leading: 10, bottom: 0, trailing: 10))
                     .swipeActions(edge: .leading, allowsFullSwipe: false) {
-                        Button {
-                            viewModel.pinChat(chat)
-                        } label: {
-                            Image(systemName: "pin.fill")
+                        if viewModel.canPinMoreChats {
+                            Button {
+                                viewModel.pinChat(chat)
+                            } label: {
+                                Image(systemName: "pin.fill")
+                            }
+                            .tint(.yellow)
                         }
-                        .tint(.yellow)
                     }
                     .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                         Button {
@@ -221,11 +206,10 @@ struct ChatsListView: View {
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .listSectionSeparator(.hidden)
-            .coordinateSpace(name: "loopScroll")
             .scrollIndicators(.hidden)
             .contentMargins(.top, AppConstants.Layout.listContentTopMargin)
             .refreshable {
-                await refreshChats()
+                await viewModel.refreshChats()
             }
         }
     }
@@ -414,6 +398,7 @@ struct PinnedMessagesView: View {
     NavigationStack {
         ChatsListView()
     }
+    .environment(ChatsListViewModel())
 }
 
 
