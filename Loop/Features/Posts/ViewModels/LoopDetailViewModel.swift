@@ -2,6 +2,7 @@ import Foundation
 import SwiftUI
 import FirebaseFirestore
 import FirebaseAuth
+import os
 
 // MARK: - Threaded Reply Structure
 struct ThreadedReply: Identifiable {
@@ -37,8 +38,11 @@ final class LoopDetailViewModel {
     @ObservationIgnored var onRepliesChanged: (() -> Void)?
 
     private let currentUserId = Auth.auth().currentUser?.uid
+    private let logger = Logger(subsystem: "com.nejack.Loop", category: "LoopDetailViewModel")
 
     @ObservationIgnored private var listener: ListenerRegistration?
+    /// Keeps the main post's likes and reply count current, including this device's own writes.
+    @ObservationIgnored private var loopListener: ListenerRegistration?
     @ObservationIgnored private var snapshotTask: Task<Void, Never>?
     /// The documents from the latest snapshot, so a refresh can rebuild replies without another query.
     @ObservationIgnored private var latestDocuments: [QueryDocumentSnapshot] = []
@@ -52,15 +56,21 @@ final class LoopDetailViewModel {
 
     deinit {
         listener?.remove()
+        loopListener?.remove()
         snapshotTask?.cancel()
     }
 
     // MARK: - Data Loading
 
-    /// Starts the live listener on this loop's replies. It is the only source of replies: its first snapshot
-    /// loads them, and later snapshots carry new replies, likes and deletions, including this device's own.
-    /// Safe to call again; it only starts once.
+    /// Starts the live listeners on the main post and its replies. Safe to call again; each only starts once.
     func start() {
+        startRepliesListener()
+        startLoopListener()
+    }
+
+    /// The replies listener is the only source of replies: its first snapshot loads them, and later snapshots
+    /// carry new replies, likes and deletions, including this device's own.
+    private func startRepliesListener() {
         guard listener == nil else { return }
 
         listener = Firestore.firestore()
@@ -86,11 +96,51 @@ final class LoopDetailViewModel {
             }
     }
 
-    /// Pull to refresh. Replies are already live, so this re-reads author profiles, or restarts the listener
-    /// if it stopped after an error.
+    private func startLoopListener() {
+        guard loopListener == nil else { return }
+
+        loopListener = Firestore.firestore()
+            .collection("loops")
+            .document(loop.id)
+            .addSnapshotListener { [weak self] snapshot, error in
+                guard let self = self else { return }
+
+                if let error = error {
+                    // A listener stops after an error; the post keeps its last known state until a refresh
+                    self.loopListener?.remove()
+                    self.loopListener = nil
+                    self.logger.error("Post listener failed: \(error.localizedDescription, privacy: .public)")
+                    return
+                }
+
+                guard let snapshot, let data = snapshot.data(),
+                      let fresh = FirebaseService.parseLoop(id: snapshot.documentID, data: data) else { return }
+                self.applyMainLoop(fresh)
+            }
+    }
+
+    private func applyMainLoop(_ fresh: Loop) {
+        // The document has no author details, so the ones already shown are kept
+        var updated = fresh
+        updated.authorDisplayName = loop.authorDisplayName
+        updated.authorUsername = loop.authorUsername
+        updated.authorAvatarURL = loop.authorAvatarURL
+        updated.authorBadgeType = loop.authorBadgeType
+        guard updated != loop else { return }
+
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            loop = updated
+        }
+    }
+
+    /// Pull to refresh. Replies are already live, so this re-reads author profiles, or restarts a listener
+    /// that stopped after an error.
     func refresh() async {
+        startLoopListener()
         guard listener != nil else {
-            start()
+            startRepliesListener()
             return
         }
         // Before the first snapshot there is nothing to rebuild, and an empty rebuild would end the loading state
