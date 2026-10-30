@@ -23,6 +23,9 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         
         // Set Firebase Messaging delegate
         Messaging.messaging().delegate = self
+        
+        // Start the chat router's "OpenChat" observer before any notification tap can arrive
+        _ = NotificationNavigationManager.shared
         print("🔍 DEBUG: ✅ Firebase Messaging delegate set")
         
         // Request notification permissions for phone auth

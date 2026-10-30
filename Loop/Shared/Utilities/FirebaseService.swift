@@ -561,17 +561,6 @@ class FirebaseService {
                 "isSelfChatSent": true
             ], forDocument: messagesRef.document(sentMessageId))
 
-            // A tiny offset keeps the received copy after the sent one
-            let receivedMessageId = UUID().uuidString
-            batch.setData([
-                "id": receivedMessageId,
-                "content": content,
-                "timestamp": Timestamp(date: now.addingTimeInterval(0.001)),
-                "senderId": "self_received",
-                "isFromUser": false,
-                "isSelfChatReceived": true
-            ], forDocument: messagesRef.document(receivedMessageId))
-
             // Self-chats still count as unread, but send no push notification
             chatUpdate["unreadCount_\(currentUserId)"] = FieldValue.increment(Int64(1))
         } else {
@@ -591,6 +580,24 @@ class FirebaseService {
 
         batch.updateData(chatUpdate, forDocument: chatRef)
         try await batch.commit()
+
+        if isSelfChat {
+            // The received copy goes in its own write: its senderId is not the signed-in user, which the documented
+            // rules reject, and a rejection must not undo the sent copy above. A tiny offset keeps it second.
+            let receivedMessageId = UUID().uuidString
+            do {
+                try await messagesRef.document(receivedMessageId).setData([
+                    "id": receivedMessageId,
+                    "content": content,
+                    "timestamp": Timestamp(date: now.addingTimeInterval(0.001)),
+                    "senderId": "self_received",
+                    "isFromUser": false,
+                    "isSelfChatReceived": true
+                ])
+            } catch {
+                logger.error("Self-chat received copy failed: \(error.localizedDescription, privacy: .public)")
+            }
+        }
 
         if !isSelfChat {
             await sendMessageNotifications(chatId: chatId, participants: participants, content: content, senderId: currentUserId)
