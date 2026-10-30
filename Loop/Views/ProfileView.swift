@@ -670,11 +670,13 @@ struct ProfileView: View {
                             withAnimation(.easeInOut(duration: 0.35)) {
                                 ownershipHintOpacity = 1
                             }
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                                guard shouldShowOwnershipHint else { return }
-                                withAnimation(.easeInOut(duration: 0.5)) {
-                                    ownershipHintOpacity = 0.65
-                                }
+                        }
+                        // Settle to a quieter opacity after a second; cancelled if the hint goes away first
+                        .task {
+                            try? await Task.sleep(for: .seconds(1))
+                            guard !Task.isCancelled else { return }
+                            withAnimation(.easeInOut(duration: 0.5)) {
+                                ownershipHintOpacity = 0.65
                             }
                         }
                         .onDisappear {
@@ -976,35 +978,20 @@ struct ProfileView: View {
     }
     
     private func startMessage() async {
-        guard let targetUserId = userId else {
-            print("⚠️ startMessage: No target user ID provided")
-            return
-        }
+        guard let targetUserId = userId, currentUserId != nil, !isMessageLoading else { return }
         
-        guard Auth.auth().currentUser?.uid != nil else {
-            print("⚠️ startMessage: User not authenticated")
-            await MainActor.run {
-                isMessageLoading = false
-            }
-            return
-        }
-        
-        // Use already-loaded user data (much faster than fetching again!)
+        // Use already-loaded user data rather than fetching it again
         let targetUser = currentUser
         let chatTitle = targetUser?.displayName ?? "User"
         
-        print("💬 Starting message with user: \(targetUserId)")
-        await MainActor.run {
-            isMessageLoading = true
-        }
+        isMessageLoading = true
+        defer { isMessageLoading = false }
         
         do {
-            // Optimize: Use createChat which already checks for existing chats internally
-            // This is faster than calling findExistingChat + createChat separately
-            print("🔍 Finding or creating chat...")
+            // createChat already returns the existing chat with this user if there is one
             var chat = try await FirebaseService.shared.createChat(withUserId: targetUserId, title: chatTitle)
             
-            // Populate user data from already-loaded currentUser (no extra fetch needed!)
+            // Fill in the other participant from the loaded profile
             chat = Chat(
                 id: chat.id,
                 title: chat.title,
@@ -1019,19 +1006,10 @@ struct ProfileView: View {
                 otherParticipantBadgeType: targetUser?.badgeType ?? chat.otherParticipantBadgeType
             )
             
-            print("✅ Chat ready: \(chat.id.uuidString) with \(chatTitle)")
-            
-            // Navigate immediately
-            await MainActor.run {
-                navigationPath.append(ChatsRoute.conversation(chat))
-                isMessageLoading = false
-            }
+            navigationPath.append(ChatsRoute.conversation(chat))
         } catch {
-            print("❌ Error starting message with user \(targetUserId): \(error.localizedDescription)")
-            print("   Error type: \(type(of: error))")
-            await MainActor.run {
-                isMessageLoading = false
-            }
+            Self.logger.error("Opening a conversation failed: \(error.localizedDescription, privacy: .public)")
+            actionError = "Couldn't open the conversation. Please try again."
         }
     }
     
