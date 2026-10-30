@@ -16,6 +16,8 @@ struct ProfileView: View {
     @State private var currentUser: User?
     @State private var isLoading = false
     @State private var showEditProfile = false
+    /// Bumped when Edit Profile closes, which re-runs the profile load.
+    @State private var profileRevision = 0
     @State private var loadError: String?
     @Environment(\.dismiss) private var dismiss
     
@@ -282,11 +284,18 @@ struct ProfileView: View {
                     isOwnProfile: isOwnProfile,
                     isSheetFullyExpanded: isSheetFullyExpanded,
                     showEditProfile: $showEditProfile,
-                    dismissAction: { dismiss() }
+                    currentUser: currentUser,
+                    dismissAction: { dismiss() },
+                    editProfileDismissed: { profileRevision += 1 }
                 ))
-                // Runs alongside the feed's task below, so the header and the feed load in parallel
-                .task {
+                // Runs alongside the feed's task below, so the header and the feed load in parallel. Runs again
+                // after Edit Profile closes, since that screen saves as you go
+                .task(id: profileRevision) {
                     await loadUser()
+                    // Posts carry their author's name and avatar; refresh them in place rather than refetching
+                    if let currentUser {
+                        feedViewModel.applyAuthor(currentUser)
+                    }
                 }
                 .alert("Error", isPresented: errorAlertBinding(isPresented: errorMessage != nil)) {
                     Button("OK", role: .cancel) {}
@@ -1316,7 +1325,9 @@ private struct ProfileNavigationModifiers: ViewModifier {
     let isOwnProfile: Bool
     let isSheetFullyExpanded: Bool
     @Binding var showEditProfile: Bool
+    let currentUser: User?
     let dismissAction: () -> Void
+    let editProfileDismissed: () -> Void
     
     func body(content: Content) -> some View {
         content
@@ -1345,8 +1356,8 @@ private struct ProfileNavigationModifiers: ViewModifier {
                 }
             }
             .navigationBarBackButtonHidden(true)
-            .sheet(isPresented: $showEditProfile) {
-                EditProfileView()
+            .sheet(isPresented: $showEditProfile, onDismiss: editProfileDismissed) {
+                EditProfileView(user: currentUser)
             }
             .navigationDestination(for: ChatsRoute.self) { route in
                 switch route {

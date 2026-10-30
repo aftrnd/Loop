@@ -106,6 +106,23 @@ final class ProfileFeedViewModel {
         }
     }
     
+    /// Refreshes the name, username, avatar and badge on loops written by `author`, for example after they
+    /// edit their profile. Only rows that actually change are written.
+    func applyAuthor(_ author: User) {
+        for index in posts.indices where posts[index].authorId == author.id {
+            let updated = posts[index].withAuthor(author)
+            if updated != posts[index] {
+                posts[index] = updated
+            }
+        }
+        for index in likedPosts.indices where likedPosts[index].authorId == author.id {
+            let updated = likedPosts[index].withAuthor(author)
+            if updated != likedPosts[index] {
+                likedPosts[index] = updated
+            }
+        }
+    }
+    
     // MARK: - Like Operations
     
     /// Flips the like locally, then writes it, and reverts if the write fails, as the home feed does.

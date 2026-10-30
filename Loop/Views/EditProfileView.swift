@@ -1,14 +1,14 @@
 import SwiftUI
 import FirebaseAuth
 import PhotosUI
+import os
 
 struct EditProfileView: View {
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.colorScheme) private var colorScheme
     
     // User data
     @State private var currentUser: User?
-    @State private var isLoading = true
+    @State private var isLoading: Bool
     
     // Logout
     @State private var showLogoutConfirmation = false
@@ -29,6 +29,15 @@ struct EditProfileView: View {
     
     // Navigation
     @State private var showAppSettings = false
+    
+    private static let logger = Logger(subsystem: "com.nejack.Loop", category: "EditProfileView")
+    
+    /// - Parameter user: The profile as already loaded. It shows right away and refreshes in the background;
+    ///   without it the screen shows a spinner until the profile loads.
+    init(user: User? = nil) {
+        _currentUser = State(initialValue: user)
+        _isLoading = State(initialValue: user == nil)
+    }
     
     var body: some View {
         NavigationStack {
@@ -484,27 +493,18 @@ struct EditProfileView: View {
     // MARK: - Methods
     
     private func loadCurrentUser() async {
-        await MainActor.run {
+        if currentUser == nil {
             isLoading = true
         }
+        defer { isLoading = false }
         
+        guard let firebaseUser = Auth.auth().currentUser else { return }
         do {
-            if let firebaseUser = Auth.auth().currentUser {
-                if let firestoreUser = try await FirebaseService.shared.getUser(
-                    withId: firebaseUser.uid,
-                    forceRefresh: false
-                ) {
-                    await MainActor.run {
-                        self.currentUser = firestoreUser
-                        self.isLoading = false
-                    }
-                }
+            if let firestoreUser = try await FirebaseService.shared.getUser(withId: firebaseUser.uid) {
+                currentUser = firestoreUser
             }
         } catch {
-            print("❌ Error loading user: \(error)")
-            await MainActor.run {
-                self.isLoading = false
-            }
+            Self.logger.error("Profile load failed: \(error.localizedDescription, privacy: .public)")
         }
     }
     
