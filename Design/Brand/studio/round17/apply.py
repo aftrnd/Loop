@@ -20,7 +20,7 @@ doc = {
   "fill-specializations": [{"value": {"solid": final.WHITE}}, {"appearance": "dark", "value": "system-dark"}],
   "groups": [
     dict(name="Echo", layers=[{"fill-specializations": fills(g(0.04314, 0.16), g(1, 0.14), g(1, 0.1)), "glass": True, "image-name": "echo.svg", "name": "echo"}],
-         refractivity={"depth": 0.4, "enabled": True, "strength": 0.25}, **defaults),
+         refractivity={"depth": 0.4, "enabled": True, "strength": 0.25}, **{"blur-material": 0.05}, **defaults),
     dict(name="Said", layers=[{"fill-specializations": fills(final.INK, final.WHITE, final.WHITE), "glass": True, "image-name": "said.svg", "name": "said"}], **defaults),
   ],
   "supported-platforms": {"squares": "shared"},
