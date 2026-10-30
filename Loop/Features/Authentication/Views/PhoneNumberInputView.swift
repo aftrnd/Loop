@@ -52,10 +52,7 @@ struct PhoneNumberInputView: View {
             let waveSpeed: CGFloat = 1.57
             let waveFrequency: CGFloat = 0.018
             let innerR: CGFloat = 75
-            
-            // Calculate wave phase at the inner radius (center of pattern)
-            let wavePhase = sin(innerR * waveFrequency - CGFloat(time) * waveSpeed)
-            
+
             // Natural breathing: oscillates between 0.95 (contracted) and 1.05 (expanded)
             // Circle and icon offset for organic feel
             let timeOffset: CGFloat = 0.4
