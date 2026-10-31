@@ -58,7 +58,9 @@ enum CardLayoutConstants {
     static let actionButtonWidth: CGFloat = 50 // Standard width for each action button (with counts)
     
     // MARK: - Dividers & Lines
-    static let dividerHeight: CGFloat = 1.15
+    /// A whole point, so it covers whole pixels. A fractional height rounded to 3 or 4 pixels depending on
+    /// where each divider landed, which made some dividers look taller than others
+    static let dividerHeight: CGFloat = 1
     static let dividerColor: Color = Color(.separator)
     static let conversationLineWidth: CGFloat = 2.5
     static let conversationLineColor: Color = Color(.separator)
