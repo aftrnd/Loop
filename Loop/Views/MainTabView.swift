@@ -104,9 +104,8 @@ struct MainTabView: View {
             // Ties search activation to the search tab. On iOS 27 the search tab only gets its own
             // button, apart from the other tabs, with this set (checked in the iOS 27.0 simulator).
             .tabViewSearchActivation(.searchTabSelection)
-            .environment(chatsViewModel)
-            .environment(sheetRouter)
-            // Profiles and threads open from here, outside the tabs; see SheetRouter
+            // Profiles and threads open from here, outside the tabs; see SheetRouter. Attached before the
+            // environment below so the sheets get it too (a conversation pushed from a profile needs the router)
             .sheet(item: $sheetRouter.sheet) { sheet in
                 switch sheet {
                 case .profile(let userId):
@@ -115,6 +114,8 @@ struct MainTabView: View {
                     LoopDetailView(loop: loop, onRepliesChanged: onRepliesChanged)
                 }
             }
+            .environment(chatsViewModel)
+            .environment(sheetRouter)
             
             #if DEBUG
             if showLayoutGrid {
