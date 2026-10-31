@@ -37,7 +37,10 @@ struct ProfileView: View {
     // Dynamic sheet height
     @State private var currentDetent: PresentationDetent = .height(366)
     @State private var sheetMetrics = ProfileSheetMetrics()
-    @State private var otherProfileHeaderHeight: CGFloat = 0
+    /// The header's latest size, whatever width it was laid out at
+    @State private var headerSize: CGSize = .zero
+    /// The width of the profile's content once the sheet has really laid it out
+    @State private var contentWidth: CGFloat = 0
     /// The sheet's bottom safe area. A height detent sizes the area above it, so the card is drawn this much taller
     @State private var sheetBottomInset: CGFloat = 0
     @State private var ownershipHintOpacity: Double = 0
@@ -139,6 +142,14 @@ struct ProfileView: View {
         return bannerHeight + avatarSection + nameHeight + usernameHeight + followersHeight + bioMinHeight + buttonsHeight + spacing + padding
     }
     
+    /// Someone else's header height, from a layout at the sheet's real width, or 0 before there is one.
+    /// Presenting a sheet first lays its content out at throwaway sizes (120pt wide and 0 tall in the
+    /// simulator) where the bio wraps across many lines; measured there, the card opened far too tall.
+    private var otherProfileHeaderHeight: CGFloat {
+        guard contentWidth > 0, abs(headerSize.width - contentWidth) < 0.5 else { return 0 }
+        return headerSize.height
+    }
+    
     /// The collapsed detent. On your own profile it always leaves room for the ownership hint, even while
     /// fully expanded, so collapsing settles once instead of stopping short and then growing as the hint appears.
     private var minimumProfileHeight: CGFloat {
@@ -220,12 +231,6 @@ struct ProfileView: View {
         .scrollIndicators(.hidden)
         .background(isSheetFullyExpanded ? Color(.systemBackground) : Color.clear)
         .ignoresSafeArea(edges: .top)
-    }
-    
-    /// Sizes someone else's collapsed card to its header; `syncDetentIfNeeded` moves the sheet
-    private func headerHeightChanged(_ height: CGFloat) {
-        guard !isOwnProfile, height > 1, abs(otherProfileHeaderHeight - height) > 0.5 else { return }
-        otherProfileHeaderHeight = height
     }
     
     private var loadingView: some View {
@@ -322,6 +327,12 @@ struct ProfileView: View {
                 if isSheetFullyExpanded {
                     sheetMetrics.recordFullHeight()
                 }
+            }
+            // Only a pass with a real height counts; the width rarely changes, so this rarely re-renders
+            .onGeometryChange(for: CGFloat.self) { proxy in
+                proxy.size.height > 0 ? proxy.size.width : 0
+            } action: { width in
+                contentWidth = width
             }
             .onGeometryChange(for: CGFloat.self) { proxy in
                 proxy.safeAreaInsets.bottom
@@ -870,10 +881,11 @@ struct ProfileView: View {
             }
         }
         .background(isSheetFullyExpanded ? Color(.systemBackground) : Color.clear)
-        .onGeometryChange(for: CGFloat.self) { proxy in
-            proxy.size.height
-        } action: { height in
-            headerHeightChanged(height)
+        // Sizes someone else's collapsed card; `syncDetentIfNeeded` moves the sheet when its height changes
+        .onGeometryChange(for: CGSize.self) { proxy in
+            proxy.size
+        } action: { size in
+            headerSize = size
         }
     }
     
