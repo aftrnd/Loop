@@ -37,7 +37,6 @@ struct ProfileView: View {
     // Dynamic sheet height
     @State private var currentDetent: PresentationDetent = .height(366)
     @State private var sheetMetrics = ProfileSheetMetrics()
-    @State private var containerMetrics = ContainerMetrics()
     @State private var otherProfileHeaderHeight: CGFloat = 0
     @State private var ownershipHintOpacity: Double = 0
     @State private var ownershipHintMeasuredHeight: CGFloat = 0
@@ -70,12 +69,6 @@ struct ProfileView: View {
             isFullyExpanded: isSheetFullyExpanded,
             style: style
         )
-    }
-    
-    /// Size and top safe area of the frame the profile content fills.
-    private nonisolated struct ContainerMetrics: Equatable {
-        var width: CGFloat = 0
-        var topSafeAreaInset: CGFloat = 0
     }
     
     // Layout constants
@@ -316,12 +309,6 @@ struct ProfileView: View {
     private var profileGeometryContent: some View {
         profileContent
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            // Width and safe area rarely change, so this re-renders the profile only when they do
-            .onGeometryChange(for: ContainerMetrics.self) { proxy in
-                ContainerMetrics(width: proxy.size.width, topSafeAreaInset: proxy.safeAreaInsets.top)
-            } action: { metrics in
-                containerMetrics = metrics
-            }
             // The height changes on every frame of a sheet drag; only SheetExpansionFade reads it
             .onGeometryChange(for: CGFloat.self) { proxy in
                 proxy.size.height
@@ -825,17 +812,12 @@ struct ProfileView: View {
     @ViewBuilder
     private func profileHeaderCompact(for user: User, bannerHeight: CGFloat, showProfileInfo: Bool = true) -> some View {
         VStack(spacing: 0) {
-            // Banner - fixed height (same as half-opened state, doesn't expand)
-            // Extends all the way to top edge with no white space (use same banner instance to prevent flashing)
+            // Banner - fixed height in every detent, from the sheet's top edge (the scroll view ignores the top
+            // safe area). Its size must not follow the safe area, which grows when the full-height toolbar
+            // appears and would re-crop the photo
             bannerContent
                 .id("profile-banner") // Consistent ID across all states
-                .frame(
-                    width: containerMetrics.width,
-                    height: bannerHeight + containerMetrics.topSafeAreaInset,
-                    alignment: .center
-                )
-                .offset(y: -containerMetrics.topSafeAreaInset)
-                .padding(.bottom, -containerMetrics.topSafeAreaInset)
+                .frame(height: bannerHeight)
                 .clipped()
                 .ignoresSafeArea(edges: .top) // Extend to very top edge
             
