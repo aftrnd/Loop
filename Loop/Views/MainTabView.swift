@@ -4,6 +4,7 @@ struct MainTabView: View {
     @State private var searchText = ""
     @State private var chatsViewModel = ChatsListViewModel()
     @State private var selectedTab = "Home" // Default to Home tab
+    @State private var sheetRouter = SheetRouter()
     @AppStorage("showLayoutGrid") private var showLayoutGrid = false
     /// Touching the router here starts its notification observer no later than the tab view's creation
     private let notificationNavigation = NotificationNavigationManager.shared
@@ -104,6 +105,16 @@ struct MainTabView: View {
             // button, apart from the other tabs, with this set (checked in the iOS 27.0 simulator).
             .tabViewSearchActivation(.searchTabSelection)
             .environment(chatsViewModel)
+            .environment(sheetRouter)
+            // Profiles and threads open from here, outside the tabs; see SheetRouter
+            .sheet(item: $sheetRouter.sheet) { sheet in
+                switch sheet {
+                case .profile(let userId):
+                    ProfileView(userId: userId)
+                case .thread(let loop, let onRepliesChanged):
+                    LoopDetailView(loop: loop, onRepliesChanged: onRepliesChanged)
+                }
+            }
             
             #if DEBUG
             if showLayoutGrid {

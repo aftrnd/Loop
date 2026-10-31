@@ -6,8 +6,7 @@ struct ChatsListView: View {
     @Environment(ChatsListViewModel.self) private var viewModel
     @State private var navigationPath = NavigationPath()
     @State private var showNewMessage = false
-    @State private var showProfile = false
-    @State private var profileUserToShow: ProfileUser?
+    @Environment(SheetRouter.self) private var sheetRouter
     @State private var chatToDelete: Chat?
     @State private var showDeleteConfirmation = false
     @Environment(\.colorScheme) private var colorScheme
@@ -53,7 +52,7 @@ struct ChatsListView: View {
                             let impactFeedback = UIImpactFeedbackGenerator(style: .light)
                             impactFeedback.impactOccurred()
                             
-                            showProfile = true
+                            sheetRouter.showProfile(userId: nil)
                         }) {
                             Image(systemName: "person")
                                 .font(.body)
@@ -73,12 +72,6 @@ struct ChatsListView: View {
         }
         .sheet(isPresented: $showNewMessage) {
             NewMessageView(chatsViewModel: viewModel)
-        }
-        .sheet(isPresented: $showProfile) {
-            ProfileView()
-        }
-        .sheet(item: $profileUserToShow) { profileUser in
-            ProfileView(userId: profileUser.userId)
         }
         .sheet(isPresented: $debugManager.isDebugMenuVisible) {
             DebugMenuView()
@@ -149,8 +142,7 @@ struct ChatsListView: View {
                         pinnedChats: viewModel.pinned,
                         colorScheme: colorScheme,
                         navigationPath: $navigationPath,
-                        viewModel: viewModel,
-                        profileUserToShow: $profileUserToShow
+                        viewModel: viewModel
                     )
                     .padding(.top, 0) // No top padding for pinned items
                     .padding(.bottom, 8)
@@ -163,8 +155,7 @@ struct ChatsListView: View {
                     ChatRowView(chat: chat, onAvatarTap: {
                         // Open the other user's profile for 1:1 chats
                         if let otherUserId = chat.otherParticipantId, !chat.isGroupChat {
-                            print("👆 Avatar tapped - opening profile for user: \(otherUserId)")
-                            profileUserToShow = ProfileUser(userId: otherUserId)
+                            sheetRouter.showProfile(userId: otherUserId)
                         }
                     })
                     .overlay(alignment: .bottom) {
@@ -230,14 +221,14 @@ struct PinnedMessagesView: View {
     @Binding var navigationPath: NavigationPath
     let viewModel: ChatsListViewModel
     @State private var longPressedChat: Chat?
-    @Binding var profileUserToShow: ProfileUser?
+    @Environment(SheetRouter.self) private var sheetRouter
     
     var body: some View {
         VStack(spacing: 16) {
             // First row of 3
             HStack(spacing: 0) {
                 ForEach(Array(pinnedChats.prefix(3).enumerated()), id: \.element.id) { index, chat in
-                    pinnedChatItem(chat: chat, isLongPressed: longPressedChat?.id == chat.id, profileUserToShow: $profileUserToShow)
+                    pinnedChatItem(chat: chat, isLongPressed: longPressedChat?.id == chat.id)
                         .frame(maxWidth: .infinity)
                         .onLongPressGesture {
                             withAnimation {
@@ -251,7 +242,7 @@ struct PinnedMessagesView: View {
             if pinnedChats.count > 3 {
                 HStack(spacing: 0) {
                     ForEach(Array(pinnedChats.dropFirst(3).prefix(3).enumerated()), id: \.element.id) { index, chat in
-                        pinnedChatItem(chat: chat, isLongPressed: longPressedChat?.id == chat.id, profileUserToShow: $profileUserToShow)
+                        pinnedChatItem(chat: chat, isLongPressed: longPressedChat?.id == chat.id)
                             .frame(maxWidth: .infinity)
                             .onLongPressGesture {
                                 withAnimation {
@@ -275,7 +266,7 @@ struct PinnedMessagesView: View {
         }
     }
     
-    private func pinnedChatItem(chat: Chat, isLongPressed: Bool, profileUserToShow: Binding<ProfileUser?>) -> some View {
+    private func pinnedChatItem(chat: Chat, isLongPressed: Bool) -> some View {
         let avatarSize: CGFloat = 90
         let dotSize: CGFloat = 10
         
@@ -356,9 +347,7 @@ struct PinnedMessagesView: View {
                     .onTapGesture(count: 1) {
                         // Avatar tap - show profile for 1:1 chats
                         if !chat.isGroupChat, let otherUserId = chat.otherParticipantId {
-                            print("👆 Pinned avatar tapped - opening profile for user: \(otherUserId)")
-                            profileUserToShow.wrappedValue = ProfileUser(userId: otherUserId)
-                            print("   profileUserToShow set to: \(profileUserToShow.wrappedValue?.userId ?? "nil")")
+                            sheetRouter.showProfile(userId: otherUserId)
                         }
                     }
                 }
@@ -401,6 +390,7 @@ struct PinnedMessagesView: View {
         ChatsListView()
     }
     .environment(ChatsListViewModel())
+    .environment(SheetRouter())
 }
 
 

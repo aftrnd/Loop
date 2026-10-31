@@ -4,8 +4,7 @@ import SwiftUI
 /// Built with atomic components (PostHeader, PostContent, PostActions) + composite (PostCard)
 struct HomeView: View {
     @State private var viewModel = HomeFeedViewModel()
-    @State private var profileUserToShow: ProfileUser?
-    @State private var loopToShowDetail: Loop?
+    @Environment(SheetRouter.self) private var sheetRouter
     
     // Debug settings
     @AppStorage("showLayoutDebugOverlays") private var showLayoutDebugOverlays = false
@@ -67,19 +66,6 @@ struct HomeView: View {
             .presentationDragIndicator(.visible)
             .presentationBackgroundInteraction(.enabled(upThrough: .fraction(0.35)))
             .presentationContentInteraction(.scrolls)
-        }
-        .sheet(item: $profileUserToShow) { profileUser in
-            ProfileView(userId: profileUser.userId)
-        }
-        .sheet(item: $loopToShowDetail) { loop in
-            LoopDetailView(
-                loop: loop,
-                onRepliesChanged: {
-                    Task {
-                        await viewModel.refreshReplyPreviewForLoop(loop.id)
-                    }
-                }
-            )
         }
         .alert("Error", isPresented: errorAlertBinding) {
             Button("OK") {
@@ -145,7 +131,7 @@ struct HomeView: View {
                     },
                     onComment: {
                         if loop.replyCount > 0 {
-                            loopToShowDetail = loop
+                            showThread(loop)
                         } else {
                             viewModel.replyToLoop(loop)
                         }
@@ -159,11 +145,11 @@ struct HomeView: View {
                         }
                     } : nil,
                     onAvatarTap: {
-                        profileUserToShow = ProfileUser(userId: loop.authorId)
+                        sheetRouter.showProfile(userId: loop.authorId)
                     },
                     replyPreviews: replies,
                     onReplyPreviewTap: {
-                        loopToShowDetail = loop
+                        showThread(loop)
                     },
                     onReplyDelete: { reply in
                         if viewModel.canDeleteLoop(reply) {
@@ -208,6 +194,14 @@ struct HomeView: View {
             }
             .listRowSeparator(.hidden)
             .listRowBackground(Color.clear)
+        }
+    }
+    
+    private func showThread(_ loop: Loop) {
+        sheetRouter.showThread(loop) {
+            Task {
+                await viewModel.refreshReplyPreviewForLoop(loop.id)
+            }
         }
     }
     
@@ -267,5 +261,6 @@ struct HomeView: View {
 // MARK: - Preview
 #Preview {
     HomeView()
+        .environment(SheetRouter())
 }
 

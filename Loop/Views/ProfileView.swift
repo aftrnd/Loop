@@ -308,8 +308,6 @@ struct ProfileView: View {
                     syncDetentIfNeeded()
                 }
         }
-        // Attached to the stack, not inside it: a sheet modifier on the stack's content made iOS ignore this
-        // sheet's detents whenever the profile was presented from a tab, so it always opened at full height
         .sheet(isPresented: $showEditProfile, onDismiss: { profileRevision += 1 }) {
             EditProfileView(user: currentUser)
         }
