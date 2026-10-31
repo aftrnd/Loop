@@ -79,7 +79,7 @@ struct PostContent: View {
             let displayText = shouldTruncate ? String(text.prefix(maxPreviewLength)) + "..." : text
             
             Text(displayText)
-                .font(.system(.body, design: .default))
+                .font(.body)
                 .foregroundColor(.primary)
                 .multilineTextAlignment(.leading)
                 .fixedSize(horizontal: false, vertical: true)

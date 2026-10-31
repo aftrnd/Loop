@@ -232,9 +232,15 @@ struct LoopApp: App {
     // register app delegate for Firebase setup
     @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
     
+    init() {
+        Self.useRoundedBarTitles()
+    }
+    
     var body: some Scene {
         WindowGroup {
             ContentView()
+                // The app is set in SF Pro Rounded: every system font below takes the rounded design
+                .fontDesign(.rounded)
                 .onOpenURL { url in
                     print("🔍 DEBUG: Received URL: \(url)")
                     if Auth.auth().canHandle(url) {
@@ -244,5 +250,22 @@ struct LoopApp: App {
                     }
                 }
         }
+    }
+    
+    // MARK: - Type
+    
+    /// Navigation bar titles are drawn by UIKit, which doesn't read SwiftUI's font design
+    private static func useRoundedBarTitles() {
+        let bar = UINavigationBar.appearance()
+        bar.titleTextAttributes = [.font: roundedFont(.headline)]
+        bar.largeTitleTextAttributes = [.font: roundedFont(.largeTitle, bold: true)]
+    }
+    
+    private static func roundedFont(_ style: UIFont.TextStyle, bold: Bool = false) -> UIFont {
+        var descriptor = UIFont.preferredFont(forTextStyle: style).fontDescriptor
+        if bold, let boldDescriptor = descriptor.withSymbolicTraits(.traitBold) {
+            descriptor = boldDescriptor
+        }
+        return UIFont(descriptor: descriptor.withDesign(.rounded) ?? descriptor, size: 0)
     }
 }

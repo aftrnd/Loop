@@ -986,7 +986,7 @@ struct ProfileView: View {
                 } label: {
                     VStack(spacing: 8) {
                         Text(tab.rawValue)
-                            .font(.system(.body, design: .default))
+                            .font(.body)
                             .fontWeight(.semibold)
                             .foregroundColor(selectedTab == tab ? .primary : .secondary)
                         
