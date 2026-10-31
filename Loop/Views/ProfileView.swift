@@ -278,9 +278,7 @@ struct ProfileView: View {
                     isOwnProfile: isOwnProfile,
                     isSheetFullyExpanded: isSheetFullyExpanded,
                     showEditProfile: $showEditProfile,
-                    currentUser: currentUser,
-                    dismissAction: { dismiss() },
-                    editProfileDismissed: { profileRevision += 1 }
+                    dismissAction: { dismiss() }
                 ))
                 // Runs alongside the feed's task below, so the header and the feed load in parallel. Runs again
                 // after Edit Profile closes, since that screen saves as you go
@@ -304,6 +302,11 @@ struct ProfileView: View {
                 .onChange(of: minimumProfileHeight) { _, _ in
                     syncDetentIfNeeded()
                 }
+        }
+        // Attached to the stack, not inside it: a sheet modifier on the stack's content made iOS ignore this
+        // sheet's detents whenever the profile was presented from a tab, so it always opened at full height
+        .sheet(isPresented: $showEditProfile, onDismiss: { profileRevision += 1 }) {
+            EditProfileView(user: currentUser)
         }
     }
     
@@ -1347,9 +1350,7 @@ private struct ProfileNavigationModifiers: ViewModifier {
     let isOwnProfile: Bool
     let isSheetFullyExpanded: Bool
     @Binding var showEditProfile: Bool
-    let currentUser: User?
     let dismissAction: () -> Void
-    let editProfileDismissed: () -> Void
     
     func body(content: Content) -> some View {
         content
@@ -1375,9 +1376,6 @@ private struct ProfileNavigationModifiers: ViewModifier {
                 }
             }
             .navigationBarBackButtonHidden(true)
-            .sheet(isPresented: $showEditProfile, onDismiss: editProfileDismissed) {
-                EditProfileView(user: currentUser)
-            }
             .navigationDestination(for: ChatsRoute.self) { route in
                 switch route {
                 case .conversation(let chat):
