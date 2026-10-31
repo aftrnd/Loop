@@ -20,6 +20,8 @@ struct ProfileView: View {
     @State private var profileRevision = 0
     @State private var loadError: String?
     @Environment(\.dismiss) private var dismiss
+    /// The sheet's glass, which makes secondary text vibrant on the card
+    @Environment(\.backgroundMaterial) private var sheetMaterial
     /// Present when the app's root presented this profile, or a sheet it presented did
     @Environment(SheetRouter.self) private var sheetRouter: SheetRouter?
     
@@ -39,8 +41,8 @@ struct ProfileView: View {
     // Dynamic sheet height
     @State private var currentDetent: PresentationDetent = .height(366)
     @State private var sheetMetrics = ProfileSheetMetrics()
-    /// The header's latest size, whatever width it was laid out at
-    @State private var headerSize: CGSize = .zero
+    /// The header's width and where Follow and Message start in it, from its latest layout at any width
+    @State private var headerLayout = HeaderLayout()
     /// The content's width and the sheet's bottom safe area, from a layout pass with a real height
     @State private var contentMetrics = ContentMetrics()
     
@@ -57,6 +59,8 @@ struct ProfileView: View {
     // Profile feed
     @State private var feedViewModel: ProfileFeedViewModel
     @State private var selectedTab: ProfileFeedTab = .posts
+    /// How far the profile is scrolled. Only the full-height profile scrolls; the card always shows the header
+    @State private var scrollPosition = ScrollPosition(edge: .top)
     
     // Navigation for messages
     @State private var navigationPath = NavigationPath()
@@ -100,6 +104,13 @@ struct ProfileView: View {
     /// Follow and Message are capsules sized to be concentric with the collapsed card: they sit 20pt from the
     /// sheet's edges, and the sheet's corner radius (54pt on iPhone 18 Pro) is that inset plus half this height
     private static let actionButtonHeight: CGFloat = 68
+    /// At full height they no longer sit in the sheet's corners, so they take the height of the toolbar's buttons
+    /// above them, which is also the minimum touch target
+    private static let fullHeightActionButtonHeight: CGFloat = 44
+    /// The header's coordinate space, where Follow and Message are measured from
+    private static let headerCoordinateSpace = "profileHeader"
+    /// How the profile follows the sheet's height as it opens and closes
+    private static let expansionAnimation = Animation.easeInOut(duration: 0.2)
     private var ownershipHintHeight: CGFloat {
         if ownershipHintMeasuredHeight > 0 {
             return ownershipHintMeasuredHeight
@@ -144,12 +155,14 @@ struct ProfileView: View {
         return bannerHeight + avatarSection + nameHeight + usernameHeight + followersHeight + bioMinHeight + buttonsHeight + spacing + padding
     }
     
-    /// Someone else's header height, from a layout at the sheet's real width, or 0 before there is one.
-    /// Presenting a sheet first lays its content out at throwaway sizes (120pt wide and 0 tall in the
+    /// Someone else's header height at the card detent, from a layout at the sheet's real width, or 0 before there
+    /// is one. Presenting a sheet first lays its content out at throwaway sizes (120pt wide and 0 tall in the
     /// simulator) where the bio wraps across many lines; measured there, the card opened far too tall.
+    /// It counts from where Follow and Message start, which their height doesn't move, so their shorter full-height
+    /// size never changes the detent mid-drag.
     private var otherProfileHeaderHeight: CGFloat {
-        guard contentMetrics.width > 0, abs(headerSize.width - contentMetrics.width) < 0.5 else { return 0 }
-        return headerSize.height
+        guard contentMetrics.width > 0, abs(headerLayout.width - contentMetrics.width) < 0.5 else { return 0 }
+        return headerLayout.actionsTop + Self.actionButtonHeight + profileCardBottomPadding
     }
     
     /// The collapsed detent. On your own profile it always leaves room for the ownership hint, even while
@@ -181,6 +194,12 @@ struct ProfileView: View {
     private nonisolated struct ContentMetrics: Equatable {
         var width: CGFloat = 0
         var bottomInset: CGFloat = 0
+    }
+    
+    /// The header's width, and where Follow and Message start, from its top.
+    private nonisolated struct HeaderLayout: Equatable {
+        var width: CGFloat = 0
+        var actionsTop: CGFloat = 0
     }
     
     /// - Parameter preview: The profile and its collapsed height, when they are known before the sheet opens.
@@ -249,11 +268,18 @@ struct ProfileView: View {
             }
         }
         .scrollIndicators(.hidden)
+        .scrollPosition($scrollPosition)
+        // The card doesn't scroll: a drag on it resizes the sheet the way the grabber does, so the full-height profile
+        // opens at its top. Drags the scroll view handled opened it 70pt down, with the banner cut off
+        .scrollDisabled(!isSheetFullyExpanded)
         // The collapsed card runs into the bottom safe area, but while the sheet animates in its content area stops
         // above it and grows only once the sheet settles, so clipping cut off the bottom of Follow and Message for
         // the length of the animation. The collapsed card doesn't scroll; the full-height feed still clips
         .scrollClipDisabled(!isSheetFullyExpanded)
         .background(isSheetFullyExpanded ? Color(.systemBackground) : Color.clear)
+        // The sheet only drops its glass once it has settled at full height, so text that is vibrant on the glass
+        // changed color a beat after the profile turned opaque. It turns plain with the profile instead
+        .environment(\.backgroundMaterial, isSheetFullyExpanded ? nil : sheetMaterial)
         .ignoresSafeArea(edges: .top)
     }
     
@@ -340,14 +366,18 @@ struct ProfileView: View {
     private var profileGeometryContent: some View {
         profileContent
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            // The height changes on every frame of a sheet drag; only SheetExpansionFade reads it. The top safe
-            // area is included, so the toolbar appearing at full height doesn't make the sheet look shorter
+            // The height changes on every frame of a sheet drag; only SheetExpansionFade and SheetExpansionHeight
+            // read it. The top safe area is included, so the toolbar appearing at full height doesn't make the sheet
+            // look shorter. Changed in one animated transaction, so the layout around Follow and Message (the card's
+            // clip, the tabs) moves with them as they shrink; animated on their own, the card cut them off
             .onGeometryChange(for: CGFloat.self) { proxy in
                 proxy.size.height + proxy.safeAreaInsets.top
             } action: { height in
-                sheetMetrics.height = height
-                if isSheetFullyExpanded {
-                    sheetMetrics.recordFullHeight()
+                withAnimation(Self.expansionAnimation) {
+                    sheetMetrics.height = height
+                    if isSheetFullyExpanded {
+                        sheetMetrics.recordFullHeight()
+                    }
                 }
             }
             // Only passes with a real height count. The inset is the fallback for `sheetBottomInset`, rounded
@@ -363,7 +393,14 @@ struct ProfileView: View {
             }
             .onChange(of: isSheetFullyExpanded) { _, isExpanded in
                 if isExpanded {
-                    sheetMetrics.recordFullHeight()
+                    withAnimation(Self.expansionAnimation) {
+                        sheetMetrics.recordFullHeight()
+                    }
+                } else {
+                    // Collapsed from a scrolled feed, the card would show nothing: the header scrolled away and
+                    // the feed faded out. Not animated on its own, which would build every feed row on the way up;
+                    // it moves with the sheet as it settles
+                    scrollPosition.scrollTo(edge: .top)
                 }
             }
             // Loads each tab the first time it is shown; cancelled when the profile is dismissed
@@ -602,9 +639,25 @@ struct ProfileView: View {
                     
                     if !isOwnProfile {
                         actionButtons
-                            .drawingGroup()
+                            .modifier(SheetExpansionHeight(
+                                metrics: sheetMetrics,
+                                minimumHeight: expansionBaselineHeight,
+                                isFullyExpanded: isSheetFullyExpanded,
+                                collapsed: Self.actionButtonHeight,
+                                expanded: Self.fullHeightActionButtonHeight
+                            ))
                             .background(debugSectionBackground(.actions))
                             .overlay(debugStrokeOverlay())
+                            // Sizes someone else's card; `syncDetentIfNeeded` moves the sheet when its height changes
+                            .onGeometryChange(for: HeaderLayout.self) { proxy in
+                                let header = NamedCoordinateSpace.named(Self.headerCoordinateSpace)
+                                return HeaderLayout(
+                                    width: proxy.bounds(of: header)?.width ?? 0,
+                                    actionsTop: proxy.frame(in: header).minY
+                                )
+                            } action: { layout in
+                                headerLayout = layout
+                            }
                     }
                 }
                 
@@ -701,17 +754,12 @@ struct ProfileView: View {
             .padding(.bottom, profileCardBottomPadding)
             .background(showLayoutDebugOverlays ? Color.cyan.opacity(0.05) : Color.clear)
         
-        Group {
-            if isSheetFullyExpanded {
-                base
-                    .background(Color(.systemBackground))
-                    .clipShape(RoundedRectangle(cornerRadius: CardLayoutConstants.cornerRadius))
-            } else {
-                base
-                    .clipShape(RoundedRectangle(cornerRadius: CardLayoutConstants.cornerRadius))
-            }
-        }
-        .overlay(debugCardOutline())
+        // A background that changes rather than two branches, so reaching full height doesn't rebuild the card's
+        // text and buttons in the middle of the transition
+        base
+            .background(isSheetFullyExpanded ? Color(.systemBackground) : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: CardLayoutConstants.cornerRadius))
+            .overlay(debugCardOutline())
     }
     
     @ViewBuilder
@@ -767,122 +815,99 @@ struct ProfileView: View {
             }
         }
         .background(isSheetFullyExpanded ? Color(.systemBackground) : Color.clear)
-        // Sizes someone else's collapsed card; `syncDetentIfNeeded` moves the sheet when its height changes
-        .onGeometryChange(for: CGSize.self) { proxy in
-            proxy.size
-        } action: { size in
-            headerSize = size
-        }
+        .coordinateSpace(.named(Self.headerCoordinateSpace))
     }
     
     private var actionButtons: some View {
         // Buttons container - no padding here, padding is applied by parent VStack
-        HStack(spacing: 12) {
-            // Follow button - perfectly centered, equal width
-            Button(action: {
-                // Haptic feedback
-                let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
-                impactFeedback.impactOccurred()
-                
-                Task {
-                    await toggleFollow()
-                }
-            }) {
-                HStack(spacing: 6) {
-                    if isFollowLoading {
-                        // Use a simple opacity approach instead of ProgressView to avoid icon issues
-                        Image(systemName: isFollowing ? "checkmark" : "plus")
-                            .font(.system(size: 12, weight: .bold))
-                            .foregroundColor(isFollowing ? Color.primary : Color(.systemBackground))
-                            .opacity(0.5)
-                    } else {
-                        Image(systemName: isFollowing ? "checkmark" : "plus")
-                            .font(.system(size: 12, weight: .bold))
-                            .foregroundColor(isFollowing ? Color.primary : Color(.systemBackground))
-                    }
+        GlassEffectContainer(spacing: 12) {
+            HStack(spacing: 12) {
+                // Follow button - perfectly centered, equal width
+                Button(action: {
+                    // Haptic feedback
+                    let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
+                    impactFeedback.impactOccurred()
                     
-                    Text(isFollowing ? "Following" : "Follow")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .foregroundColor(isFollowing ? Color.primary : Color(.systemBackground))
-                }
-                .frame(maxWidth: .infinity)
-                .frame(height: Self.actionButtonHeight)
-                .padding(.horizontal, 4)
-                .background {
-                    Capsule(style: .continuous)
-                        .fill(isFollowing ? Color.clear : Color.primary)
-                }
-                .overlay {
-                    if isFollowing {
-                        Capsule(style: .continuous)
-                            .strokeBorder(Color.primary, lineWidth: 1.5)
+                    Task {
+                        await toggleFollow()
                     }
-                }
-            }
-            .frame(maxWidth: .infinity)
-            .buttonStyle(.plain) // Prevent automatic disabled styling
-            .disabled(isFollowLoading)
-            .saturation(isFollowLoading ? 0.4 : 1.0) // Use saturation for loading state instead of opacity
-            .opacity(1.0) // Force full opacity regardless of sheet state
-            .overlay {
-                // A fresh SparkleAnimation plays once when it appears, so each follow inserts a new one
-                if let sparkleBurstID {
-                    SparkleAnimation()
-                        .id(sparkleBurstID)
-                        .allowsHitTesting(false)
-                        .task(id: sparkleBurstID) {
-                            // The burst runs 0.1s plus 1.5s; remove it once it has faded out
-                            try? await Task.sleep(for: .seconds(1.6))
-                            if !Task.isCancelled {
-                                self.sparkleBurstID = nil
-                            }
+                }) {
+                    HStack(spacing: 6) {
+                        if isFollowLoading {
+                            // Use a simple opacity approach instead of ProgressView to avoid icon issues
+                            Image(systemName: isFollowing ? "checkmark" : "plus")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(isFollowing ? Color.primary : Color(.systemBackground))
+                                .opacity(0.5)
+                        } else {
+                            Image(systemName: isFollowing ? "checkmark" : "plus")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(isFollowing ? Color.primary : Color(.systemBackground))
                         }
-                }
-            }
-            
-            // Message button - perfectly centered, equal width
-            Button(action: {
-                // Haptic feedback
-                let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
-                impactFeedback.impactOccurred()
-                
-                Task {
-                    await startMessage()
-                }
-            }) {
-                HStack(spacing: 6) {
-                    if isMessageLoading {
-                        // Use a simple opacity approach instead of ProgressView to avoid icon issues
-                        Image(systemName: "message.fill")
-                            .font(.system(size: 12, weight: .bold))
-                            .foregroundColor(Color(.systemBackground))
-                            .opacity(0.5)
-                    } else {
-                        Image(systemName: "message.fill")
-                            .font(.system(size: 12, weight: .bold))
-                            .foregroundColor(Color(.systemBackground))
+                        
+                        Text(isFollowing ? "Following" : "Follow")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundColor(isFollowing ? Color.primary : Color(.systemBackground))
                     }
-                    
-                    Text("Message")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .foregroundColor(Color(.systemBackground))
+                    // As tall as the row, which shortens as the sheet opens
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
                 .frame(maxWidth: .infinity)
-                .frame(height: Self.actionButtonHeight)
-                .padding(.horizontal, 4)
-                .background {
-                    // Black background (opposite for dark mode)
-                    Capsule(style: .continuous)
-                        .fill(Color.primary)
+                // Not disabled while the follow saves: the glass would dim for the length of the write. toggleFollow
+                // ignores taps until it finishes
+                .modifier(ProfileActionGlass(isProminent: !isFollowing))
+                .overlay {
+                    // A fresh SparkleAnimation plays once when it appears, so each follow inserts a new one
+                    if let sparkleBurstID {
+                        SparkleAnimation()
+                            .id(sparkleBurstID)
+                            .allowsHitTesting(false)
+                            .task(id: sparkleBurstID) {
+                                // The burst runs 0.1s plus 1.5s; remove it once it has faded out
+                                try? await Task.sleep(for: .seconds(1.6))
+                                if !Task.isCancelled {
+                                    self.sparkleBurstID = nil
+                                }
+                            }
+                    }
                 }
+                
+                // Message button - perfectly centered, equal width
+                Button(action: {
+                    // Haptic feedback
+                    let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
+                    impactFeedback.impactOccurred()
+                    
+                    Task {
+                        await startMessage()
+                    }
+                }) {
+                    HStack(spacing: 6) {
+                        if isMessageLoading {
+                            // Use a simple opacity approach instead of ProgressView to avoid icon issues
+                            Image(systemName: "message.fill")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(Color(.systemBackground))
+                                .opacity(0.5)
+                        } else {
+                            Image(systemName: "message.fill")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(Color(.systemBackground))
+                        }
+                        
+                        Text("Message")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundColor(Color(.systemBackground))
+                    }
+                    // As tall as the row, which shortens as the sheet opens
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+                .frame(maxWidth: .infinity)
+                // Not disabled while the conversation opens, for the same reason as Follow; startMessage ignores taps
+                .modifier(ProfileActionGlass(isProminent: true))
             }
-            .frame(maxWidth: .infinity)
-            .buttonStyle(.plain) // Prevent automatic disabled styling
-            .disabled(isMessageLoading) // Disable while loading
-            .saturation(isMessageLoading ? 0.4 : 1.0) // Use saturation for loading state
-            .opacity(1.0) // Force full opacity regardless of sheet state
         }
         .background(debugSectionBackground(.actions))
         .overlay(debugStrokeOverlay())
@@ -1048,6 +1073,25 @@ struct ProfileView: View {
         if showLayoutDebugOverlays {
             RoundedRectangle(cornerRadius: 0)
                 .stroke(Color.red, lineWidth: 2)
+        }
+    }
+}
+
+// MARK: - Action Buttons
+
+/// Follow and Message in Liquid Glass, rendered like the toolbar's buttons: glass tinted ink (black in light mode,
+/// white in dark) for an action, plain glass once it is done (Following).
+private struct ProfileActionGlass: ViewModifier {
+    let isProminent: Bool
+
+    func body(content: Content) -> some View {
+        if isProminent {
+            content
+                .buttonStyle(.glassProminent)
+                .tint(.primary)
+        } else {
+            content
+                .buttonStyle(.glass)
         }
     }
 }
@@ -1397,6 +1441,25 @@ private struct SheetExpansionFade: ViewModifier {
                 .opacity(baseOpacity * max(0, 1 - progress))
                 .animation(.easeInOut(duration: 0.25), value: progress)
         }
+    }
+}
+
+/// Sizes a view between its card and full-height heights as the sheet opens or closes, in step with the tabs
+/// fading in, so it follows the finger and is exactly one or the other whenever the sheet rests. Like
+/// `SheetExpansionFade`, it reads the live height so per-frame updates stop here. It has no animation of its own:
+/// the transaction that changes the height animates it together with the layout around it.
+private struct SheetExpansionHeight: ViewModifier {
+    let metrics: ProfileSheetMetrics
+    let minimumHeight: CGFloat
+    let isFullyExpanded: Bool
+    let collapsed: CGFloat
+    let expanded: CGFloat
+    
+    func body(content: Content) -> some View {
+        let progress = metrics.expansionProgress(minimumHeight: minimumHeight, isFullyExpanded: isFullyExpanded)
+        
+        content
+            .frame(height: collapsed + (expanded - collapsed) * progress)
     }
 }
 
