@@ -646,7 +646,6 @@ struct ProfileView: View {
                                 collapsed: Self.actionButtonHeight,
                                 expanded: Self.fullHeightActionButtonHeight
                             ))
-                            .drawingGroup()
                             .background(debugSectionBackground(.actions))
                             .overlay(debugStrokeOverlay())
                             // Sizes someone else's card; `syncDetentIfNeeded` moves the sheet when its height changes
@@ -821,112 +820,94 @@ struct ProfileView: View {
     
     private var actionButtons: some View {
         // Buttons container - no padding here, padding is applied by parent VStack
-        HStack(spacing: 12) {
-            // Follow button - perfectly centered, equal width
-            Button(action: {
-                // Haptic feedback
-                let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
-                impactFeedback.impactOccurred()
-                
-                Task {
-                    await toggleFollow()
-                }
-            }) {
-                HStack(spacing: 6) {
-                    if isFollowLoading {
-                        // Use a simple opacity approach instead of ProgressView to avoid icon issues
-                        Image(systemName: isFollowing ? "checkmark" : "plus")
-                            .font(.system(size: 12, weight: .bold))
-                            .foregroundColor(isFollowing ? Color.primary : Color(.systemBackground))
-                            .opacity(0.5)
-                    } else {
-                        Image(systemName: isFollowing ? "checkmark" : "plus")
-                            .font(.system(size: 12, weight: .bold))
-                            .foregroundColor(isFollowing ? Color.primary : Color(.systemBackground))
-                    }
+        GlassEffectContainer(spacing: 12) {
+            HStack(spacing: 12) {
+                // Follow button - perfectly centered, equal width
+                Button(action: {
+                    // Haptic feedback
+                    let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
+                    impactFeedback.impactOccurred()
                     
-                    Text(isFollowing ? "Following" : "Follow")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .foregroundColor(isFollowing ? Color.primary : Color(.systemBackground))
-                }
-                // As tall as the row, which shortens as the sheet opens
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding(.horizontal, 4)
-                .background {
-                    Capsule(style: .continuous)
-                        .fill(isFollowing ? Color.clear : Color.primary)
-                }
-                .overlay {
-                    if isFollowing {
-                        Capsule(style: .continuous)
-                            .strokeBorder(Color.primary, lineWidth: 1.5)
+                    Task {
+                        await toggleFollow()
                     }
-                }
-            }
-            .frame(maxWidth: .infinity)
-            .buttonStyle(.plain) // Prevent automatic disabled styling
-            .disabled(isFollowLoading)
-            .saturation(isFollowLoading ? 0.4 : 1.0) // Use saturation for loading state instead of opacity
-            .opacity(1.0) // Force full opacity regardless of sheet state
-            .overlay {
-                // A fresh SparkleAnimation plays once when it appears, so each follow inserts a new one
-                if let sparkleBurstID {
-                    SparkleAnimation()
-                        .id(sparkleBurstID)
-                        .allowsHitTesting(false)
-                        .task(id: sparkleBurstID) {
-                            // The burst runs 0.1s plus 1.5s; remove it once it has faded out
-                            try? await Task.sleep(for: .seconds(1.6))
-                            if !Task.isCancelled {
-                                self.sparkleBurstID = nil
-                            }
+                }) {
+                    HStack(spacing: 6) {
+                        if isFollowLoading {
+                            // Use a simple opacity approach instead of ProgressView to avoid icon issues
+                            Image(systemName: isFollowing ? "checkmark" : "plus")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(isFollowing ? Color.primary : Color(.systemBackground))
+                                .opacity(0.5)
+                        } else {
+                            Image(systemName: isFollowing ? "checkmark" : "plus")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(isFollowing ? Color.primary : Color(.systemBackground))
                         }
+                        
+                        Text(isFollowing ? "Following" : "Follow")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundColor(isFollowing ? Color.primary : Color(.systemBackground))
+                    }
+                    // As tall as the row, which shortens as the sheet opens
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-            }
-            
-            // Message button - perfectly centered, equal width
-            Button(action: {
-                // Haptic feedback
-                let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
-                impactFeedback.impactOccurred()
+                .frame(maxWidth: .infinity)
+                // Not disabled while the follow saves: the glass would dim for the length of the write. toggleFollow
+                // ignores taps until it finishes
+                .modifier(ProfileActionGlass(isProminent: !isFollowing))
+                .overlay {
+                    // A fresh SparkleAnimation plays once when it appears, so each follow inserts a new one
+                    if let sparkleBurstID {
+                        SparkleAnimation()
+                            .id(sparkleBurstID)
+                            .allowsHitTesting(false)
+                            .task(id: sparkleBurstID) {
+                                // The burst runs 0.1s plus 1.5s; remove it once it has faded out
+                                try? await Task.sleep(for: .seconds(1.6))
+                                if !Task.isCancelled {
+                                    self.sparkleBurstID = nil
+                                }
+                            }
+                    }
+                }
                 
-                Task {
-                    await startMessage()
-                }
-            }) {
-                HStack(spacing: 6) {
-                    if isMessageLoading {
-                        // Use a simple opacity approach instead of ProgressView to avoid icon issues
-                        Image(systemName: "message.fill")
-                            .font(.system(size: 12, weight: .bold))
-                            .foregroundColor(Color(.systemBackground))
-                            .opacity(0.5)
-                    } else {
-                        Image(systemName: "message.fill")
-                            .font(.system(size: 12, weight: .bold))
+                // Message button - perfectly centered, equal width
+                Button(action: {
+                    // Haptic feedback
+                    let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
+                    impactFeedback.impactOccurred()
+                    
+                    Task {
+                        await startMessage()
+                    }
+                }) {
+                    HStack(spacing: 6) {
+                        if isMessageLoading {
+                            // Use a simple opacity approach instead of ProgressView to avoid icon issues
+                            Image(systemName: "message.fill")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(Color(.systemBackground))
+                                .opacity(0.5)
+                        } else {
+                            Image(systemName: "message.fill")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(Color(.systemBackground))
+                        }
+                        
+                        Text("Message")
+                            .font(.caption)
+                            .fontWeight(.semibold)
                             .foregroundColor(Color(.systemBackground))
                     }
-                    
-                    Text("Message")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .foregroundColor(Color(.systemBackground))
+                    // As tall as the row, which shortens as the sheet opens
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                // As tall as the row, which shortens as the sheet opens
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding(.horizontal, 4)
-                .background {
-                    // Black background (opposite for dark mode)
-                    Capsule(style: .continuous)
-                        .fill(Color.primary)
-                }
+                .frame(maxWidth: .infinity)
+                // Not disabled while the conversation opens, for the same reason as Follow; startMessage ignores taps
+                .modifier(ProfileActionGlass(isProminent: true))
             }
-            .frame(maxWidth: .infinity)
-            .buttonStyle(.plain) // Prevent automatic disabled styling
-            .disabled(isMessageLoading) // Disable while loading
-            .saturation(isMessageLoading ? 0.4 : 1.0) // Use saturation for loading state
-            .opacity(1.0) // Force full opacity regardless of sheet state
         }
         .background(debugSectionBackground(.actions))
         .overlay(debugStrokeOverlay())
@@ -1092,6 +1073,25 @@ struct ProfileView: View {
         if showLayoutDebugOverlays {
             RoundedRectangle(cornerRadius: 0)
                 .stroke(Color.red, lineWidth: 2)
+        }
+    }
+}
+
+// MARK: - Action Buttons
+
+/// Follow and Message in Liquid Glass, rendered like the toolbar's buttons: glass tinted ink (black in light mode,
+/// white in dark) for an action, plain glass once it is done (Following).
+private struct ProfileActionGlass: ViewModifier {
+    let isProminent: Bool
+
+    func body(content: Content) -> some View {
+        if isProminent {
+            content
+                .buttonStyle(.glassProminent)
+                .tint(.primary)
+        } else {
+            content
+                .buttonStyle(.glass)
         }
     }
 }
