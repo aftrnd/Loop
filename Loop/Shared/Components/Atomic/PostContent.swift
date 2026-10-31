@@ -9,10 +9,11 @@ struct PostContent: View {
     let maxPreviewLength: Int
     let showDebugOverlay: Bool
     
-    @Environment(PhotoViewerManager.self) private var photoViewerManager
-    
     @State private var showingFullText = false
+    /// The photo showing, in the carousel and in the photo viewer alike
     @State private var currentMediaIndex: Int = 0
+    @State private var isPhotoViewerPresented = false
+    @Namespace private var photoTransition
     
     // MARK: - Initializer
     init(
@@ -48,6 +49,7 @@ struct PostContent: View {
             // Media content - own container with debug outline
             if hasMedia {
                 mediaView
+                    .photoViewer(isPresented: $isPhotoViewerPresented, media: media, currentIndex: $currentMediaIndex, namespace: photoTransition)
                     .background(showDebugOverlay ? Color.green.opacity(0.1) : Color.clear)
                     .overlay(
                         Group {
@@ -108,8 +110,9 @@ struct PostContent: View {
             SingleMediaView(
                 media: firstMedia,
                 cornerRadius: CardLayoutConstants.mediaCornerRadius,
+                transitionNamespace: photoTransition,
                 onPhotoTap: {
-                    photoViewerManager.show(media: media, startingAt: 0)
+                    openPhotoViewer(at: 0)
                 },
                 showDebugOverlay: showDebugOverlay
             )
@@ -118,19 +121,23 @@ struct PostContent: View {
                 media: media,
                 cornerRadius: CardLayoutConstants.mediaCornerRadius,
                 currentIndex: $currentMediaIndex,
+                transitionNamespace: photoTransition,
                 onPhotoTap: { index in
-                    photoViewerManager.show(media: media, startingAt: index)
+                    openPhotoViewer(at: index)
                 },
                 showDebugOverlay: showDebugOverlay
             )
         }
     }
+    
+    private func openPhotoViewer(at index: Int) {
+        currentMediaIndex = index
+        isPhotoViewerPresented = true
+    }
 }
 
 // MARK: - Preview
 #Preview {
-    @Previewable @State var photoViewerManager = PhotoViewerManager()
-    
     ScrollView {
         VStack(spacing: 20) {
             // Text only
@@ -176,6 +183,5 @@ struct PostContent: View {
         .padding()
     }
     .background(Color(.systemGroupedBackground))
-    .environment(photoViewerManager)
 }
 

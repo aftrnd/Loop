@@ -6,6 +6,8 @@ import SwiftUI
 struct SingleMediaView: View {
     let media: LoopMedia
     let cornerRadius: CGFloat
+    /// The namespace the photo viewer zooms out of and back into, if the photo opens one
+    var transitionNamespace: Namespace.ID? = nil
     let onPhotoTap: () -> Void
     var showDebugOverlay: Bool = false
     
@@ -35,6 +37,7 @@ struct SingleMediaView: View {
                 }
                 .frame(width: geometry.size.width, height: displayMode.height)
                 .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+                .photoViewerSource(index: 0, in: transitionNamespace, cornerRadius: cornerRadius)
                 .overlay(
                     Group {
                         if showDebugOverlay {
@@ -103,6 +106,8 @@ struct MultipleMediaView: View {
     let media: [LoopMedia]
     let cornerRadius: CGFloat
     @Binding var currentIndex: Int
+    /// The namespace the photo viewer zooms out of and back into, if the photos open one
+    var transitionNamespace: Namespace.ID? = nil
     let onPhotoTap: (Int) -> Void
     var showDebugOverlay: Bool = false
     
@@ -152,6 +157,7 @@ struct MultipleMediaView: View {
                             onPhotoTap: { onPhotoTap(index) },
                             showDebugOverlay: showDebugOverlay
                         )
+                        .photoViewerSource(index: index, in: transitionNamespace, cornerRadius: cornerRadius)
                         .frame(width: containerWidth, height: carouselHeight)
                         .containerRelativeFrame(.horizontal)
                         .id(index)
@@ -164,6 +170,12 @@ struct MultipleMediaView: View {
             .onChange(of: scrollPosition) { _, newValue in
                 if let newValue = newValue {
                     currentIndex = newValue
+                }
+            }
+            // Follows the photo viewer as it pages, so closing it zooms back into a visible photo
+            .onChange(of: currentIndex) { _, newValue in
+                if scrollPosition != newValue {
+                    scrollPosition = newValue
                 }
             }
         }

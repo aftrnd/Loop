@@ -4,7 +4,6 @@ struct MainTabView: View {
     @State private var searchText = ""
     @State private var chatsViewModel = ChatsListViewModel()
     @State private var selectedTab = "Home" // Default to Home tab
-    @State private var photoViewerManager = PhotoViewerManager()
     @AppStorage("showLayoutGrid") private var showLayoutGrid = false
     /// Touching the router here starts its notification observer no later than the tab view's creation
     private let notificationNavigation = NotificationNavigationManager.shared
@@ -104,26 +103,7 @@ struct MainTabView: View {
             // Ties search activation to the search tab. On iOS 27 the search tab only gets its own
             // button, apart from the other tabs, with this set (checked in the iOS 27.0 simulator).
             .tabViewSearchActivation(.searchTabSelection)
-            .environment(photoViewerManager)
             .environment(chatsViewModel)
-            
-            // Global photo viewer overlay - displays at root level for true full screen
-            if photoViewerManager.isPresented {
-                ZStack {
-                    // Background overlay that fades in/out
-                    PhotoViewerBackgroundOverlay(opacity: $photoViewerManager.backgroundOpacity)
-                    
-                    // Photo viewer itself
-                    FullScreenPhotoViewer(
-                        allMedia: photoViewerManager.media,
-                        startingIndex: photoViewerManager.startingIndex,
-                        isPresented: $photoViewerManager.isPresented,
-                        backgroundOpacity: $photoViewerManager.backgroundOpacity
-                    )
-                }
-                .ignoresSafeArea()
-                .zIndex(999) // Ensure it's on top of everything
-            }
             
             #if DEBUG
             if showLayoutGrid {
