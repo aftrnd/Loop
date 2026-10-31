@@ -39,8 +39,8 @@ struct ProfileView: View {
     // Dynamic sheet height
     @State private var currentDetent: PresentationDetent = .height(366)
     @State private var sheetMetrics = ProfileSheetMetrics()
-    /// The header's latest size, whatever width it was laid out at
-    @State private var headerSize: CGSize = .zero
+    /// The header's width and where Follow and Message start in it, from its latest layout at any width
+    @State private var headerLayout = HeaderLayout()
     /// The content's width and the sheet's bottom safe area, from a layout pass with a real height
     @State private var contentMetrics = ContentMetrics()
     
@@ -102,6 +102,13 @@ struct ProfileView: View {
     /// Follow and Message are capsules sized to be concentric with the collapsed card: they sit 20pt from the
     /// sheet's edges, and the sheet's corner radius (54pt on iPhone 18 Pro) is that inset plus half this height
     private static let actionButtonHeight: CGFloat = 68
+    /// At full height they no longer sit in the sheet's corners, so they take the height of the toolbar's buttons
+    /// above them, which is also the minimum touch target
+    private static let fullHeightActionButtonHeight: CGFloat = 44
+    /// The header's coordinate space, where Follow and Message are measured from
+    private static let headerCoordinateSpace = "profileHeader"
+    /// How the profile follows the sheet's height as it opens and closes
+    private static let expansionAnimation = Animation.easeInOut(duration: 0.2)
     private var ownershipHintHeight: CGFloat {
         if ownershipHintMeasuredHeight > 0 {
             return ownershipHintMeasuredHeight
@@ -146,12 +153,14 @@ struct ProfileView: View {
         return bannerHeight + avatarSection + nameHeight + usernameHeight + followersHeight + bioMinHeight + buttonsHeight + spacing + padding
     }
     
-    /// Someone else's header height, from a layout at the sheet's real width, or 0 before there is one.
-    /// Presenting a sheet first lays its content out at throwaway sizes (120pt wide and 0 tall in the
+    /// Someone else's header height at the card detent, from a layout at the sheet's real width, or 0 before there
+    /// is one. Presenting a sheet first lays its content out at throwaway sizes (120pt wide and 0 tall in the
     /// simulator) where the bio wraps across many lines; measured there, the card opened far too tall.
+    /// It counts from where Follow and Message start, which their height doesn't move, so their shorter full-height
+    /// size never changes the detent mid-drag.
     private var otherProfileHeaderHeight: CGFloat {
-        guard contentMetrics.width > 0, abs(headerSize.width - contentMetrics.width) < 0.5 else { return 0 }
-        return headerSize.height
+        guard contentMetrics.width > 0, abs(headerLayout.width - contentMetrics.width) < 0.5 else { return 0 }
+        return headerLayout.actionsTop + Self.actionButtonHeight + profileCardBottomPadding
     }
     
     /// The collapsed detent. On your own profile it always leaves room for the ownership hint, even while
@@ -183,6 +192,12 @@ struct ProfileView: View {
     private nonisolated struct ContentMetrics: Equatable {
         var width: CGFloat = 0
         var bottomInset: CGFloat = 0
+    }
+    
+    /// The header's width, and where Follow and Message start, from its top.
+    private nonisolated struct HeaderLayout: Equatable {
+        var width: CGFloat = 0
+        var actionsTop: CGFloat = 0
     }
     
     /// - Parameter preview: The profile and its collapsed height, when they are known before the sheet opens.
@@ -346,14 +361,18 @@ struct ProfileView: View {
     private var profileGeometryContent: some View {
         profileContent
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            // The height changes on every frame of a sheet drag; only SheetExpansionFade reads it. The top safe
-            // area is included, so the toolbar appearing at full height doesn't make the sheet look shorter
+            // The height changes on every frame of a sheet drag; only SheetExpansionFade and SheetExpansionHeight
+            // read it. The top safe area is included, so the toolbar appearing at full height doesn't make the sheet
+            // look shorter. Changed in one animated transaction, so the layout around Follow and Message (the card's
+            // clip, the tabs) moves with them as they shrink; animated on their own, the card cut them off
             .onGeometryChange(for: CGFloat.self) { proxy in
                 proxy.size.height + proxy.safeAreaInsets.top
             } action: { height in
-                sheetMetrics.height = height
-                if isSheetFullyExpanded {
-                    sheetMetrics.recordFullHeight()
+                withAnimation(Self.expansionAnimation) {
+                    sheetMetrics.height = height
+                    if isSheetFullyExpanded {
+                        sheetMetrics.recordFullHeight()
+                    }
                 }
             }
             // Only passes with a real height count. The inset is the fallback for `sheetBottomInset`, rounded
@@ -369,7 +388,9 @@ struct ProfileView: View {
             }
             .onChange(of: isSheetFullyExpanded) { _, isExpanded in
                 if isExpanded {
-                    sheetMetrics.recordFullHeight()
+                    withAnimation(Self.expansionAnimation) {
+                        sheetMetrics.recordFullHeight()
+                    }
                 } else {
                     // Collapsed from a scrolled feed, the card would show nothing: the header scrolled away and
                     // the feed faded out. Not animated on its own, which would build every feed row on the way up;
@@ -613,9 +634,26 @@ struct ProfileView: View {
                     
                     if !isOwnProfile {
                         actionButtons
+                            .modifier(SheetExpansionHeight(
+                                metrics: sheetMetrics,
+                                minimumHeight: expansionBaselineHeight,
+                                isFullyExpanded: isSheetFullyExpanded,
+                                collapsed: Self.actionButtonHeight,
+                                expanded: Self.fullHeightActionButtonHeight
+                            ))
                             .drawingGroup()
                             .background(debugSectionBackground(.actions))
                             .overlay(debugStrokeOverlay())
+                            // Sizes someone else's card; `syncDetentIfNeeded` moves the sheet when its height changes
+                            .onGeometryChange(for: HeaderLayout.self) { proxy in
+                                let header = NamedCoordinateSpace.named(Self.headerCoordinateSpace)
+                                return HeaderLayout(
+                                    width: proxy.bounds(of: header)?.width ?? 0,
+                                    actionsTop: proxy.frame(in: header).minY
+                                )
+                            } action: { layout in
+                                headerLayout = layout
+                            }
                     }
                 }
                 
@@ -712,17 +750,12 @@ struct ProfileView: View {
             .padding(.bottom, profileCardBottomPadding)
             .background(showLayoutDebugOverlays ? Color.cyan.opacity(0.05) : Color.clear)
         
-        Group {
-            if isSheetFullyExpanded {
-                base
-                    .background(Color(.systemBackground))
-                    .clipShape(RoundedRectangle(cornerRadius: CardLayoutConstants.cornerRadius))
-            } else {
-                base
-                    .clipShape(RoundedRectangle(cornerRadius: CardLayoutConstants.cornerRadius))
-            }
-        }
-        .overlay(debugCardOutline())
+        // A background that changes rather than two branches, so reaching full height doesn't rebuild the card's
+        // text and buttons in the middle of the transition
+        base
+            .background(isSheetFullyExpanded ? Color(.systemBackground) : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: CardLayoutConstants.cornerRadius))
+            .overlay(debugCardOutline())
     }
     
     @ViewBuilder
@@ -778,12 +811,7 @@ struct ProfileView: View {
             }
         }
         .background(isSheetFullyExpanded ? Color(.systemBackground) : Color.clear)
-        // Sizes someone else's collapsed card; `syncDetentIfNeeded` moves the sheet when its height changes
-        .onGeometryChange(for: CGSize.self) { proxy in
-            proxy.size
-        } action: { size in
-            headerSize = size
-        }
+        .coordinateSpace(.named(Self.headerCoordinateSpace))
     }
     
     private var actionButtons: some View {
@@ -817,8 +845,8 @@ struct ProfileView: View {
                         .fontWeight(.semibold)
                         .foregroundColor(isFollowing ? Color.primary : Color(.systemBackground))
                 }
-                .frame(maxWidth: .infinity)
-                .frame(height: Self.actionButtonHeight)
+                // As tall as the row, which shortens as the sheet opens
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(.horizontal, 4)
                 .background {
                     Capsule(style: .continuous)
@@ -880,8 +908,8 @@ struct ProfileView: View {
                         .fontWeight(.semibold)
                         .foregroundColor(Color(.systemBackground))
                 }
-                .frame(maxWidth: .infinity)
-                .frame(height: Self.actionButtonHeight)
+                // As tall as the row, which shortens as the sheet opens
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(.horizontal, 4)
                 .background {
                     // Black background (opposite for dark mode)
@@ -1408,6 +1436,25 @@ private struct SheetExpansionFade: ViewModifier {
                 .opacity(baseOpacity * max(0, 1 - progress))
                 .animation(.easeInOut(duration: 0.25), value: progress)
         }
+    }
+}
+
+/// Sizes a view between its card and full-height heights as the sheet opens or closes, in step with the tabs
+/// fading in, so it follows the finger and is exactly one or the other whenever the sheet rests. Like
+/// `SheetExpansionFade`, it reads the live height so per-frame updates stop here. It has no animation of its own:
+/// the transaction that changes the height animates it together with the layout around it.
+private struct SheetExpansionHeight: ViewModifier {
+    let metrics: ProfileSheetMetrics
+    let minimumHeight: CGFloat
+    let isFullyExpanded: Bool
+    let collapsed: CGFloat
+    let expanded: CGFloat
+    
+    func body(content: Content) -> some View {
+        let progress = metrics.expansionProgress(minimumHeight: minimumHeight, isFullyExpanded: isFullyExpanded)
+        
+        content
+            .frame(height: collapsed + (expanded - collapsed) * progress)
     }
 }
 
