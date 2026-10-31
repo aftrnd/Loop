@@ -309,11 +309,20 @@ struct ProfileView: View {
     private var profileGeometryContent: some View {
         profileContent
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            // The height changes on every frame of a sheet drag; only SheetExpansionFade reads it
+            // The height changes on every frame of a sheet drag; only SheetExpansionFade reads it. The top safe
+            // area is included, so the toolbar appearing at full height doesn't make the sheet look shorter
             .onGeometryChange(for: CGFloat.self) { proxy in
-                proxy.size.height
+                proxy.size.height + proxy.safeAreaInsets.top
             } action: { height in
                 sheetMetrics.height = height
+                if isSheetFullyExpanded {
+                    sheetMetrics.recordFullHeight()
+                }
+            }
+            .onChange(of: isSheetFullyExpanded) { _, isExpanded in
+                if isExpanded {
+                    sheetMetrics.recordFullHeight()
+                }
             }
             // Loads each tab the first time it is shown; cancelled when the profile is dismissed
             .task(id: selectedTab) {
@@ -1215,14 +1224,21 @@ private struct ProfileFeedSection: View {
 @Observable
 private final class ProfileSheetMetrics {
     var height: CGFloat = 0
+    /// The sheet's height at the large detent, once it has been there. The tallest height seen, so dragging
+    /// down from full height still fades.
+    private(set) var fullHeight: CGFloat?
+    
+    func recordFullHeight() {
+        fullHeight = max(fullHeight ?? 0, height)
+    }
     
     /// How far the sheet has opened: 0 up to halfway between the minimum detent and full height, 1 from 80%.
     /// Before the first measurement it falls back to the detent state.
     func expansionProgress(minimumHeight: CGFloat, isFullyExpanded: Bool) -> CGFloat {
         guard height > 0 else { return isFullyExpanded ? 1 : 0 }
         guard height > minimumHeight else { return 0 }
-        // Use a reasonable estimate for max height (90% of typical screen)
-        let maxHeight: CGFloat = 900 // Approximate max sheet height
+        // Until the sheet has been fully expanded, estimate its full height
+        let maxHeight = fullHeight ?? 900
         let range = maxHeight - minimumHeight
         guard range > 0 else { return 1 }
         let progress = min(max((height - minimumHeight) / range, 0), 1)
