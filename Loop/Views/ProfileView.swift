@@ -38,6 +38,8 @@ struct ProfileView: View {
     @State private var currentDetent: PresentationDetent = .height(366)
     @State private var sheetMetrics = ProfileSheetMetrics()
     @State private var otherProfileHeaderHeight: CGFloat = 0
+    /// The sheet's bottom safe area. A height detent sizes the area above it, so the card is drawn this much taller
+    @State private var sheetBottomInset: CGFloat = 0
     @State private var ownershipHintOpacity: Double = 0
     @State private var ownershipHintMeasuredHeight: CGFloat = 0
     
@@ -78,8 +80,14 @@ struct ProfileView: View {
     // Match post card padding: 10pt list inset + 10pt card padding = 20pt total
     private let profileContentPadding: CGFloat = CardLayoutConstants.horizontalPadding + 10 // 20pt total (matches posts)
     private var avatarOverlapOffset: CGFloat { -(avatarMaskSize / 2) } // -56pt: half of mask size to center overlap
-    private var profileCardBottomPadding: CGFloat { CardLayoutConstants.bottomPadding }
-    private var actionButtonCornerRadius: CGFloat { 26 } // Half the button height (52/2) for perfect capsule shape with circular ends
+    /// Someone else's card ends with Follow and Message, which sit as far from the sheet's bottom edge as from
+    /// its sides, so their capsules stay concentric with the sheet's corners
+    private var profileCardBottomPadding: CGFloat {
+        isOwnProfile ? CardLayoutConstants.bottomPadding : profileContentPadding
+    }
+    /// Follow and Message are capsules sized to be concentric with the collapsed card: they sit 20pt from the
+    /// sheet's edges, and the sheet's corner radius (54pt on iPhone 18 Pro) is that inset plus half this height
+    private let actionButtonHeight: CGFloat = 68
     private var ownershipHintHeight: CGFloat {
         if ownershipHintMeasuredHeight > 0 {
             return ownershipHintMeasuredHeight
@@ -119,7 +127,7 @@ struct ProfileView: View {
         let usernameHeight: CGFloat = 18 // Username/location line
         let followersHeight: CGFloat = 18 // Followers/following line
         let bioMinHeight: CGFloat = 44 // Minimum 2 lines for bio
-        let actionButtonsHeight: CGFloat = 50 // Follow/Message buttons (only for other users' profiles)
+        let actionButtonsHeight: CGFloat = actionButtonHeight // Follow/Message buttons (only for other users' profiles)
         let spacing: CGFloat = 8 * 3 // 3 gaps of 8px each
         let spacingAfterBio: CGFloat = 12 // Spacing after bio before action buttons
         let padding: CGFloat = 24 // Reduced bottom padding
@@ -139,7 +147,8 @@ struct ProfileView: View {
         }
         
         if otherProfileHeaderHeight > 0 {
-            return otherProfileHeaderHeight
+            // The header runs into the bottom safe area, so the card ends exactly where its content does
+            return otherProfileHeaderHeight - sheetBottomInset
         }
         
         return baseProfileHeight
@@ -211,20 +220,12 @@ struct ProfileView: View {
         .scrollIndicators(.hidden)
         .background(isSheetFullyExpanded ? Color(.systemBackground) : Color.clear)
         .ignoresSafeArea(edges: .top)
-        .onPreferenceChange(ProfileHeaderHeightKey.self) { height in
-            guard !isOwnProfile else { return }
-            let clampedHeight = max(height, 1)
-            guard clampedHeight > 1 else { return }
-            
-            let delta = abs(otherProfileHeaderHeight - clampedHeight)
-            guard delta > 0.5 else { return }
-            
-            otherProfileHeaderHeight = clampedHeight
-            
-            if !isSheetFullyExpanded {
-                currentDetent = .height(clampedHeight)
-            }
-        }
+    }
+    
+    /// Sizes someone else's collapsed card to its header; `syncDetentIfNeeded` moves the sheet
+    private func headerHeightChanged(_ height: CGFloat) {
+        guard !isOwnProfile, height > 1, abs(otherProfileHeaderHeight - height) > 0.5 else { return }
+        otherProfileHeaderHeight = height
     }
     
     private var loadingView: some View {
@@ -317,6 +318,14 @@ struct ProfileView: View {
                 sheetMetrics.height = height
                 if isSheetFullyExpanded {
                     sheetMetrics.recordFullHeight()
+                }
+            }
+            .onGeometryChange(for: CGFloat.self) { proxy in
+                proxy.safeAreaInsets.bottom
+            } action: { inset in
+                // It settles over the presentation animation; small steps would only resize the sheet repeatedly
+                if abs(inset - sheetBottomInset) > 0.5 {
+                    sheetBottomInset = inset
                 }
             }
             .onChange(of: isSheetFullyExpanded) { _, isExpanded in
@@ -629,25 +638,9 @@ struct ProfileView: View {
     private func profileInfoContent(for user: User) -> some View {
         profileCardContainer {
             VStack(alignment: .leading, spacing: CardLayoutConstants.headerBottomSpacing) {
-                VStack(alignment: .leading, spacing: CardLayoutConstants.headerBottomSpacing) {
-                    displayNameView
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(debugSectionBackground(.content))
-                        .overlay(debugStrokeOverlay())
-                    
-                    usernameView
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(debugSectionBackground(.content))
-                        .overlay(debugStrokeOverlay())
-                    
-                    followerCountsView(for: user)
-                    
-                    bioView
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .frame(minHeight: 44)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .background(debugSectionBackground(.content))
-                        .overlay(debugStrokeOverlay())
+                // Follow and Message sit as far below the text's last baseline as above the sheet's bottom edge
+                BaselineSpacedVStack(spacing: profileContentPadding) {
+                    profileText(for: user)
                     
                     if !isOwnProfile {
                         actionButtons
@@ -680,6 +673,33 @@ struct ProfileView: View {
                         }
                         .allowsHitTesting(false)
                 }
+            }
+        }
+    }
+    
+    /// Name, handle, counts and bio. Someone else's bio takes its natural height, since their card is sized to
+    /// its content; your own keeps two lines of room, which the collapsed height estimate assumes.
+    private func profileText(for user: User) -> some View {
+        VStack(alignment: .leading, spacing: CardLayoutConstants.headerBottomSpacing) {
+            displayNameView
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(debugSectionBackground(.content))
+                .overlay(debugStrokeOverlay())
+            
+            usernameView
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(debugSectionBackground(.content))
+                .overlay(debugStrokeOverlay())
+            
+            followerCountsView(for: user)
+            
+            if isOwnProfile || !(user.bio ?? "").isEmpty {
+                bioView
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(minHeight: isOwnProfile ? 44 : nil)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .background(debugSectionBackground(.content))
+                    .overlay(debugStrokeOverlay())
             }
         }
     }
@@ -847,12 +867,11 @@ struct ProfileView: View {
             }
         }
         .background(isSheetFullyExpanded ? Color(.systemBackground) : Color.clear)
-        .background(
-            GeometryReader { proxy in
-                Color.clear
-                    .preference(key: ProfileHeaderHeightKey.self, value: proxy.size.height)
-            }
-        )
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.height
+        } action: { height in
+            headerHeightChanged(height)
+        }
     }
     
     private var actionButtons: some View {
@@ -887,15 +906,15 @@ struct ProfileView: View {
                         .foregroundColor(isFollowing ? Color.primary : Color(.systemBackground))
                 }
                 .frame(maxWidth: .infinity)
-                .frame(height: 52)
+                .frame(height: actionButtonHeight)
                 .padding(.horizontal, 4)
                 .background {
-                    RoundedRectangle(cornerRadius: actionButtonCornerRadius, style: .continuous)
+                    Capsule(style: .continuous)
                         .fill(isFollowing ? Color.clear : Color.primary)
                 }
                 .overlay {
                     if isFollowing {
-                        RoundedRectangle(cornerRadius: actionButtonCornerRadius, style: .continuous)
+                        Capsule(style: .continuous)
                             .strokeBorder(Color.primary, lineWidth: 1.5)
                     }
                 }
@@ -950,11 +969,11 @@ struct ProfileView: View {
                         .foregroundColor(Color(.systemBackground))
                 }
                 .frame(maxWidth: .infinity)
-                .frame(height: 52)
+                .frame(height: actionButtonHeight)
                 .padding(.horizontal, 4)
                 .background {
                     // Black background (opposite for dark mode)
-                    RoundedRectangle(cornerRadius: actionButtonCornerRadius, style: .continuous)
+                    Capsule(style: .continuous)
                         .fill(Color.primary)
                 }
             }
@@ -1132,6 +1151,40 @@ struct ProfileView: View {
     }
 }
 
+// MARK: - Baseline Spacing
+
+/// A leading-aligned vertical stack that measures each gap from the last text baseline of the view above, where
+/// text optically ends, instead of from the bottom of its frame. A view without text spaces from its bottom.
+private struct BaselineSpacedVStack: Layout {
+    let spacing: CGFloat
+    
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let frames = frames(width: proposal.width, subviews: subviews)
+        let width = proposal.width ?? frames.map(\.maxX).max() ?? 0
+        return CGSize(width: width, height: frames.last?.maxY ?? 0)
+    }
+    
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        for (subview, frame) in zip(subviews, frames(width: bounds.width, subviews: subviews)) {
+            subview.place(
+                at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY),
+                proposal: ProposedViewSize(frame.size)
+            )
+        }
+    }
+    
+    private func frames(width: CGFloat?, subviews: Subviews) -> [CGRect] {
+        var frames: [CGRect] = []
+        var nextTop: CGFloat = 0
+        for subview in subviews {
+            let dimensions = subview.dimensions(in: ProposedViewSize(width: width, height: nil))
+            frames.append(CGRect(x: 0, y: nextTop, width: dimensions.width, height: dimensions.height))
+            nextTop += dimensions[VerticalAlignment.lastTextBaseline] + spacing
+        }
+        return frames
+    }
+}
+
 // MARK: - Feed
 
 /// The posts or likes list under the header. Reading the view model here rather than in ProfileView keeps
@@ -1280,13 +1333,6 @@ private struct SheetExpansionFade: ViewModifier {
 }
 
 // MARK: - Preference Keys
-
-private struct ProfileHeaderHeightKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
-    }
-}
 
 private struct OwnershipHintHeightKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
