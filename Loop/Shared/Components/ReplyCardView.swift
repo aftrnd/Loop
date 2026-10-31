@@ -68,7 +68,9 @@ enum CardLayoutConstants {
     /// where each divider landed, which made some dividers look taller than others
     static let dividerHeight: CGFloat = 1
     static let dividerColor: Color = Color(.separator)
-    static let conversationLineWidth: CGFloat = 2.5
+    /// Whole points, so centered on the avatar it covers whole pixels (47 to 49pt from the screen edge). At 2.5 its
+    /// edges fell between pixels and it rounded out to 8 px (2.67pt)
+    static let conversationLineWidth: CGFloat = 2
     static let conversationLineColor: Color = Color(.separator)
     static let avatarLineGap: CGFloat = 12 // Gap between avatar edge and conversation line
     
