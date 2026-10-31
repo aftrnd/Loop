@@ -30,11 +30,12 @@ struct PostContent: View {
     
     // MARK: - Body
     var body: some View {
-        VStack(alignment: .leading, spacing: CardLayoutConstants.contentSpacing) {
+        BaselineSpacedVStack(spacing: CardLayoutConstants.partSpacing) {
             // Text content - own container with debug outline
             if !text.isEmpty {
                 textView
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .visibleTopAtCapHeight(of: .body)
                     .background(showDebugOverlay ? Color.green.opacity(0.1) : Color.clear)
                     .overlay(
                         Group {

@@ -50,6 +50,8 @@ struct PostHeader: View {
             splitContainer
         }
         .frame(maxWidth: .infinity)
+        // The header visibly ends with the avatar, below the text beside it
+        .alignmentGuide(.visibleBottom) { $0[.bottom] }
         .background(showDebugOverlay ? Color.blue.opacity(0.1) : Color.clear)
         .overlay(
             Group {

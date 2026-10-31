@@ -119,7 +119,8 @@ struct HomeView: View {
             let isFirst = loop.id == firstLoopId
             let isLast = loop.id == lastLoopId
             
-            VStack(spacing: 0) {
+            // The divider sits a part spacing below where the post visibly ends, and the next avatar as far below it
+            BaselineSpacedVStack(spacing: CardLayoutConstants.partSpacing) {
                 // Single PostCard handles both cases
                 PostCard(
                     loop: loop,
@@ -163,8 +164,7 @@ struct HomeView: View {
                     },
                     showDebugOverlays: showLayoutDebugOverlays
                 )
-                .padding(.top, isFirst ? 0 : 5)
-                .padding(.bottom, isLast ? 0 : 5)
+                .padding(.top, isFirst ? 0 : CardLayoutConstants.partSpacing - CardLayoutConstants.topPadding)
                 
                 // Divider between posts
                 if !isLast {

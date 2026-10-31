@@ -75,48 +75,43 @@ struct PostCard: View {
         let hasReplies = !previewReplies.isEmpty
         
         // Use same view structure for both cases to enable smooth animation
-        ZStack(alignment: .topLeading) {
-            VStack(spacing: 0) {
-                // Main post content with animated shift
-                mainPostContent
-                    .overlay(
-                        GeometryReader { geo in
-                            Color.clear
-                                .onAppear {
-                                    mainPostHeight = geo.size.height
-                                }
-                                .onChange(of: geo.size.height) { _, newHeight in
-                                    mainPostHeight = newHeight
-                                }
-                        }
-                    )
+        BaselineSpacedVStack(spacing: CardLayoutConstants.partSpacing) {
+            // Main post content with animated shift
+            mainPostContent
+                .overlay(
+                    GeometryReader { geo in
+                        Color.clear
+                            .onAppear {
+                                mainPostHeight = geo.size.height
+                            }
+                            .onChange(of: geo.size.height) { _, newHeight in
+                                mainPostHeight = newHeight
+                            }
+                    }
+                )
+            
+            // Reply preview (only visible when there are replies)
+            if hasReplies {
+                ForEach(previewReplies) { reply in
+                    replyPreviewView(reply: reply)
+                }
                 
-                // Reply preview (only visible when there are replies)
-                if hasReplies {
-                    // Spacing before reply
-                    (showDebugOverlays ? Color.purple.opacity(0.05) : Color.clear)
-                        .frame(height: CardLayoutConstants.contentToActionsSpacing)
-                    
-                    ForEach(previewReplies) { reply in
-                        replyPreviewView(reply: reply)
-                    }
-                    
-                    // The feed previews one reply; the rest of the conversation is a tap away
-                    let hiddenReplyCount = loop.replyCount - previewReplies.count
-                    if hiddenReplyCount > 0 {
-                        moreRepliesButton(count: hiddenReplyCount)
-                            .padding(.top, CardLayoutConstants.contentToActionsSpacing)
-                    }
+                // The feed previews one reply; the rest of the conversation is a tap away
+                let hiddenReplyCount = loop.replyCount - previewReplies.count
+                if hiddenReplyCount > 0 {
+                    moreRepliesButton(count: hiddenReplyCount)
                 }
             }
-            .padding(.horizontal, CardLayoutConstants.horizontalPadding)
-            .background(showDebugOverlays ? Color.yellow.opacity(0.05) : Color.clear)
-            .padding(.top, CardLayoutConstants.topPadding)
-            .background(showDebugOverlays ? Color.pink.opacity(0.05) : Color.clear)
-            .padding(.bottom, CardLayoutConstants.bottomPadding)
-            .background(showDebugOverlays ? Color.cyan.opacity(0.05) : Color.clear)
-            
-            // Conversation line (only visible when there are replies)
+        }
+        .padding(.horizontal, CardLayoutConstants.horizontalPadding)
+        .background(showDebugOverlays ? Color.yellow.opacity(0.05) : Color.clear)
+        .padding(.top, CardLayoutConstants.topPadding)
+        .background(showDebugOverlays ? Color.pink.opacity(0.05) : Color.clear)
+        .padding(.bottom, CardLayoutConstants.bottomPadding)
+        .background(showDebugOverlays ? Color.cyan.opacity(0.05) : Color.clear)
+        // Conversation line (only visible when there are replies). An overlay rather than a ZStack layer, so the
+        // card keeps its content's visible edges for the feed to space the divider from
+        .overlay(alignment: .topLeading) {
             if hasReplies {
                 conversationLine
                     .opacity(conversationLineOpacity)
@@ -137,7 +132,7 @@ struct PostCard: View {
     // MARK: - Main Post Content (unified for all cases)
     
     private var mainPostContent: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        BaselineSpacedVStack(spacing: CardLayoutConstants.partSpacing) {
             // Header - always stays in same position
             PostHeader(
                 avatarURL: loop.authorAvatarURL,
@@ -148,7 +143,6 @@ struct PostCard: View {
                 onAvatarTap: onAvatarTap,
                 showDebugOverlay: showDebugOverlays
             )
-            .padding(.bottom, CardLayoutConstants.headerBottomSpacing)
             .background(showDebugOverlays ? Color.purple.opacity(0.05) : Color.clear)
             
             // Content - animates shift when replies appear
@@ -158,7 +152,6 @@ struct PostCard: View {
                 showDebugOverlay: showDebugOverlays
             )
             .opacity(entranceOpacity)
-            .padding(.bottom, CardLayoutConstants.contentToActionsSpacing)
             .background(showDebugOverlays ? Color.purple.opacity(0.05) : Color.clear)
             .padding(.leading, contentShiftAmount)
             
@@ -198,7 +191,7 @@ struct PostCard: View {
     }
     
     private func replyPreviewView(reply: Loop) -> some View {
-        VStack(spacing: 0) {
+        BaselineSpacedVStack(spacing: CardLayoutConstants.partSpacing) {
             PostHeader(
                 avatarURL: reply.authorAvatarURL,
                 displayName: reply.displayAuthorName,
@@ -208,7 +201,6 @@ struct PostCard: View {
                 onAvatarTap: onReplyPreviewTap,
                 showDebugOverlay: showDebugOverlays
             )
-            .padding(.bottom, CardLayoutConstants.headerBottomSpacing)
             .background(showDebugOverlays ? Color.purple.opacity(0.05) : Color.clear) // Debug: Bottom padding
             
             // Content - use PostContent component for consistent styling
@@ -219,7 +211,6 @@ struct PostCard: View {
                 showDebugOverlay: showDebugOverlays
             )
             .opacity(entranceOpacity)
-            .padding(.bottom, CardLayoutConstants.contentToActionsSpacing)
             .background(showDebugOverlays ? Color.purple.opacity(0.05) : Color.clear) // Debug: Bottom padding
             
             // Actions - same as main posts, show delete menu if deletable
@@ -257,6 +248,7 @@ struct PostCard: View {
         }
         .buttonStyle(.pressable)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .visibleTopAtCapHeight(of: .footnote)
     }
     
     @ViewBuilder
@@ -271,12 +263,10 @@ struct PostCard: View {
             // Line starts 12pt below main avatar
             let lineStart = mainAvatarBottom + CardLayoutConstants.avatarLineGap
             
-            // Reply position calculation:
-            // mainPostHeight (measured height of main post content)
-            // + contentToActionsSpacing (12pt spacing)
-            // + topPadding (card padding before reply header starts)
-            let replyHeaderTop = mainPostHeight + CardLayoutConstants.contentToActionsSpacing + CardLayoutConstants.topPadding
-            let replyAvatarTop = replyHeaderTop // Avatar is at top of header
+            // The reply's avatar sits one part spacing below the main post's action icons, which end inside the
+            // bottom of its measured frame
+            let replyAvatarTop = CardLayoutConstants.topPadding + mainPostHeight - CardLayoutConstants.actionIconInset
+                + CardLayoutConstants.partSpacing
             
             // Line ends 12pt above reply avatar
             let lineEnd = replyAvatarTop - CardLayoutConstants.avatarLineGap

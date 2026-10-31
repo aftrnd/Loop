@@ -32,7 +32,7 @@ struct MessageInputView: View {
             Button(action: onSend) {
                 Image(systemName: "arrow.up.circle.fill")
                     .font(.system(size: 28))
-                    .foregroundStyle(canSend ? Color.blue : Color.gray.opacity(0.3))
+                    .foregroundStyle(canSend ? Color.primary : Color.gray.opacity(0.3))
             }
             .disabled(!canSend)
         }

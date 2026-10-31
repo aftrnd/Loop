@@ -78,6 +78,8 @@ struct PostActions: View {
             }
         }
         .frame(maxWidth: .infinity)
+        .alignmentGuide(.visibleTop) { $0[.top] + CardLayoutConstants.actionIconInset }
+        .alignmentGuide(.visibleBottom) { $0[.bottom] - CardLayoutConstants.actionIconInset }
         .background(showDebugOverlay ? Color.orange.opacity(0.1) : Color.clear) // Debug: Actions background
         .overlay(
             Group {

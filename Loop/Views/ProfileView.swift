@@ -249,6 +249,10 @@ struct ProfileView: View {
             }
         }
         .scrollIndicators(.hidden)
+        // The collapsed card runs into the bottom safe area, but while the sheet animates in its content area stops
+        // above it and grows only once the sheet settles, so clipping cut off the bottom of Follow and Message for
+        // the length of the animation. The collapsed card doesn't scroll; the full-height feed still clips
+        .scrollClipDisabled(!isSheetFullyExpanded)
         .background(isSheetFullyExpanded ? Color(.systemBackground) : Color.clear)
         .ignoresSafeArea(edges: .top)
     }
@@ -1249,40 +1253,6 @@ extension ProfileView {
     }
 }
 
-// MARK: - Baseline Spacing
-
-/// A leading-aligned vertical stack that measures each gap from the last text baseline of the view above, where
-/// text optically ends, instead of from the bottom of its frame. A view without text spaces from its bottom.
-private struct BaselineSpacedVStack: Layout {
-    let spacing: CGFloat
-    
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let frames = frames(width: proposal.width, subviews: subviews)
-        let width = proposal.width ?? frames.map(\.maxX).max() ?? 0
-        return CGSize(width: width, height: frames.last?.maxY ?? 0)
-    }
-    
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        for (subview, frame) in zip(subviews, frames(width: bounds.width, subviews: subviews)) {
-            subview.place(
-                at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY),
-                proposal: ProposedViewSize(frame.size)
-            )
-        }
-    }
-    
-    private func frames(width: CGFloat?, subviews: Subviews) -> [CGRect] {
-        var frames: [CGRect] = []
-        var nextTop: CGFloat = 0
-        for subview in subviews {
-            let dimensions = subview.dimensions(in: ProposedViewSize(width: width, height: nil))
-            frames.append(CGRect(x: 0, y: nextTop, width: dimensions.width, height: dimensions.height))
-            nextTop += dimensions[VerticalAlignment.lastTextBaseline] + spacing
-        }
-        return frames
-    }
-}
-
 // MARK: - Feed
 
 /// The posts or likes list under the header. Reading the view model here rather than in ProfileView keeps
@@ -1333,7 +1303,8 @@ private struct ProfileFeedSection: View {
                         let isFirst = loop.id == firstLoopId
                         let isLast = loop.id == lastLoopId
                         
-                        VStack(spacing: 0) {
+                        // Spaced like the home feed: the divider and the next avatar a part spacing apart
+                        BaselineSpacedVStack(spacing: CardLayoutConstants.partSpacing) {
                             PostCard(
                                 loop: loop,
                                 isLiked: viewModel.isLikedByCurrentUser(loop),
@@ -1354,8 +1325,7 @@ private struct ProfileFeedSection: View {
                                 showDebugOverlays: showLayoutDebugOverlays
                             )
                             .padding(.horizontal, 10)
-                            .padding(.top, isFirst ? 0 : 5)
-                            .padding(.bottom, isLast ? 0 : 5)
+                            .padding(.top, isFirst ? 0 : CardLayoutConstants.partSpacing - CardLayoutConstants.topPadding)
                             
                             if !isLast {
                                 PostDivider()
