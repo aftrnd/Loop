@@ -67,6 +67,11 @@ class FirebaseService {
         }
     }
     
+    /// A profile already in the session cache, without a read. Nil if it hasn't been loaded this session.
+    func cachedUser(withId userId: String) -> User? {
+        return userCache[userId]
+    }
+    
     /// Drops cached author profiles so the next fetch reads fresh names and avatars.
     func invalidateUserCache() {
         userCache.removeAll()

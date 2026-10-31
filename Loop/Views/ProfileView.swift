@@ -20,6 +20,8 @@ struct ProfileView: View {
     @State private var profileRevision = 0
     @State private var loadError: String?
     @Environment(\.dismiss) private var dismiss
+    /// Present when the app's root presented this profile, or a sheet it presented did
+    @Environment(SheetRouter.self) private var sheetRouter: SheetRouter?
     
     // Debug settings
     @AppStorage("showLayoutDebugOverlays") private var showLayoutDebugOverlays = false
@@ -39,10 +41,16 @@ struct ProfileView: View {
     @State private var sheetMetrics = ProfileSheetMetrics()
     /// The header's latest size, whatever width it was laid out at
     @State private var headerSize: CGSize = .zero
-    /// The width of the profile's content once the sheet has really laid it out
-    @State private var contentWidth: CGFloat = 0
-    /// The sheet's bottom safe area. A height detent sizes the area above it, so the card is drawn this much taller
-    @State private var sheetBottomInset: CGFloat = 0
+    /// The content's width and the sheet's bottom safe area, from a layout pass with a real height
+    @State private var contentMetrics = ContentMetrics()
+    
+    /// The sheet's bottom safe area at rest. While the sheet animates in it reports 0 and only then the real
+    /// inset, which used to move the card a second time once it had settled, so the root's inset is preferred.
+    private var sheetBottomInset: CGFloat {
+        sheetRouter?.profileLayout?.bottomInset ?? contentMetrics.bottomInset
+    }
+    /// Someone else's collapsed height worked out before the sheet opened, used until the header is measured
+    @State private var predictedCollapsedHeight: CGFloat?
     @State private var ownershipHintOpacity: Double = 0
     @State private var ownershipHintMeasuredHeight: CGFloat = 0
     
@@ -77,20 +85,21 @@ struct ProfileView: View {
     }
     
     // Layout constants
-    private let avatarImageSize: CGFloat = 100
-    private let avatarSpacing: CGFloat = 6 // Spacing around avatar for mask (reduced from 8pt for tighter mask)
-    private var avatarMaskSize: CGFloat { avatarImageSize + (avatarSpacing * 2) } // 112pt: avatar + 6pt spacing on each side
+    private static let bannerHeight: CGFloat = 180
+    private static let avatarImageSize: CGFloat = 100
+    private static let avatarSpacing: CGFloat = 6 // Spacing around avatar for mask (reduced from 8pt for tighter mask)
+    private static let avatarMaskSize: CGFloat = avatarImageSize + (avatarSpacing * 2) // 112pt: avatar + 6pt spacing on each side
     // Match post card padding: 10pt list inset + 10pt card padding = 20pt total
-    private let profileContentPadding: CGFloat = CardLayoutConstants.horizontalPadding + 10 // 20pt total (matches posts)
-    private var avatarOverlapOffset: CGFloat { -(avatarMaskSize / 2) } // -56pt: half of mask size to center overlap
+    private static let profileContentPadding: CGFloat = CardLayoutConstants.horizontalPadding + 10 // 20pt total (matches posts)
+    private static let avatarOverlapOffset: CGFloat = -(avatarMaskSize / 2) // -56pt: half of mask size to center overlap
     /// Someone else's card ends with Follow and Message, which sit as far from the sheet's bottom edge as from
     /// its sides, so their capsules stay concentric with the sheet's corners
     private var profileCardBottomPadding: CGFloat {
-        isOwnProfile ? CardLayoutConstants.bottomPadding : profileContentPadding
+        isOwnProfile ? CardLayoutConstants.bottomPadding : Self.profileContentPadding
     }
     /// Follow and Message are capsules sized to be concentric with the collapsed card: they sit 20pt from the
     /// sheet's edges, and the sheet's corner radius (54pt on iPhone 18 Pro) is that inset plus half this height
-    private let actionButtonHeight: CGFloat = 68
+    private static let actionButtonHeight: CGFloat = 68
     private var ownershipHintHeight: CGFloat {
         if ownershipHintMeasuredHeight > 0 {
             return ownershipHintMeasuredHeight
@@ -115,13 +124,6 @@ struct ProfileView: View {
         return currentUser?.followers.contains(currentUserId) ?? false
     }
     
-    // Date formatter for joined date (Month Year format), built once rather than on every render
-    private static let joinedDateFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMM yyyy"
-        return formatter
-    }()
-    
     // Calculate baseline minimum height needed for profile content
     private var baseProfileHeight: CGFloat {
         let bannerHeight: CGFloat = 180
@@ -130,7 +132,7 @@ struct ProfileView: View {
         let usernameHeight: CGFloat = 18 // Username/location line
         let followersHeight: CGFloat = 18 // Followers/following line
         let bioMinHeight: CGFloat = 44 // Minimum 2 lines for bio
-        let actionButtonsHeight: CGFloat = actionButtonHeight // Follow/Message buttons (only for other users' profiles)
+        let actionButtonsHeight: CGFloat = Self.actionButtonHeight // Follow/Message buttons (only for other users' profiles)
         let spacing: CGFloat = 8 * 3 // 3 gaps of 8px each
         let spacingAfterBio: CGFloat = 12 // Spacing after bio before action buttons
         let padding: CGFloat = 24 // Reduced bottom padding
@@ -146,7 +148,7 @@ struct ProfileView: View {
     /// Presenting a sheet first lays its content out at throwaway sizes (120pt wide and 0 tall in the
     /// simulator) where the bio wraps across many lines; measured there, the card opened far too tall.
     private var otherProfileHeaderHeight: CGFloat {
-        guard contentWidth > 0, abs(headerSize.width - contentWidth) < 0.5 else { return 0 }
+        guard contentMetrics.width > 0, abs(headerSize.width - contentMetrics.width) < 0.5 else { return 0 }
         return headerSize.height
     }
     
@@ -158,11 +160,12 @@ struct ProfileView: View {
         }
         
         if otherProfileHeaderHeight > 0 {
-            // The header runs into the bottom safe area, so the card ends exactly where its content does
+            // A height detent sizes the area above the bottom safe area, and the header runs into it, so the
+            // card ends exactly where its content does
             return otherProfileHeaderHeight - sheetBottomInset
         }
         
-        return baseProfileHeight
+        return predictedCollapsedHeight ?? baseProfileHeight
     }
     
     /// Where the tabs and feed start fading in. While your own profile is fully expanded this leaves out the
@@ -174,13 +177,30 @@ struct ProfileView: View {
         return minimumProfileHeight
     }
     
-    init(userId: String? = nil) {
+    /// Size and safe area of the frame the profile content fills.
+    private nonisolated struct ContentMetrics: Equatable {
+        var width: CGFloat = 0
+        var bottomInset: CGFloat = 0
+    }
+    
+    /// - Parameter preview: The profile and its collapsed height, when they are known before the sheet opens.
+    ///   The sheet then opens at its final height with the profile already showing, instead of opening at an
+    ///   estimate and moving once the header has been measured.
+    init(userId: String? = nil, preview: ProfilePreview? = nil) {
         self.userId = userId
         let currentUserId = Auth.auth().currentUser?.uid
         self.currentUserId = currentUserId
-        self.isOwnProfile = currentUserId != nil && (userId == nil || userId == currentUserId)
-        // Start in loading state if we need to fetch a user
-        if userId != nil {
+        let isOwnProfile = currentUserId != nil && (userId == nil || userId == currentUserId)
+        self.isOwnProfile = isOwnProfile
+        if let preview {
+            _currentUser = State(initialValue: preview.user)
+            // Your own card keeps its estimate, which already includes the ownership hint
+            if !isOwnProfile {
+                _currentDetent = State(initialValue: .height(preview.collapsedHeight))
+                _predictedCollapsedHeight = State(initialValue: preview.collapsedHeight)
+            }
+        } else if userId != nil {
+            // Start in loading state if we need to fetch a user
             _isLoading = State(initialValue: true)
         }
         // Initialize feed view model with the target user ID or current user
@@ -190,7 +210,7 @@ struct ProfileView: View {
     
     @ViewBuilder
     private var profileContent: some View {
-        let bannerHeight: CGFloat = 180
+        let bannerHeight = Self.bannerHeight
         
         // Unified view structure - always the same, components fade in/out
         if currentUser != nil {
@@ -326,18 +346,15 @@ struct ProfileView: View {
                     sheetMetrics.recordFullHeight()
                 }
             }
-            // Only a pass with a real height counts; the width rarely changes, so this rarely re-renders
-            .onGeometryChange(for: CGFloat.self) { proxy in
-                proxy.size.height > 0 ? proxy.size.width : 0
-            } action: { width in
-                contentWidth = width
-            }
-            .onGeometryChange(for: CGFloat.self) { proxy in
-                proxy.safeAreaInsets.bottom
-            } action: { inset in
-                // It settles over the presentation animation; small steps would only resize the sheet repeatedly
-                if abs(inset - sheetBottomInset) > 0.5 {
-                    sheetBottomInset = inset
+            // Only passes with a real height count. The inset is the fallback for `sheetBottomInset`, rounded
+            // because it drifts by fractions of a point while the sheet animates; both rarely change, so this
+            // rarely re-renders
+            .onGeometryChange(for: ContentMetrics?.self) { proxy in
+                guard proxy.size.height > 0 else { return nil }
+                return ContentMetrics(width: proxy.size.width, bottomInset: proxy.safeAreaInsets.bottom.rounded())
+            } action: { metrics in
+                if let metrics {
+                    contentMetrics = metrics
                 }
             }
             .onChange(of: isSheetFullyExpanded) { _, isExpanded in
@@ -362,7 +379,7 @@ struct ProfileView: View {
             // Avatar overlaps banner, mask must be centered on avatar (not aligned at top)
             // If mask top = avatar top, mask center is 6pt too low (mask is 112pt, avatar is 100pt, difference is 12pt/2 = 6pt)
             // Banner GeometryReader coordinate space matches screen width, so we can use the same calculation
-            let avatarCenterX = profileContentPadding + (avatarImageSize / 2)
+            let avatarCenterX = Self.profileContentPadding + (Self.avatarImageSize / 2)
             let avatarCenterY = bannerGeometry.size.height - 6
             
             ZStack(alignment: .bottomTrailing) {
@@ -398,7 +415,7 @@ struct ProfileView: View {
                         // Avatar center Y: adjusted to center mask on avatar (mask is 112pt, avatar is 100pt)
                         // The mask circle is avatarMaskSize (112pt) to create even spacing around the 100pt avatar image
                         Circle()
-                            .frame(width: avatarMaskSize, height: avatarMaskSize)
+                            .frame(width: Self.avatarMaskSize, height: Self.avatarMaskSize)
                             .position(
                                 x: avatarCenterX, // Avatar image center X: profileContentPadding + avatarImageSize/2 = 70pt
                                 y: avatarCenterY // Avatar center Y: at bottom of banner
@@ -420,13 +437,13 @@ struct ProfileView: View {
                     image
                         .resizable()
                         .aspectRatio(contentMode: .fill)
-                        .frame(width: avatarImageSize, height: avatarImageSize)
+                        .frame(width: Self.avatarImageSize, height: Self.avatarImageSize)
                         .clipShape(Circle())
                 } placeholder: {
                     ZStack {
                         Circle()
                             .fill(Color(.systemGray5))
-                            .frame(width: avatarImageSize, height: avatarImageSize)
+                            .frame(width: Self.avatarImageSize, height: Self.avatarImageSize)
                         
                         ProgressView()
                     }
@@ -435,10 +452,10 @@ struct ProfileView: View {
                 // Default initials view
                 Circle()
                     .fill(Color(.systemGray5))
-                    .frame(width: avatarImageSize, height: avatarImageSize)
+                    .frame(width: Self.avatarImageSize, height: Self.avatarImageSize)
                 
                 Color.clear
-                    .frame(width: avatarImageSize, height: avatarImageSize)
+                    .frame(width: Self.avatarImageSize, height: Self.avatarImageSize)
                     .glassEffect(.regular, in: Circle())
                 
                 Text(userInitials)
@@ -446,82 +463,7 @@ struct ProfileView: View {
                     .foregroundColor(.primary)
             }
         }
-        .frame(width: avatarImageSize, height: avatarImageSize)
-    }
-    
-    // MARK: - User Info
-    
-    private var displayNameView: some View {
-        HStack(spacing: 6) {
-            Text(currentUser?.displayName ?? "Display Name")
-                .font(.title2)
-                .fontWeight(.bold)
-                .foregroundStyle(.primary)
-            
-            // Badge inline with name
-            if let badgeType = currentUser?.badgeType {
-                Image(systemName: badgeType.iconName)
-                    .foregroundStyle(badgeType.color)
-                    .font(.title3)
-            }
-            
-            Spacer()
-        }
-    }
-    
-    private var usernameView: some View {
-        HStack(spacing: 8) {
-            // Username
-            HStack(spacing: 4) {
-                Image(systemName: "at")
-                    .font(.callout)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(.secondary)
-                Text(currentUser?.username ?? "username")
-                    .font(.callout)
-                    .fontWeight(.regular)
-                    .foregroundStyle(.secondary)
-            }
-            
-            // Location - only show if exists, with consistent styling
-            if let location = currentUser?.location, !location.isEmpty {
-                HStack(spacing: 4) {
-                    Image(systemName: "location")
-                        .font(.callout)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.secondary)
-                    
-                    Text(location)
-                        .font(.callout)
-                        .fontWeight(.regular)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            
-            // Joined date - with calendar icon, styled exactly like username and location
-            if let user = currentUser {
-                HStack(spacing: 4) {
-                    Image(systemName: "calendar")
-                        .font(.callout)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.secondary)
-                    
-                    Text(Self.joinedDateFormatter.string(from: user.createdAt))
-                        .font(.callout)
-                        .fontWeight(.regular)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        }
-    }
-    
-    private var bioView: some View {
-        // Always show bio area, even if empty
-        Text(currentUser?.bio ?? "")
-            .font(.callout)
-            .foregroundStyle(.primary)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity, alignment: .topLeading)
+        .frame(width: Self.avatarImageSize, height: Self.avatarImageSize)
     }
     
     // MARK: - Helper Properties
@@ -651,8 +593,8 @@ struct ProfileView: View {
         profileCardContainer {
             VStack(alignment: .leading, spacing: CardLayoutConstants.headerBottomSpacing) {
                 // Follow and Message sit as far below the text's last baseline as above the sheet's bottom edge
-                BaselineSpacedVStack(spacing: profileContentPadding) {
-                    profileText(for: user)
+                BaselineSpacedVStack(spacing: Self.profileContentPadding) {
+                    ProfileTextBlock(user: user, isOwnProfile: isOwnProfile)
                     
                     if !isOwnProfile {
                         actionButtons
@@ -687,64 +629,6 @@ struct ProfileView: View {
                 }
             }
         }
-    }
-    
-    /// Name, handle, counts and bio. Someone else's bio takes its natural height, since their card is sized to
-    /// its content; your own keeps two lines of room, which the collapsed height estimate assumes.
-    private func profileText(for user: User) -> some View {
-        VStack(alignment: .leading, spacing: CardLayoutConstants.headerBottomSpacing) {
-            displayNameView
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(debugSectionBackground(.content))
-                .overlay(debugStrokeOverlay())
-            
-            usernameView
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(debugSectionBackground(.content))
-                .overlay(debugStrokeOverlay())
-            
-            followerCountsView(for: user)
-            
-            if isOwnProfile || !(user.bio ?? "").isEmpty {
-                bioView
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .frame(minHeight: isOwnProfile ? 44 : nil)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .background(debugSectionBackground(.content))
-                    .overlay(debugStrokeOverlay())
-            }
-        }
-    }
-    
-    @ViewBuilder
-    private func followerCountsView(for user: User) -> some View {
-        HStack(spacing: 16) {
-            HStack(spacing: 4) {
-                Text("\(user.followerCount)")
-                    .font(.callout)
-                    .fontWeight(.heavy)
-                    .foregroundColor(.primary)
-                Text("Followers")
-                    .font(.callout)
-                    .fontWeight(.regular)
-                    .foregroundStyle(.secondary)
-            }
-            
-            HStack(spacing: 4) {
-                Text("\(user.followingCount)")
-                    .font(.callout)
-                    .fontWeight(.heavy)
-                    .foregroundColor(.primary)
-                Text("Following")
-                    .font(.callout)
-                    .fontWeight(.regular)
-                    .foregroundStyle(.secondary)
-            }
-            
-            Spacer()
-        }
-        .background(debugSectionBackground(.content))
-        .overlay(debugStrokeOverlay())
     }
     
     private enum ProfileDebugSection {
@@ -798,14 +682,14 @@ struct ProfileView: View {
                 Spacer()
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.leading, profileContentPadding)
+            .padding(.leading, Self.profileContentPadding)
         }
     }
     
     @ViewBuilder
     private func profileCardContainer<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         let base = content()
-            .padding(.horizontal, profileContentPadding)
+            .padding(.horizontal, Self.profileContentPadding)
             .background(showLayoutDebugOverlays ? Color.yellow.opacity(0.05) : Color.clear)
             .overlay(debugPaddingLine())
             .padding(.top, CardLayoutConstants.topPadding)
@@ -869,13 +753,13 @@ struct ProfileView: View {
                     // Avatar - left edge aligns with content padding
                     avatarView
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.leading, profileContentPadding)
+                        .padding(.leading, Self.profileContentPadding)
                     
                     // Profile info - consistent spacing throughout
                     profileInfoContent(for: user)
                 }
-                .offset(y: avatarOverlapOffset)
-                .padding(.bottom, avatarOverlapOffset)
+                .offset(y: Self.avatarOverlapOffset)
+                .padding(.bottom, Self.avatarOverlapOffset)
             }
         }
         .background(isSheetFullyExpanded ? Color(.systemBackground) : Color.clear)
@@ -919,7 +803,7 @@ struct ProfileView: View {
                         .foregroundColor(isFollowing ? Color.primary : Color(.systemBackground))
                 }
                 .frame(maxWidth: .infinity)
-                .frame(height: actionButtonHeight)
+                .frame(height: Self.actionButtonHeight)
                 .padding(.horizontal, 4)
                 .background {
                     Capsule(style: .continuous)
@@ -982,7 +866,7 @@ struct ProfileView: View {
                         .foregroundColor(Color(.systemBackground))
                 }
                 .frame(maxWidth: .infinity)
-                .frame(height: actionButtonHeight)
+                .frame(height: Self.actionButtonHeight)
                 .padding(.horizontal, 4)
                 .background {
                     // Black background (opposite for dark mode)
@@ -1080,7 +964,7 @@ struct ProfileView: View {
                 }
             }
         }
-        .padding(.horizontal, profileContentPadding) // Only side padding
+        .padding(.horizontal, Self.profileContentPadding) // Only side padding
         .background(showLayoutDebugOverlays ? Color.pink.opacity(0.05) : Color(.systemBackground))
         .overlay(debugPaddingLine())
         .overlay(tabButtonsDebugStroke)
@@ -1109,7 +993,7 @@ struct ProfileView: View {
     private var fullWidthDivider: some View {
         HStack(spacing: 0) {
             Spacer()
-                .frame(width: profileContentPadding)
+                .frame(width: Self.profileContentPadding)
             
             Rectangle()
                 .fill(CardLayoutConstants.dividerColor)
@@ -1117,7 +1001,7 @@ struct ProfileView: View {
                 .frame(height: CardLayoutConstants.dividerHeight)
             
             Spacer()
-                .frame(width: profileContentPadding)
+                .frame(width: Self.profileContentPadding)
         }
         .frame(height: CardLayoutConstants.dividerHeight)
     }
@@ -1125,7 +1009,7 @@ struct ProfileView: View {
     private var selectedTabIndicator: some View {
         HStack(spacing: 0) {
             Spacer()
-                .frame(width: profileContentPadding)
+                .frame(width: Self.profileContentPadding)
             
             HStack(spacing: 0) {
                 if selectedTab == .posts {
@@ -1150,7 +1034,7 @@ struct ProfileView: View {
             }
             
             Spacer()
-                .frame(width: profileContentPadding)
+                .frame(width: Self.profileContentPadding)
         }
         .frame(height: CardLayoutConstants.dividerHeight)
     }
@@ -1161,6 +1045,207 @@ struct ProfileView: View {
             RoundedRectangle(cornerRadius: 0)
                 .stroke(Color.red, lineWidth: 2)
         }
+    }
+}
+
+// MARK: - Profile Text
+
+/// Name, handle, counts and bio. A view of its own so the collapsed card's height can be worked out with the
+/// same layout before the sheet opens. Someone else's bio takes its natural height, since their card is sized
+/// to its content; your own keeps two lines of room, which the collapsed height estimate assumes.
+private struct ProfileTextBlock: View {
+    let user: User
+    let isOwnProfile: Bool
+    
+    @AppStorage("showLayoutDebugOverlays") private var showLayoutDebugOverlays = false
+    
+    // Date formatter for joined date (Month Year format), built once rather than on every render
+    private static let joinedDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM yyyy"
+        return formatter
+    }()
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: CardLayoutConstants.headerBottomSpacing) {
+            displayNameView
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .modifier(DebugOutline(isOn: showLayoutDebugOverlays))
+            
+            usernameView
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .modifier(DebugOutline(isOn: showLayoutDebugOverlays))
+            
+            followerCountsView
+                .modifier(DebugOutline(isOn: showLayoutDebugOverlays))
+            
+            if isOwnProfile || !(user.bio ?? "").isEmpty {
+                bioView
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(minHeight: isOwnProfile ? 44 : nil)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .modifier(DebugOutline(isOn: showLayoutDebugOverlays))
+            }
+        }
+    }
+    
+    private var displayNameView: some View {
+        HStack(spacing: 6) {
+            Text(user.displayName ?? "Display Name")
+                .font(.title2)
+                .fontWeight(.bold)
+                .foregroundStyle(.primary)
+            
+            // Badge inline with name
+            if let badgeType = user.badgeType {
+                Image(systemName: badgeType.iconName)
+                    .foregroundStyle(badgeType.color)
+                    .font(.title3)
+            }
+            
+            Spacer()
+        }
+    }
+    
+    private var usernameView: some View {
+        HStack(spacing: 8) {
+            // Username
+            HStack(spacing: 4) {
+                Image(systemName: "at")
+                    .font(.callout)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.secondary)
+                Text(user.username ?? "username")
+                    .font(.callout)
+                    .fontWeight(.regular)
+                    .foregroundStyle(.secondary)
+            }
+            
+            // Location - only show if exists, with consistent styling
+            if let location = user.location, !location.isEmpty {
+                HStack(spacing: 4) {
+                    Image(systemName: "location")
+                        .font(.callout)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.secondary)
+                    
+                    Text(location)
+                        .font(.callout)
+                        .fontWeight(.regular)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            
+            // Joined date - with calendar icon, styled exactly like username and location
+            HStack(spacing: 4) {
+                Image(systemName: "calendar")
+                    .font(.callout)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.secondary)
+                
+                Text(Self.joinedDateFormatter.string(from: user.createdAt))
+                    .font(.callout)
+                    .fontWeight(.regular)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+    
+    private var followerCountsView: some View {
+        HStack(spacing: 16) {
+            HStack(spacing: 4) {
+                Text("\(user.followerCount)")
+                    .font(.callout)
+                    .fontWeight(.heavy)
+                    .foregroundColor(.primary)
+                Text("Followers")
+                    .font(.callout)
+                    .fontWeight(.regular)
+                    .foregroundStyle(.secondary)
+            }
+            
+            HStack(spacing: 4) {
+                Text("\(user.followingCount)")
+                    .font(.callout)
+                    .fontWeight(.heavy)
+                    .foregroundColor(.primary)
+                Text("Following")
+                    .font(.callout)
+                    .fontWeight(.regular)
+                    .foregroundStyle(.secondary)
+            }
+            
+            Spacer()
+        }
+    }
+    
+    private var bioView: some View {
+        Text(user.bio ?? "")
+            .font(.callout)
+            .foregroundStyle(.primary)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+}
+
+/// The layout debug tint and outline the profile's text sections show when debug overlays are on.
+private struct DebugOutline: ViewModifier {
+    let isOn: Bool
+    
+    func body(content: Content) -> some View {
+        content
+            .background(isOn ? Color.green.opacity(0.1) : Color.clear)
+            .overlay {
+                if isOn {
+                    Rectangle()
+                        .stroke(Color.red, lineWidth: 1)
+                }
+            }
+    }
+}
+
+// MARK: - Collapsed Height
+
+/// The width and text settings profile sheets are laid out with, taken from the app's root view.
+struct ProfileLayoutContext: Equatable {
+    var width: CGFloat
+    /// The sheet's bottom safe area, which a height detent doesn't include
+    var bottomInset: CGFloat
+    var dynamicTypeSize: DynamicTypeSize
+    var legibilityWeight: LegibilityWeight?
+    var displayScale: CGFloat
+}
+
+/// A profile to open with its collapsed card height already worked out.
+struct ProfilePreview {
+    let user: User
+    let collapsedHeight: CGFloat
+}
+
+extension ProfileView {
+    /// Someone else's collapsed card height (the detent), worked out before the sheet is presented. Lays out the
+    /// same text block and buttons the card shows; the banner, avatar row and paddings are fixed. Must match
+    /// `profileHeaderCompact`: the live header measurement corrects any difference, but only after the sheet has
+    /// opened, as a visible jump.
+    static func collapsedCardHeight(for user: User, in context: ProfileLayoutContext) -> CGFloat {
+        let contentWidth = context.width - profileContentPadding * 2
+        let textAndButtons = BaselineSpacedVStack(spacing: profileContentPadding) {
+            ProfileTextBlock(user: user, isOwnProfile: false)
+            Color.clear
+                .frame(height: actionButtonHeight)
+        }
+        .environment(\.dynamicTypeSize, context.dynamicTypeSize)
+        .environment(\.legibilityWeight, context.legibilityWeight)
+        .environment(\.displayScale, context.displayScale)
+        let textAndButtonsHeight = UIHostingController(rootView: textAndButtons)
+            .sizeThatFits(in: CGSize(width: contentWidth, height: .greatestFiniteMagnitude))
+            .height
+        
+        // Banner, the avatar row pulled up by half its mask, the card's top padding, text and buttons, and the
+        // bottom padding that matches the side inset
+        let headerHeight = bannerHeight + avatarImageSize + avatarOverlapOffset + CardLayoutConstants.topPadding
+            + textAndButtonsHeight + profileContentPadding
+        return headerHeight - context.bottomInset
     }
 }
 

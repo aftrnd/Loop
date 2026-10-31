@@ -10,23 +10,32 @@ import SwiftUI
 @Observable
 final class SheetRouter {
     enum Sheet: Identifiable {
-        /// A profile; nil is the signed-in user's own
-        case profile(userId: String?)
+        /// A profile; nil is the signed-in user's own. The preview, when there is one, lets it open at its
+        /// final height.
+        case profile(userId: String?, preview: ProfilePreview?)
         /// A post and its replies; `onRepliesChanged` lets the feed refresh its reply preview
         case thread(Loop, onRepliesChanged: (() -> Void)?)
 
         var id: String {
             switch self {
-            case .profile(let userId): "profile-\(userId ?? "me")"
+            case .profile(let userId, _): "profile-\(userId ?? "me")"
             case .thread(let loop, _): "thread-\(loop.id)"
             }
         }
     }
 
     var sheet: Sheet?
+    /// How profile sheets will be laid out, kept current by the root view
+    var profileLayout: ProfileLayoutContext?
 
+    /// Shows a profile. If it is already cached (feed authors and chat participants are), its collapsed card
+    /// height is worked out now, so the sheet opens at that height rather than moving after it appears.
     func showProfile(userId: String?) {
-        sheet = .profile(userId: userId)
+        var preview: ProfilePreview?
+        if let userId, let profileLayout, let user = FirebaseService.shared.cachedUser(withId: userId) {
+            preview = ProfilePreview(user: user, collapsedHeight: ProfileView.collapsedCardHeight(for: user, in: profileLayout))
+        }
+        sheet = .profile(userId: userId, preview: preview)
     }
 
     func showThread(_ loop: Loop, onRepliesChanged: (() -> Void)? = nil) {
@@ -35,7 +44,7 @@ final class SheetRouter {
 
     /// Whether the sheet showing is this user's profile
     func isShowingProfile(userId: String) -> Bool {
-        if case .profile(let shownId) = sheet {
+        if case .profile(let shownId, _) = sheet {
             return shownId == userId
         }
         return false
