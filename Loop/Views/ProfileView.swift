@@ -20,6 +20,8 @@ struct ProfileView: View {
     @State private var profileRevision = 0
     @State private var loadError: String?
     @Environment(\.dismiss) private var dismiss
+    /// The sheet's glass, which makes secondary text vibrant on the card
+    @Environment(\.backgroundMaterial) private var sheetMaterial
     /// Present when the app's root presented this profile, or a sheet it presented did
     @Environment(SheetRouter.self) private var sheetRouter: SheetRouter?
     
@@ -275,6 +277,9 @@ struct ProfileView: View {
         // the length of the animation. The collapsed card doesn't scroll; the full-height feed still clips
         .scrollClipDisabled(!isSheetFullyExpanded)
         .background(isSheetFullyExpanded ? Color(.systemBackground) : Color.clear)
+        // The sheet only drops its glass once it has settled at full height, so text that is vibrant on the glass
+        // changed color a beat after the profile turned opaque. It turns plain with the profile instead
+        .environment(\.backgroundMaterial, isSheetFullyExpanded ? nil : sheetMaterial)
         .ignoresSafeArea(edges: .top)
     }
     
