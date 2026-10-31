@@ -137,6 +137,13 @@ nonisolated final class ImageMemoryCache: @unchecked Sendable {
         return cache
     }()
 
+    /// The latest image cached for each URL, whatever its size. Mostly the same objects as `cache`.
+    private let latestByURL: NSCache<NSURL, UIImage> = {
+        let cache = NSCache<NSURL, UIImage>()
+        cache.totalCostLimit = 50 * 1024 * 1024
+        return cache
+    }()
+
     subscript(request: ImageRequest) -> UIImage? {
         get { cache.object(forKey: request.cacheKey) }
         set {
@@ -145,11 +152,18 @@ nonisolated final class ImageMemoryCache: @unchecked Sendable {
                 return
             }
             cache.setObject(newValue, forKey: request.cacheKey, cost: newValue.decodedByteCount)
+            latestByURL.setObject(newValue, forKey: request.url as NSURL, cost: newValue.decodedByteCount)
         }
+    }
+
+    /// Any cached size of the image at `url`, to stand in while another size loads.
+    func anyImage(for url: URL) -> UIImage? {
+        latestByURL.object(forKey: url as NSURL)
     }
 
     func removeAll() {
         cache.removeAllObjects()
+        latestByURL.removeAllObjects()
     }
 }
 

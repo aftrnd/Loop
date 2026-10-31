@@ -58,7 +58,9 @@ enum CardLayoutConstants {
     static let actionButtonWidth: CGFloat = 50 // Standard width for each action button (with counts)
     
     // MARK: - Dividers & Lines
-    static let dividerHeight: CGFloat = 1.15
+    /// A whole point, so it covers whole pixels. A fractional height rounded to 3 or 4 pixels depending on
+    /// where each divider landed, which made some dividers look taller than others
+    static let dividerHeight: CGFloat = 1
     static let dividerColor: Color = Color(.separator)
     static let conversationLineWidth: CGFloat = 2.5
     static let conversationLineColor: Color = Color(.separator)
@@ -93,10 +95,12 @@ struct ReplyCardView: View {
     var showAsMainPost: Bool = false // Show comment/share buttons instead of reply button
     var applyInternalPadding: Bool = true // Whether to apply internal padding (false when in thread container)
     
-    @Environment(PhotoViewerManager.self) private var photoViewerManager
     
     @State private var showingFullText = false
+    /// The photo showing, in the carousel and in the photo viewer alike
     @State private var currentMediaIndex: Int = 0
+    @State private var isPhotoViewerPresented = false
+    @Namespace private var photoTransition
     
     // Debug overlay
     @AppStorage("showLayoutDebugOverlays") private var showDebugOverlay = false
@@ -273,8 +277,9 @@ struct ReplyCardView: View {
                 // Single image - tappable
                 SingleReplyMediaView(
                     media: firstMedia,
+                    transitionNamespace: photoTransition,
                     onPhotoTap: {
-                        photoViewerManager.show(media: reply.media, startingAt: 0)
+                        openPhotoViewer(at: 0)
                     },
                     showDebugOverlay: showDebugOverlay
                 )
@@ -283,13 +288,20 @@ struct ReplyCardView: View {
                 MultipleReplyMediaView(
                     media: reply.media,
                     currentIndex: $currentMediaIndex,
+                    transitionNamespace: photoTransition,
                     onPhotoTap: { index in
-                        photoViewerManager.show(media: reply.media, startingAt: index)
+                        openPhotoViewer(at: index)
                     },
                     showDebugOverlay: showDebugOverlay
                 )
             }
         }
+        .photoViewer(isPresented: $isPhotoViewerPresented, media: reply.media, currentIndex: $currentMediaIndex, namespace: photoTransition)
+    }
+    
+    private func openPhotoViewer(at index: Int) {
+        currentMediaIndex = index
+        isPhotoViewerPresented = true
     }
     
 }
@@ -298,6 +310,8 @@ struct ReplyCardView: View {
 
 struct SingleReplyMediaView: View {
     let media: LoopMedia
+    /// The namespace the photo viewer zooms out of and back into, if the photo opens one
+    var transitionNamespace: Namespace.ID? = nil
     let onPhotoTap: () -> Void
     var showDebugOverlay: Bool = false
     
@@ -334,6 +348,7 @@ struct SingleReplyMediaView: View {
                 }
                 .frame(width: geometry.size.width, height: mediaHeight)
                 .clipShape(RoundedRectangle(cornerRadius: CardLayoutConstants.mediaCornerRadius))
+                .photoViewerSource(index: 0, in: transitionNamespace, cornerRadius: CardLayoutConstants.mediaCornerRadius)
                 .overlay(
                     Group {
                         if showDebugOverlay {
@@ -354,6 +369,8 @@ struct SingleReplyMediaView: View {
 struct MultipleReplyMediaView: View {
     let media: [LoopMedia]
     @Binding var currentIndex: Int
+    /// The namespace the photo viewer zooms out of and back into, if the photos open one
+    var transitionNamespace: Namespace.ID? = nil
     let onPhotoTap: (Int) -> Void
     var showDebugOverlay: Bool = false
     
@@ -390,6 +407,7 @@ struct MultipleReplyMediaView: View {
                             onPhotoTap: { onPhotoTap(index) },
                             showDebugOverlay: showDebugOverlay
                         )
+                        .photoViewerSource(index: index, in: transitionNamespace, cornerRadius: CardLayoutConstants.mediaCornerRadius)
                         .frame(width: containerWidth, height: carouselHeight)
                         .containerRelativeFrame(.horizontal)
                         .id(index)
@@ -402,6 +420,12 @@ struct MultipleReplyMediaView: View {
             .onChange(of: scrollPosition) { _, newValue in
                 if let newValue = newValue {
                     currentIndex = newValue
+                }
+            }
+            // Follows the photo viewer as it pages, so closing it zooms back into a visible photo
+            .onChange(of: currentIndex) { _, newValue in
+                if scrollPosition != newValue {
+                    scrollPosition = newValue
                 }
             }
         }

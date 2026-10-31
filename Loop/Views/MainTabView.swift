@@ -4,7 +4,11 @@ struct MainTabView: View {
     @State private var searchText = ""
     @State private var chatsViewModel = ChatsListViewModel()
     @State private var selectedTab = "Home" // Default to Home tab
-    @State private var photoViewerManager = PhotoViewerManager()
+    @State private var sheetRouter = SheetRouter()
+    @State private var rootMetrics = RootMetrics()
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.legibilityWeight) private var legibilityWeight
+    @Environment(\.displayScale) private var displayScale
     @AppStorage("showLayoutGrid") private var showLayoutGrid = false
     /// Touching the router here starts its notification observer no later than the tab view's creation
     private let notificationNavigation = NotificationNavigationManager.shared
@@ -17,6 +21,23 @@ struct MainTabView: View {
             chat.displayTitle.localizedCaseInsensitiveContains(searchText) ||
             chat.lastMessagePreview.localizedCaseInsensitiveContains(searchText)
         }
+    }
+    
+    /// The root view's width and bottom safe area
+    private nonisolated struct RootMetrics: Equatable {
+        var width: CGFloat = 0
+        var bottomInset: CGFloat = 0
+    }
+    
+    private var profileLayout: ProfileLayoutContext? {
+        guard rootMetrics.width > 0 else { return nil }
+        return ProfileLayoutContext(
+            width: rootMetrics.width,
+            bottomInset: rootMetrics.bottomInset,
+            dynamicTypeSize: dynamicTypeSize,
+            legibilityWeight: legibilityWeight,
+            displayScale: displayScale
+        )
     }
     
     var body: some View {
@@ -104,26 +125,18 @@ struct MainTabView: View {
             // Ties search activation to the search tab. On iOS 27 the search tab only gets its own
             // button, apart from the other tabs, with this set (checked in the iOS 27.0 simulator).
             .tabViewSearchActivation(.searchTabSelection)
-            .environment(photoViewerManager)
-            .environment(chatsViewModel)
-            
-            // Global photo viewer overlay - displays at root level for true full screen
-            if photoViewerManager.isPresented {
-                ZStack {
-                    // Background overlay that fades in/out
-                    PhotoViewerBackgroundOverlay(opacity: $photoViewerManager.backgroundOpacity)
-                    
-                    // Photo viewer itself
-                    FullScreenPhotoViewer(
-                        allMedia: photoViewerManager.media,
-                        startingIndex: photoViewerManager.startingIndex,
-                        isPresented: $photoViewerManager.isPresented,
-                        backgroundOpacity: $photoViewerManager.backgroundOpacity
-                    )
+            // Profiles and threads open from here, outside the tabs; see SheetRouter. Attached before the
+            // environment below so the sheets get it too (a conversation pushed from a profile needs the router)
+            .sheet(item: $sheetRouter.sheet) { sheet in
+                switch sheet {
+                case .profile(let userId, let preview):
+                    ProfileView(userId: userId, preview: preview)
+                case .thread(let loop, let onRepliesChanged):
+                    LoopDetailView(loop: loop, onRepliesChanged: onRepliesChanged)
                 }
-                .ignoresSafeArea()
-                .zIndex(999) // Ensure it's on top of everything
             }
+            .environment(chatsViewModel)
+            .environment(sheetRouter)
             
             #if DEBUG
             if showLayoutGrid {
@@ -131,6 +144,15 @@ struct MainTabView: View {
                     .zIndex(1000)
             }
             #endif
+        }
+        // Profile sheets are as wide as this view and share its bottom safe area
+        .onGeometryChange(for: RootMetrics.self) { proxy in
+            RootMetrics(width: proxy.size.width, bottomInset: proxy.safeAreaInsets.bottom)
+        } action: { metrics in
+            rootMetrics = metrics
+        }
+        .onChange(of: profileLayout, initial: true) { _, layout in
+            sheetRouter.profileLayout = layout
         }
         .task {
             // One chat listener for the whole app: it feeds the Messages tab, its badge and search

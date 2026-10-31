@@ -100,6 +100,13 @@ struct PostCard: View {
                     ForEach(previewReplies) { reply in
                         replyPreviewView(reply: reply)
                     }
+                    
+                    // The feed previews one reply; the rest of the conversation is a tap away
+                    let hiddenReplyCount = loop.replyCount - previewReplies.count
+                    if hiddenReplyCount > 0 {
+                        moreRepliesButton(count: hiddenReplyCount)
+                            .padding(.top, CardLayoutConstants.contentToActionsSpacing)
+                    }
                 }
             }
             .padding(.horizontal, CardLayoutConstants.horizontalPadding)
@@ -237,6 +244,19 @@ struct PostCard: View {
             .opacity(entranceOpacity)
         }
         // NO padding here - padding is applied to the whole card
+    }
+    
+    private func moreRepliesButton(count: Int) -> some View {
+        Button {
+            onReplyPreviewTap?()
+        } label: {
+            Text(count == 1 ? "Show 1 more reply" : "Show \(count) more replies")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .contentTransition(.numericText(value: Double(count)))
+        }
+        .buttonStyle(.pressable)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
     
     @ViewBuilder

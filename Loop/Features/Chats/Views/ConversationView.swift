@@ -3,7 +3,8 @@ import SwiftUI
 struct ConversationView: View {
     let chat: Chat
     @State private var viewModel: ConversationViewModel
-    @State private var showingProfile = false
+    @Environment(SheetRouter.self) private var sheetRouter
+    @Environment(\.dismiss) private var dismiss
     @State private var scrollViewHeight: CGFloat = 0
     @State private var contentHeight: CGFloat = 0
     @FocusState private var isInputFocused: Bool
@@ -47,7 +48,7 @@ struct ConversationView: View {
             ToolbarItem(placement: .principal) {
                 Button(action: {
                     if !chat.isGroupChat {
-                        showingProfile = true
+                        showProfile()
                     }
                 }) {
                     HStack(spacing: 4) {
@@ -67,17 +68,22 @@ struct ConversationView: View {
             }
         }
         .toolbar(.hidden, for: .tabBar)
-        .sheet(isPresented: $showingProfile) {
-            if let otherUserId = chat.otherParticipantId {
-                ProfileView(userId: otherUserId)
-                    .presentationDetents([.large])
-            }
-        }
         .task {
             viewModel.start()
         }
         .onDisappear {
             viewModel.stop()
+        }
+    }
+    
+    /// Shows the other person's profile. Reached from that profile (its Message button), it goes back to it
+    /// instead of opening the profile a second time.
+    private func showProfile() {
+        guard let otherUserId = chat.otherParticipantId else { return }
+        if sheetRouter.isShowingProfile(userId: otherUserId) {
+            dismiss()
+        } else {
+            sheetRouter.showProfile(userId: otherUserId)
         }
     }
     
@@ -499,4 +505,5 @@ struct DrawOnIcon: View {
     NavigationStack {
         ConversationView(chat: Chat(title: "Sample Chat", lastMessagePreview: "This is a sample message"))
     }
+    .environment(SheetRouter())
 }
