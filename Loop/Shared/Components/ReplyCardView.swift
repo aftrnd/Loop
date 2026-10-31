@@ -50,12 +50,18 @@ enum CardLayoutConstants {
     static let headerBottomSpacing: CGFloat = 12 // Space between header and content
     static let contentSpacing: CGFloat = 12 // Space between content elements (text -> media)
     static let contentToActionsSpacing: CGFloat = 12 // Space between any content and action buttons
-    
+    /// The visible gap between the parts of a post and between posts: from where one part visibly ends (a text
+    /// baseline, the avatar, the photo, the action icons) to where the next starts (cap height, avatar, photo, icons)
+    static let partSpacing: CGFloat = 16
+
     // MARK: - Action Buttons
     static let actionButtonHeight: CGFloat = 31 // Standard hit target height
     static let actionButtonIconSize: CGFloat = 18
     static let actionButtonSpacing: CGFloat = 0 // No spacing between button frames (they have internal spacing)
     static let actionButtonWidth: CGFloat = 50 // Standard width for each action button (with counts)
+    /// How far inside the top and bottom of the action row the symbols visibly start and end. Measured on the
+    /// iOS 27 simulator at 3x: the comment and share symbols draw 5 px inside their 22pt row
+    static let actionIconInset: CGFloat = 5.0 / 3
     
     // MARK: - Dividers & Lines
     /// A whole point, so it covers whole pixels. A fractional height rounded to 3 or 4 pixels depending on
