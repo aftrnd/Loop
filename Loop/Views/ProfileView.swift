@@ -22,6 +22,7 @@ struct ProfileView: View {
     @Environment(\.dismiss) private var dismiss
     /// The sheet's glass, which makes secondary text vibrant on the card
     @Environment(\.backgroundMaterial) private var sheetMaterial
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     /// Present when the app's root presented this profile, or a sheet it presented did
     @Environment(SheetRouter.self) private var sheetRouter: SheetRouter?
     
@@ -117,8 +118,18 @@ struct ProfileView: View {
         }
         return CardLayoutConstants.topPadding + profileCardBottomPadding + 24
     }
+    /// Someone else's card already ends 20pt below Follow and Message, the profile's spacing between parts. At full
+    /// height that is the gap to the tabs, measured to the labels' capitals like the gap above the buttons, so the
+    /// tabs start higher by the space over their capitals
     private var tabTopPadding: CGFloat {
-        !isOwnProfile ? CardLayoutConstants.headerBottomSpacing : 0
+        isOwnProfile ? 0 : -tabLabelCapInset
+    }
+    
+    /// The space between the top of the tab labels' line and their capitals
+    private var tabLabelCapInset: CGFloat {
+        let traits = UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(dynamicTypeSize))
+        let font = UIFont.preferredFont(forTextStyle: .body, compatibleWith: traits)
+        return font.ascender - font.capHeight
     }
     
     private var tabBottomPadding: CGFloat {
@@ -951,13 +962,6 @@ struct ProfileView: View {
     
     private var profileTabs: some View {
         VStack(spacing: 0) {
-            // Top padding - only for other users' profiles
-            if tabTopPadding > 0 {
-                Color.clear
-                    .frame(height: tabTopPadding)
-                    .background(showLayoutDebugOverlays ? Color.purple.opacity(0.3) : Color.clear)
-            }
-            
             tabButtonsContainer
             tabIndicatorArea
             
@@ -971,6 +975,7 @@ struct ProfileView: View {
         .allowsHitTesting(true)
         .background(Color(.systemBackground).opacity(0.01)) // Minimal background for hit testing
         .overlay(tabDebugOverlay)
+        .padding(.top, tabTopPadding)
     }
     
     private var tabButtonsContainer: some View {
