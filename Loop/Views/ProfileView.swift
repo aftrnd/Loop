@@ -57,6 +57,8 @@ struct ProfileView: View {
     // Profile feed
     @State private var feedViewModel: ProfileFeedViewModel
     @State private var selectedTab: ProfileFeedTab = .posts
+    /// How far the profile is scrolled. The card always shows the header
+    @State private var scrollPosition = ScrollPosition(edge: .top)
     
     // Navigation for messages
     @State private var navigationPath = NavigationPath()
@@ -249,6 +251,7 @@ struct ProfileView: View {
             }
         }
         .scrollIndicators(.hidden)
+        .scrollPosition($scrollPosition)
         // The collapsed card runs into the bottom safe area, but while the sheet animates in its content area stops
         // above it and grows only once the sheet settles, so clipping cut off the bottom of Follow and Message for
         // the length of the animation. The collapsed card doesn't scroll; the full-height feed still clips
@@ -364,6 +367,11 @@ struct ProfileView: View {
             .onChange(of: isSheetFullyExpanded) { _, isExpanded in
                 if isExpanded {
                     sheetMetrics.recordFullHeight()
+                } else {
+                    // Collapsed from a scrolled feed, the card would show nothing: the header scrolled away and
+                    // the feed faded out. Not animated on its own, which would build every feed row on the way up;
+                    // it moves with the sheet as it settles
+                    scrollPosition.scrollTo(edge: .top)
                 }
             }
             // Loads each tab the first time it is shown; cancelled when the profile is dismissed
