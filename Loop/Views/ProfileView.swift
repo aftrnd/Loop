@@ -1306,11 +1306,8 @@ private struct ProfileNavigationModifiers: ViewModifier {
                 
                 ToolbarItem(placement: .topBarTrailing) {
                     if isOwnProfile && isSheetFullyExpanded {
-                        Button {
+                        Button("Edit") {
                             showEditProfile = true
-                        } label: {
-                            Image(systemName: "gear")
-                                .font(.body.weight(.medium))
                         }
                     }
                 }
