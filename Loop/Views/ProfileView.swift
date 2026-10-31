@@ -249,6 +249,10 @@ struct ProfileView: View {
             }
         }
         .scrollIndicators(.hidden)
+        // The collapsed card runs into the bottom safe area, but while the sheet animates in its content area stops
+        // above it and grows only once the sheet settles, so clipping cut off the bottom of Follow and Message for
+        // the length of the animation. The collapsed card doesn't scroll; the full-height feed still clips
+        .scrollClipDisabled(!isSheetFullyExpanded)
         .background(isSheetFullyExpanded ? Color(.systemBackground) : Color.clear)
         .ignoresSafeArea(edges: .top)
     }
