@@ -43,7 +43,7 @@ struct NewMessageView: View {
                         )
                         .overlay(
                             RoundedRectangle(cornerRadius: 12)
-                                .stroke(isPhoneFieldFocused ? Color.blue : Color(.separator), lineWidth: 2)
+                                .stroke(isPhoneFieldFocused ? Color.primary : Color(.separator), lineWidth: 2)
                         )
                 }
                 .padding(.horizontal)
@@ -65,7 +65,7 @@ struct NewMessageView: View {
                     }) {
                         if isLoading {
                             ProgressView()
-                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                .progressViewStyle(CircularProgressViewStyle(tint: Color(.systemBackground)))
                         } else {
                             Text("Start Conversation")
                                 .fontWeight(.semibold)
@@ -75,9 +75,9 @@ struct NewMessageView: View {
                     .padding()
                     .background(
                         RoundedRectangle(cornerRadius: 12)
-                            .fill(phoneNumber.isEmpty ? Color(.systemGray4) : Color.blue)
+                            .fill(phoneNumber.isEmpty ? Color(.systemGray4) : Color.primary)
                     )
-                    .foregroundColor(.white)
+                    .foregroundColor(Color(.systemBackground))
                     .disabled(phoneNumber.isEmpty || isLoading)
 
                     Button(action: {
@@ -85,7 +85,7 @@ struct NewMessageView: View {
                     }) {
                         Text("Cancel")
                             .fontWeight(.semibold)
-                            .foregroundColor(.blue)
+                            .foregroundColor(.primary)
                     }
                 }
                 .padding(.horizontal)

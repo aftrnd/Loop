@@ -40,10 +40,8 @@ struct MessageBubble: View {
                     .foregroundColor(.primary)
                     .padding(.horizontal, AppConstants.UI.padding)
                     .padding(.vertical, AppConstants.UI.spacing + 2)
-                    .background(
-                        MessageBubbleShape(isFromCurrentUser: false, hasTail: hasTail)
-                            .fill(Color(.systemGray5))
-                    )
+                    // Said and echoed, like the app icon: what you say is ink, what comes back is glass
+                    .glassEffect(.regular, in: MessageBubbleShape(isFromCurrentUser: false, hasTail: hasTail))
                     .scaleEffect(isPressed ? 0.95 : 1.0)
                     .fixedSize(horizontal: false, vertical: true)
                     .overlay(alignment: .topTrailing) {
@@ -126,12 +124,12 @@ struct MessageBubble: View {
                 // Message bubble with like overlay and tail
                 Text(message.content)
                     .font(.body)
-                    .foregroundColor(.white)
+                    .foregroundColor(Color(.systemBackground))
                     .padding(.horizontal, AppConstants.UI.padding)
                     .padding(.vertical, AppConstants.UI.spacing + 2)
                     .background(
                         MessageBubbleShape(isFromCurrentUser: true, hasTail: hasTail)
-                            .fill(Color.blue)
+                            .fill(Color.primary)
                     )
                     .scaleEffect(isPressed ? 0.95 : 1.0)
                     .fixedSize(horizontal: false, vertical: true)

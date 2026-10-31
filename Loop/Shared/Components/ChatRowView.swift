@@ -22,7 +22,7 @@ struct ChatRowView: View {
                 let verticalOffset = CardLayoutConstants.topPadding + (CardLayoutConstants.avatarSize / 2) - (dotSize / 2)
                 
                 Circle()
-                    .fill(Color.blue)
+                    .fill(Color.primary)
                     .frame(width: dotSize, height: dotSize)
                     .offset(x: dotOffset, y: verticalOffset)
             }
