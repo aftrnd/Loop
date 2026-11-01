@@ -15,11 +15,15 @@ final class SheetRouter {
         case profile(userId: String?, preview: ProfilePreview?)
         /// A post and its replies; `onRepliesChanged` lets the feed refresh its reply preview
         case thread(Loop, onRepliesChanged: (() -> Void)?)
+        /// A new loop or a reply. The composer changes its height as you type and holds a photo picker and a
+        /// camera cover, so it presents from here like profiles. `onPost` creates the loop and throws to keep it open
+        case compose(LoopDraft, onPost: (LoopDraft) async throws -> Void)
 
         var id: String {
             switch self {
             case .profile(let userId, _): "profile-\(userId ?? "me")"
             case .thread(let loop, _): "thread-\(loop.id)"
+            case .compose: "compose"
             }
         }
     }
@@ -40,6 +44,10 @@ final class SheetRouter {
 
     func showThread(_ loop: Loop, onRepliesChanged: (() -> Void)? = nil) {
         sheet = .thread(loop, onRepliesChanged: onRepliesChanged)
+    }
+
+    func showCompose(_ draft: LoopDraft = LoopDraft(), onPost: @escaping (LoopDraft) async throws -> Void) {
+        sheet = .compose(draft, onPost: onPost)
     }
 
     /// Whether the sheet showing is this user's profile

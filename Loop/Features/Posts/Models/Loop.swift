@@ -155,6 +155,15 @@ struct LoopDraft {
     var parentLoopId: String?
     var replyToReplyId: String? // If replying to another reply
     
+    init() {}
+    
+    /// A reply to a loop, or to one of its replies
+    init(replyingTo parentLoopId: String, replyToReplyId: String? = nil) {
+        isReply = true
+        self.parentLoopId = parentLoopId
+        self.replyToReplyId = replyToReplyId
+    }
+    
     var isValid: Bool {
         return !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !media.isEmpty
     }

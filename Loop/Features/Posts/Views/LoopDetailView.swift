@@ -329,18 +329,11 @@ struct LoopDetailView: View {
                 await viewModel.refresh()
             }
         }
+        // The thread presents from the root, so its reply composer isn't inside a tab and can size itself
         .sheet(isPresented: $viewModel.showingCompose) {
-            ComposeLoopView(
-                draft: $viewModel.composeDraft,
-                isPresented: $viewModel.showingCompose,
-                onPost: {
-                    try await viewModel.postReply()
-                }
-            )
-            .presentationDetents([.fraction(0.40), .large])
-            .presentationDragIndicator(.visible)
-            .presentationBackgroundInteraction(.enabled(upThrough: .fraction(0.35)))
-            .presentationContentInteraction(.scrolls)
+            ComposeLoopView(draft: viewModel.composeDraft) { draft in
+                try await viewModel.postReply(draft)
+            }
         }
         .sheet(item: $profileUserToShow) { profileUser in
             ProfileView(userId: profileUser.userId)

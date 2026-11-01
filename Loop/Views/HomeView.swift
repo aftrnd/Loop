@@ -21,7 +21,7 @@ struct HomeView: View {
                         Button(action: {
                             let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
                             impactFeedback.impactOccurred()
-                            viewModel.showCompose()
+                            sheetRouter.showCompose { try await viewModel.postLoop($0) }
                         }) {
                             Image(systemName: "plus")
                                 .font(.body)
@@ -53,19 +53,6 @@ struct HomeView: View {
         }
         .task {
             viewModel.start()
-        }
-        .sheet(isPresented: $viewModel.showingCompose) {
-            ComposeLoopView(
-                draft: $viewModel.composeDraft,
-                isPresented: $viewModel.showingCompose,
-                onPost: {
-                    await viewModel.postLoop()
-                }
-            )
-            .presentationDetents([.fraction(0.40), .large])
-            .presentationDragIndicator(.visible)
-            .presentationBackgroundInteraction(.enabled(upThrough: .fraction(0.35)))
-            .presentationContentInteraction(.scrolls)
         }
         .alert("Error", isPresented: errorAlertBinding) {
             Button("OK") {
@@ -134,7 +121,7 @@ struct HomeView: View {
                         if loop.replyCount > 0 {
                             showThread(loop)
                         } else {
-                            viewModel.replyToLoop(loop)
+                            sheetRouter.showCompose(LoopDraft(replyingTo: loop.id)) { try await viewModel.postLoop($0) }
                         }
                     },
                     onShare: {

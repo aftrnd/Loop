@@ -17,8 +17,6 @@ final class HomeFeedViewModel {
     private(set) var replyPreviews: [String: [Loop]] = [:] // loopId -> reply previews
 
     // Compose state
-    var showingCompose = false
-    var composeDraft = LoopDraft()
     private(set) var isPosting = false
 
     private let currentUserId = Auth.auth().currentUser?.uid
@@ -268,44 +266,25 @@ final class HomeFeedViewModel {
 
     // MARK: - Compose Actions
 
-    func showCompose() {
-        composeDraft = LoopDraft()
-        showingCompose = true
-    }
-
-    func hideCompose() {
-        showingCompose = false
-        composeDraft = LoopDraft()
-    }
-
-    func postLoop() async {
-        guard composeDraft.isValid, composeDraft.isWithinCharacterLimit else { return }
+    /// Creates a loop or a reply from the composer. It throws, so a failed post keeps the composer open with the draft.
+    func postLoop(_ draft: LoopDraft) async throws {
+        guard draft.isValid, draft.isWithinCharacterLimit else { return }
 
         isPosting = true
-        let isReply = composeDraft.isReply
-        let parentLoopId = composeDraft.parentLoopId
+        defer { isPosting = false }
 
-        do {
-            try await FirebaseService.shared.createLoop(
-                content: composeDraft.content,
-                media: composeDraft.media,
-                isReply: composeDraft.isReply,
-                parentLoopId: composeDraft.parentLoopId,
-                replyToReplyId: composeDraft.replyToReplyId
-            )
+        try await FirebaseService.shared.createLoop(
+            content: draft.content,
+            media: draft.media,
+            isReply: draft.isReply,
+            parentLoopId: draft.parentLoopId,
+            replyToReplyId: draft.replyToReplyId
+        )
 
-            // Success - clear the compose state
-            hideCompose()
-
-            // If this was a reply, refresh the reply preview for that loop
-            if isReply, let parentId = parentLoopId {
-                await refreshReplyPreviewForLoop(parentId)
-            }
-        } catch {
-            errorMessage = error.localizedDescription
+        // If this was a reply, refresh the reply preview for that loop
+        if draft.isReply, let parentId = draft.parentLoopId {
+            await refreshReplyPreviewForLoop(parentId)
         }
-
-        isPosting = false
     }
 
     // MARK: - Loop Actions
@@ -344,13 +323,6 @@ final class HomeFeedViewModel {
                 loops[index].likes.removeAll { $0 == userId }
             }
         }
-    }
-
-    func replyToLoop(_ loop: Loop) {
-        composeDraft = LoopDraft()
-        composeDraft.isReply = true
-        composeDraft.parentLoopId = loop.id
-        showingCompose = true
     }
 
     func canDeleteLoop(_ loop: Loop) -> Bool {

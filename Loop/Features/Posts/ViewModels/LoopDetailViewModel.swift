@@ -208,44 +208,34 @@ final class LoopDetailViewModel {
     // MARK: - Compose Actions
 
     func showReplyCompose() {
-        composeDraft = LoopDraft()
-        composeDraft.isReply = true
-        composeDraft.parentLoopId = loop.id
+        composeDraft = LoopDraft(replyingTo: loop.id)
         showingCompose = true
     }
 
     func replyToReply(_ reply: Loop) {
         // Reply to a reply - sets both parent loop and the reply being replied to
-        composeDraft = LoopDraft()
-        composeDraft.isReply = true
-        composeDraft.parentLoopId = loop.id // Root post
-        composeDraft.replyToReplyId = reply.id // The reply being replied to
+        composeDraft = LoopDraft(replyingTo: loop.id, replyToReplyId: reply.id)
         showingCompose = true
-    }
-
-    func hideCompose() {
-        showingCompose = false
-        composeDraft = LoopDraft()
     }
 
     /// Posts the draft as a reply. Throws instead of setting `errorMessage`, because the compose sheet is still
     /// open and shows the failure itself.
-    func postReply() async throws {
-        guard composeDraft.isValid, composeDraft.isWithinCharacterLimit, !isPosting else { return }
+    /// Creates the reply from the composer, which closes itself once this returns
+    func postReply(_ draft: LoopDraft) async throws {
+        guard draft.isValid, draft.isWithinCharacterLimit, !isPosting else { return }
 
         isPosting = true
         defer { isPosting = false }
 
         try await FirebaseService.shared.createLoop(
-            content: composeDraft.content,
-            media: composeDraft.media,
-            isReply: composeDraft.isReply,
-            parentLoopId: composeDraft.parentLoopId,
-            replyToReplyId: composeDraft.replyToReplyId
+            content: draft.content,
+            media: draft.media,
+            isReply: draft.isReply,
+            parentLoopId: draft.parentLoopId,
+            replyToReplyId: draft.replyToReplyId
         )
 
-        // Success - clear the compose state. The listener shows the new reply as soon as it is written.
-        hideCompose()
+        // The listener shows the new reply as soon as it is written
 
         // Notify parent that replies changed
         onRepliesChanged?()
