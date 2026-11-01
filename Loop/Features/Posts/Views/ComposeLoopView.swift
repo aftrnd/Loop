@@ -711,10 +711,10 @@ private struct ComposeUploadTile: View {
 
 // MARK: - Playful Avatar
 
-/// Makes the avatar something to play with. It pops in when the composer opens, follows a finger 1:1 at first and
-/// with more give the further it goes, grows and leans while held, and springs back with a bounce when let go.
-/// Offsets and scales only, so the text beside it never moves. With Reduce Motion it fades in and settles back
-/// without bouncing.
+/// Makes the avatar something to play with. It floats a few points on a slow loop that never quite repeats, pops in
+/// when the composer opens, follows a finger 1:1 at first and with more give the further it goes, grows and leans
+/// while held, and springs back with a bounce when let go. Transforms only, so the text beside it never moves. With
+/// Reduce Motion it holds still, fades in and settles back without bouncing.
 private struct PlayfulAvatar: ViewModifier {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @GestureState(resetTransaction: Transaction(animation: PlayfulAvatar.release)) private var translation: CGSize = .zero
@@ -730,32 +730,58 @@ private struct PlayfulAvatar: ViewModifier {
 
     func body(content: Content) -> some View {
         let offset = Self.rubberBanded(translation)
-        content
-            .scaleEffect(isHeld ? 1.12 : 1)
-            .rotationEffect(.degrees(reduceMotion ? 0 : Double(offset.width) * 0.35))
-            .offset(offset)
-            .scaleEffect(isShown || reduceMotion ? 1 : 0.3)
-            .opacity(isShown ? 1 : 0)
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .updating($translation) { value, state, transaction in
-                        transaction.animation = Self.tracking
-                        state = value.translation
-                    }
-                    .updating($isHeld) { _, state, transaction in
-                        transaction.animation = Self.tracking
-                        state = true
-                    }
-            )
-            .sensoryFeedback(trigger: isHeld) { _, held in
-                held ? .impact(flexibility: .soft, intensity: 0.6) : nil
-            }
-            .onAppear {
-                // After the sheet has mostly arrived, so the pop reads as the avatar's own
-                withAnimation(reduceMotion ? .easeOut(duration: 0.2) : .spring(response: 0.5, dampingFraction: 0.55).delay(0.15)) {
-                    isShown = true
+        TimelineView(.animation(paused: reduceMotion)) { timeline in
+            let drift = reduceMotion ? Drift() : Drift(at: timeline.date.timeIntervalSinceReferenceDate)
+            content
+                .scaleEffect(isHeld ? 1.12 : 1)
+                .rotationEffect(.degrees(reduceMotion ? 0 : Double(offset.width) * 0.35 + drift.tilt))
+                // The drift is a transform: `.offset` lands on whole pixels, which made this slow motion step a
+                // pixel at a time. The drag keeps `.offset`, which the release spring animates
+                .transformEffect(CGAffineTransform(translationX: drift.offset.width, y: drift.offset.height))
+                .offset(offset)
+                .scaleEffect(isShown || reduceMotion ? 1 : 0.3)
+                .opacity(isShown ? 1 : 0)
+        }
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .updating($translation) { value, state, transaction in
+                    transaction.animation = Self.tracking
+                    state = value.translation
                 }
+                .updating($isHeld) { _, state, transaction in
+                    transaction.animation = Self.tracking
+                    state = true
+                }
+        )
+        .sensoryFeedback(trigger: isHeld) { _, held in
+            held ? .impact(flexibility: .soft, intensity: 0.6) : nil
+        }
+        .onAppear {
+            // After the sheet has mostly arrived, so the pop reads as the avatar's own
+            withAnimation(reduceMotion ? .easeOut(duration: 0.2) : .spring(response: 0.5, dampingFraction: 0.55).delay(0.15)) {
+                isShown = true
             }
+        }
+    }
+
+    /// Where the float has the avatar at a moment: two slow sines per axis at unrelated periods, up to about 3.5pt
+    /// from rest, and a lean of up to 1.5 degrees
+    private struct Drift {
+        var offset: CGSize = .zero
+        var tilt: Double = 0
+
+        init() {}
+
+        init(at time: TimeInterval) {
+            func wave(_ period: Double, _ phase: Double = 0) -> Double {
+                sin(2 * .pi * time / period + phase)
+            }
+            offset = CGSize(
+                width: 2.5 * wave(6.1) + wave(2.9, 0.7),
+                height: 2.5 * wave(7.3, 1.3) + wave(3.7, 2.1)
+            )
+            tilt = 1.5 * wave(5.3, 0.4)
+        }
     }
 
     /// iOS's scroll rubber band applied to the drag's length: 1:1 for small moves, never past `reach`
