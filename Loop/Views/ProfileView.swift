@@ -96,6 +96,8 @@ struct ProfileView: View {
     private static let profileContentPadding: CGFloat = CardLayoutConstants.horizontalPadding + 10 // 20pt total (matches posts)
     /// How far the avatar's row is pulled up over the wallpaper: its top 56pt overlap the photo
     private static let avatarOverlapOffset: CGFloat = -56
+    /// The ring cut out of the wallpaper around the avatar, so the page shows between them
+    private static let avatarRingWidth: CGFloat = 4
     /// Someone else's card ends with Follow and Message, which sit as far from the sheet's bottom edge as from
     /// its sides, so their capsules stay concentric with the sheet's corners
     private var profileCardBottomPadding: CGFloat {
@@ -421,7 +423,7 @@ struct ProfileView: View {
     
     // MARK: - Banner
     
-    /// The wallpaper, ending in a straight edge that the avatar overlaps
+    /// The wallpaper, ending in a straight edge that the avatar overlaps, with a ring cut out around the avatar
     private var bannerContent: some View {
         GeometryReader { bannerGeometry in
             if let bannerURL = currentUser?.bannerURL, let url = URL(string: bannerURL) {
@@ -446,6 +448,18 @@ struct ProfileView: View {
                     .frame(width: bannerGeometry.size.width, height: bannerGeometry.size.height)
             }
         }
+        .mask {
+            AvatarRingCutout(center: avatarCenter, diameter: Self.avatarImageSize + Self.avatarRingWidth * 2)
+                .fill(style: FillStyle(eoFill: true))
+        }
+    }
+    
+    /// The avatar's center from the header's top leading corner, where the avatar row lands once pulled up
+    private var avatarCenter: CGPoint {
+        CGPoint(
+            x: Self.profileContentPadding + Self.avatarImageSize / 2,
+            y: Self.bannerHeight + Self.avatarOverlapOffset + Self.avatarImageSize / 2
+        )
     }
     
     // MARK: - Avatar
@@ -1484,6 +1498,25 @@ private struct ProfileNavigationModifiers: ViewModifier {
                     ConversationView(chat: chat)
                 }
             }
+    }
+}
+
+// MARK: - Avatar Ring
+
+/// A rectangle with a circle cut out of it, filled even-odd: the ring that shows the page around the avatar
+private struct AvatarRingCutout: Shape {
+    let center: CGPoint
+    let diameter: CGFloat
+    
+    func path(in rect: CGRect) -> Path {
+        var path = Path(rect)
+        path.addEllipse(in: CGRect(
+            x: center.x - diameter / 2,
+            y: center.y - diameter / 2,
+            width: diameter,
+            height: diameter
+        ))
+        return path
     }
 }
 
