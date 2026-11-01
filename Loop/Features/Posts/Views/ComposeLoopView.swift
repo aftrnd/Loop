@@ -300,7 +300,7 @@ struct ComposeLoopView: View {
         }
         .frame(width: Layout.avatarSize, height: Layout.avatarSize)
         .clipShape(Circle())
-        .modifier(AvatarDrift())
+        .modifier(PlayfulAvatar())
         .accessibilityHidden(true)
     }
 
@@ -709,30 +709,62 @@ private struct ComposeUploadTile: View {
     }
 }
 
-// MARK: - Avatar Drift
+// MARK: - Playful Avatar
 
-/// Floats the avatar a few points on a slow loop that never quite repeats, so it reads as a person beside the text
-/// rather than another round control stacked on the corner arcs. Still with Reduce Motion. An offset only, so the
-/// text beside it never moves.
-private struct AvatarDrift: ViewModifier {
+/// Makes the avatar something to play with. It pops in when the composer opens, follows a finger 1:1 at first and
+/// with more give the further it goes, grows and leans while held, and springs back with a bounce when let go.
+/// Offsets and scales only, so the text beside it never moves. With Reduce Motion it fades in and settles back
+/// without bouncing.
+private struct PlayfulAvatar: ViewModifier {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @GestureState(resetTransaction: Transaction(animation: PlayfulAvatar.release)) private var translation: CGSize = .zero
+    @GestureState(resetTransaction: Transaction(animation: PlayfulAvatar.release)) private var isHeld = false
+    @State private var isShown = false
+
+    /// Let go, it springs home with a bounce
+    private static let release = Animation.spring(response: 0.45, dampingFraction: 0.5)
+    /// Held, it tracks the finger with almost no lag
+    private static let tracking = Animation.interactiveSpring(response: 0.12, dampingFraction: 0.86)
+    /// The farthest a drag can pull it: the give grows until it never quite gets there
+    private static let reach: CGFloat = 64
 
     func body(content: Content) -> some View {
-        TimelineView(.animation(paused: reduceMotion)) { timeline in
-            content
-                .offset(reduceMotion ? .zero : Self.offset(at: timeline.date.timeIntervalSinceReferenceDate))
-        }
+        let offset = Self.rubberBanded(translation)
+        content
+            .scaleEffect(isHeld ? 1.12 : 1)
+            .rotationEffect(.degrees(reduceMotion ? 0 : Double(offset.width) * 0.35))
+            .offset(offset)
+            .scaleEffect(isShown || reduceMotion ? 1 : 0.3)
+            .opacity(isShown ? 1 : 0)
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .updating($translation) { value, state, transaction in
+                        transaction.animation = Self.tracking
+                        state = value.translation
+                    }
+                    .updating($isHeld) { _, state, transaction in
+                        transaction.animation = Self.tracking
+                        state = true
+                    }
+            )
+            .sensoryFeedback(trigger: isHeld) { _, held in
+                held ? .impact(flexibility: .soft, intensity: 0.6) : nil
+            }
+            .onAppear {
+                // After the sheet has mostly arrived, so the pop reads as the avatar's own
+                withAnimation(reduceMotion ? .easeOut(duration: 0.2) : .spring(response: 0.5, dampingFraction: 0.55).delay(0.15)) {
+                    isShown = true
+                }
+            }
     }
 
-    /// Two slow sines per axis at unrelated periods, up to about 3.5pt from rest
-    private static func offset(at time: TimeInterval) -> CGSize {
-        func wave(_ period: Double, _ phase: Double = 0) -> Double {
-            sin(2 * .pi * time / period + phase)
-        }
-        return CGSize(
-            width: 2.5 * wave(6.1) + wave(2.9, 0.7),
-            height: 2.5 * wave(7.3, 1.3) + wave(3.7, 2.1)
-        )
+    /// iOS's scroll rubber band applied to the drag's length: 1:1 for small moves, never past `reach`
+    private static func rubberBanded(_ translation: CGSize) -> CGSize {
+        let distance = hypot(translation.width, translation.height)
+        guard distance > 0 else { return .zero }
+        let banded = (1 - 1 / (distance / reach + 1)) * reach
+        let scale = banded / distance
+        return CGSize(width: translation.width * scale, height: translation.height * scale)
     }
 }
 
