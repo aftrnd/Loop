@@ -148,12 +148,19 @@ struct PostCard: View {
             .background(showDebugOverlays ? Color.purple.opacity(0.05) : Color.clear)
             
             // Content - animates shift when replies appear
-            PostContent(
-                text: loop.content,
-                media: loop.media,
-                link: loop.link,
-                showDebugOverlay: showDebugOverlays
-            )
+            Group {
+                if let link = loop.link, loop.topic?.isArticle == true {
+                    // News topics read as a newspaper article, the post's text as its standfirst
+                    NewsArticle(topicName: loop.displayAuthorName, standfirst: loop.content, link: link)
+                } else {
+                    PostContent(
+                        text: loop.content,
+                        media: loop.media,
+                        link: loop.link,
+                        showDebugOverlay: showDebugOverlays
+                    )
+                }
+            }
             .opacity(entranceOpacity)
             .background(showDebugOverlays ? Color.purple.opacity(0.05) : Color.clear)
             .padding(.leading, contentShiftAmount)

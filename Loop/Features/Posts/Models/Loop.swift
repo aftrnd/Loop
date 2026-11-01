@@ -45,6 +45,12 @@ struct LoopTopic: Codable, Hashable {
     /// The squircle's color and the symbol's, as `#RRGGBB`
     let color: String
     let ink: String
+    /// "article" for news topics, whose posts read as a newspaper article; nil for the photo cards
+    var layout: String? = nil
+    
+    var isArticle: Bool {
+        layout == "article"
+    }
 }
 
 /// The news story a topic post is about, shown as a card under its text
