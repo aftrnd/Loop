@@ -36,6 +36,30 @@ struct LoopMedia: Identifiable, Codable, Hashable {
     }
 }
 
+/// The topic account a post comes from. Loop writes these posts from the news, so the account has no profile: its
+/// posts carry its name and look, a squircle in the topic's color with its symbol.
+struct LoopTopic: Codable, Hashable {
+    let id: String
+    /// An SF Symbol name
+    let symbol: String
+    /// The squircle's color and the symbol's, as `#RRGGBB`
+    let color: String
+    let ink: String
+}
+
+/// The news story a topic post is about, shown as a card under its text
+struct LoopLink: Codable, Hashable {
+    let url: String
+    /// The publisher's own headline
+    let title: String
+    /// The publisher's name, such as ESPN
+    let source: String
+    /// The story's own preview image, as link previews show it
+    let imageURL: String?
+    /// A big story, shown large with the headline over its photo
+    let isLead: Bool
+}
+
 struct Loop: Identifiable, Codable, Hashable {
     let id: String
     let authorId: String
@@ -55,6 +79,11 @@ struct Loop: Identifiable, Codable, Hashable {
     var authorAvatarURL: String?
     var authorBadgeType: BadgeType?
     
+    /// Set on posts from topic accounts
+    var topic: LoopTopic?
+    /// The story a topic post links to
+    var link: LoopLink?
+    
     init(
         id: String = UUID().uuidString,
         authorId: String,
@@ -70,7 +99,9 @@ struct Loop: Identifiable, Codable, Hashable {
         authorDisplayName: String? = nil,
         authorUsername: String? = nil,
         authorAvatarURL: String? = nil,
-        authorBadgeType: BadgeType? = nil
+        authorBadgeType: BadgeType? = nil,
+        topic: LoopTopic? = nil,
+        link: LoopLink? = nil
     ) {
         self.id = id
         self.authorId = authorId
@@ -87,9 +118,15 @@ struct Loop: Identifiable, Codable, Hashable {
         self.authorUsername = authorUsername
         self.authorAvatarURL = authorAvatarURL
         self.authorBadgeType = authorBadgeType
+        self.topic = topic
+        self.link = link
     }
     
     // MARK: - Computed Properties
+    
+    var isTopicPost: Bool {
+        topic != nil
+    }
     
     var likeCount: Int {
         return likes.count
@@ -135,8 +172,10 @@ struct Loop: Identifiable, Codable, Hashable {
         return "@\(username)"
     }
     
-    /// Returns a copy with the author details filled in from their profile
+    /// Returns a copy with the author details filled in from their profile. Topic posts keep their own: topic
+    /// accounts have no profile
     func withAuthor(_ author: User?) -> Loop {
+        guard !isTopicPost else { return self }
         var loop = self
         loop.authorDisplayName = author?.displayName
         loop.authorUsername = author?.username

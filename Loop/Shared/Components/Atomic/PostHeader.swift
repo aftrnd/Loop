@@ -8,6 +8,8 @@ struct PostHeader: View {
     let displayName: String
     let username: String?
     let badgeType: BadgeType?
+    /// A topic account's look, drawn in place of a photo
+    let topic: LoopTopic?
     let timestamp: String?
     let trailingIcon: String? // Optional trailing icon (e.g., "chevron.right")
     let showUsernamePrefix: Bool // Whether to show "@" before username
@@ -23,6 +25,7 @@ struct PostHeader: View {
         displayName: String,
         username: String?,
         badgeType: BadgeType?,
+        topic: LoopTopic? = nil,
         timestamp: String? = nil,
         trailingIcon: String? = nil,
         showUsernamePrefix: Bool = true,
@@ -33,6 +36,7 @@ struct PostHeader: View {
         self.displayName = displayName
         self.username = username
         self.badgeType = badgeType
+        self.topic = topic
         self.timestamp = timestamp
         self.trailingIcon = trailingIcon
         self.showUsernamePrefix = showUsernamePrefix
@@ -67,7 +71,9 @@ struct PostHeader: View {
     
     private var avatar: some View {
         Group {
-            if let avatarURLString = avatarURL, let avatarURL = URL(string: avatarURLString) {
+            if let topic {
+                TopicAvatar(topic: topic, size: avatarSize)
+            } else if let avatarURLString = avatarURL, let avatarURL = URL(string: avatarURLString) {
                 CachedAsyncImage(url: avatarURL, targetSize: CGSize(width: avatarSize, height: avatarSize)) { image in
                     image
                         .resizable()

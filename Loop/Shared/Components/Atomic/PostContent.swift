@@ -6,6 +6,8 @@ struct PostContent: View {
     // MARK: - Properties
     let text: String
     let media: [LoopMedia]
+    /// The story a topic post is about
+    let link: LoopLink?
     let maxPreviewLength: Int
     let showDebugOverlay: Bool
     
@@ -19,11 +21,13 @@ struct PostContent: View {
     init(
         text: String,
         media: [LoopMedia] = [],
+        link: LoopLink? = nil,
         maxPreviewLength: Int = 280,
         showDebugOverlay: Bool = false
     ) {
         self.text = text
         self.media = media
+        self.link = link
         self.maxPreviewLength = maxPreviewLength
         self.showDebugOverlay = showDebugOverlay
     }
@@ -45,6 +49,10 @@ struct PostContent: View {
                             }
                         }
                     )
+            }
+            
+            if let link {
+                NewsLinkCard(link: link)
             }
             
             // Media content - own container with debug outline

@@ -1062,6 +1062,9 @@ class FirebaseService {
             )
         }
         
+        // Topic posts carry their account's name and look, since topic accounts have no profile to fetch
+        let topic = parseTopic(data["topic"] as? [String: Any])
+        
         return Loop(
             id: id,
             authorId: authorId,
@@ -1073,7 +1076,38 @@ class FirebaseService {
             replies: data["replies"] as? [String] ?? [],
             isReply: data["isReply"] as? Bool ?? false,
             parentLoopId: data["parentLoopId"] as? String,
-            replyToReplyId: data["replyToReplyId"] as? String
+            replyToReplyId: data["replyToReplyId"] as? String,
+            authorDisplayName: topic == nil ? nil : data["authorDisplayName"] as? String,
+            authorUsername: topic == nil ? nil : data["authorUsername"] as? String,
+            topic: topic,
+            link: parseLink(data["link"] as? [String: Any])
+        )
+    }
+    
+    private static func parseTopic(_ data: [String: Any]?) -> LoopTopic? {
+        guard let data,
+              let id = data["id"] as? String,
+              let symbol = data["symbol"] as? String,
+              let color = data["color"] as? String,
+              let ink = data["ink"] as? String else {
+            return nil
+        }
+        return LoopTopic(id: id, symbol: symbol, color: color, ink: ink)
+    }
+    
+    private static func parseLink(_ data: [String: Any]?) -> LoopLink? {
+        guard let data,
+              let url = data["url"] as? String,
+              let title = data["title"] as? String,
+              let source = data["source"] as? String else {
+            return nil
+        }
+        return LoopLink(
+            url: url,
+            title: title,
+            source: source,
+            imageURL: data["imageURL"] as? String,
+            isLead: data["isLead"] as? Bool ?? false
         )
     }
     

@@ -139,8 +139,10 @@ struct PostCard: View {
                 displayName: loop.displayAuthorName,
                 username: loop.authorUsername,
                 badgeType: loop.authorBadgeType,
+                topic: loop.topic,
                 timestamp: loop.timeAgoString,
-                onAvatarTap: onAvatarTap,
+                // Topic accounts have no profile to open
+                onAvatarTap: loop.isTopicPost ? nil : onAvatarTap,
                 showDebugOverlay: showDebugOverlays
             )
             .background(showDebugOverlays ? Color.purple.opacity(0.05) : Color.clear)
@@ -149,6 +151,7 @@ struct PostCard: View {
             PostContent(
                 text: loop.content,
                 media: loop.media,
+                link: loop.link,
                 showDebugOverlay: showDebugOverlays
             )
             .opacity(entranceOpacity)
