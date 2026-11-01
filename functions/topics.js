@@ -20,8 +20,10 @@ const POSTS_PER_RUN = 2;
 /** Big stories, from Claude's 1 to 5 rating, get the large card */
 const LEAD_SIGNIFICANCE = 4;
 const USER_AGENT = 'Mozilla/5.0 (compatible; LoopTopics/1.0; +https://github.com/aftrnd/Loop)';
-/** Feed items that aren't news: discussion threads, shows and live pages */
-const NOT_NEWS = /\b(thread|game chat|podcast|livestream|live updates?|live blog|newsletter|quiz|crossword)\b/i;
+/** Feed items that aren't news: discussion threads, shows, live pages, cartoons, and pages titled only by a month */
+const NOT_NEWS = /\b(thread|game chat|podcast|livestream|live updates?|live blog|newsletter|quiz|crossword|cartoons?)\b|^(january|february|march|april|may|june|july|august|september|october|november|december) \d{4}$/i;
+/** The longest post, past which it is cut after its last whole sentence */
+const MAX_LENGTH = { article: 300, card: 220 };
 const FETCH_TIMEOUT_MS = 10000;
 
 /**
@@ -35,13 +37,19 @@ const TOPICS = [
     feeds: [
       { url: 'https://www.steelers.com/rss/news', source: 'Steelers.com' },
       { url: 'https://www.behindthesteelcurtain.com/rss/index.xml', source: 'Behind the Steel Curtain' },
-      { url: 'https://www.espn.com/espn/rss/nfl/news', source: 'ESPN', match: /steelers|pittsburgh/i },
+      { url: 'https://profootballtalk.nbcsports.com/feed/', source: 'ProFootballTalk', match: /steelers|pittsburgh/i },
+      { url: 'https://sports.yahoo.com/nfl/rss/', source: 'Yahoo Sports', match: /steelers|pittsburgh/i },
     ],
   },
   {
     id: 'nfl', name: 'NFL', handle: 'nfl', about: 'the NFL',
     symbol: 'trophy.fill', color: '#013369', ink: '#FFFFFF',
-    feeds: [{ url: 'https://www.espn.com/espn/rss/nfl/news', source: 'ESPN' }],
+    // ESPN's feed answers Google Cloud with an empty body, so the league comes from three other sources
+    feeds: [
+      { url: 'https://profootballtalk.nbcsports.com/feed/', source: 'ProFootballTalk' },
+      { url: 'https://sports.yahoo.com/nfl/rss/', source: 'Yahoo Sports' },
+      { url: 'https://www.sbnation.com/rss/nfl/index.xml', source: 'SB Nation' },
+    ],
   },
   {
     id: 'politics', name: 'Politics', handle: 'politics', about: 'US politics',
@@ -106,8 +114,8 @@ function textOf(value) {
 }
 
 const NAMED_ENTITIES = {
-  amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', rsquo: '’', lsquo: '‘',
-  rdquo: '”', ldquo: '“', hellip: '…', ndash: '–', mdash: '—',
+  amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', rsquo: '\u2019', lsquo: '\u2018',
+  rdquo: '\u201D', ldquo: '\u201C', hellip: '\u2026', ndash: '\u2013', mdash: '\u2014',
 };
 
 function decodeEntities(text) {
@@ -249,6 +257,7 @@ async function previewImage(link) {
 // MARK: - Writing
 
 const PostSchema = z.object({
+  postable: z.boolean().describe('False when the item is not a news story, or is the same news as an earlier post listed'),
   text: z.string().describe('The post'),
   significance: z.number().int().describe("How big the story is for this account's followers, from 1 to 5"),
 });
@@ -264,6 +273,8 @@ function systemPrompt(topic) {
     'Sound like a well-informed person sharing the news: plain words, sentence case, no hype.',
     'Use only facts stated in the headline and summary. Never add names, numbers, scores, dates, quotes or claims that are not there, and never guess at outcomes.',
     'Report politics neutrally, without taking sides.',
+    'Set postable to false, and leave the text empty, when the item is not a news story (a cartoon, quiz, podcast, promotion, or a listing or roundup with no news of its own), or when it is the same news as one of the earlier posts listed in the request.',
+    'The post is only the news itself: never mention ratings, significance, this summary, the feed, or that it was written by AI.',
     "No hashtags, emoji, em dashes, exclamation marks, questions to the reader or clickbait. Do not start with the account's name or with \"Breaking\".",
     "Also rate the story's significance for this account's followers: 1 routine, 3 notable, 5 major news that most followers will talk about today.",
   ].join('\n\n');
@@ -272,30 +283,41 @@ function systemPrompt(topic) {
 /** Loop's copy has no em or en dashes and no stray quotes around the whole text */
 function tidy(text) {
   return String(text)
-    .replace(/\s*[—–]\s*/g, ', ')
-    .replace(/^["“‘']+|["”’']+$/g, '')
+    .replace(/\s*[\u2014\u2013]\s*/g, ', ')
+    .replace(/^["\u201C\u2018']+|["\u201D\u2019']+$/g, '')
     .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 280);
+    .trim();
+}
+
+/** Text within `limit` characters: cut after its last whole sentence that fits, or at a word with an ellipsis */
+function fitLength(text, limit) {
+  if (text.length <= limit) return text;
+  const head = text.slice(0, limit);
+  const sentenceEnd = Math.max(head.lastIndexOf('. '), head.lastIndexOf('? '), head.lastIndexOf('! '));
+  if (sentenceEnd > limit / 2) return head.slice(0, sentenceEnd + 1);
+  return `${head.slice(0, head.lastIndexOf(' ')).replace(/[,;:]$/, '')}\u2026`;
 }
 
 /** Writes one post with Claude: its text and the story's significance, or null when there is nothing to post */
 function claudeWriter(client) {
-  return async (topic, story) => {
+  return async (topic, story, earlierPosts = []) => {
+    const earlier = earlierPosts.length
+      ? `\n\nEarlier posts from this account this hour:\n${earlierPosts.map((text) => `- ${text}`).join('\n')}`
+      : '';
     const response = await client.messages.parse({
       model: MODEL,
       max_tokens: 2048,
       system: systemPrompt(topic),
       messages: [{
         role: 'user',
-        content: `Source: ${story.source}\nHeadline: ${story.title}\nSummary: ${story.summary || '(none)'}`,
+        content: `Source: ${story.source}\nHeadline: ${story.title}\nSummary: ${story.summary || '(none)'}${earlier}`,
       }],
       output_config: { effort: 'low', format: zodOutputFormat(PostSchema) },
     });
-    if (response.stop_reason === 'refusal' || !response.parsed_output) {
+    if (response.stop_reason === 'refusal' || !response.parsed_output || !response.parsed_output.postable) {
       return null;
     }
-    const text = tidy(response.parsed_output.text);
+    const text = fitLength(tidy(response.parsed_output.text), MAX_LENGTH[topic.layout === 'article' ? 'article' : 'card']);
     if (!text) return null;
     const significance = Math.min(5, Math.max(1, Math.round(response.parsed_output.significance)));
     return { text, significance };
@@ -324,9 +346,10 @@ async function runTopics({ store, writer, log, topics = TOPICS }) {
       const storyId = crypto.createHash('sha256').update(canonicalURL(story.link)).digest('hex').slice(0, 40);
       if (!(await store.claim(storyId, topic, story))) continue;
       try {
-        const post = await writer(topic, story);
+        const post = await writer(topic, story, posted.filter((loop) => loop.topic.id === topic.id).map((loop) => loop.content));
         if (!post) {
-          await store.skip(storyId, 'no post');
+          await store.skip(storyId, 'not postable');
+          log.info(`Skipped for ${topic.id}: ${story.title}`);
           continue;
         }
         const imageURL = (await previewImage(story.link)) ?? story.feedImage ?? null;
