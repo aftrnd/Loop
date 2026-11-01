@@ -92,12 +92,10 @@ struct ProfileView: View {
     // Layout constants
     private static let bannerHeight: CGFloat = 180
     private static let avatarImageSize: CGFloat = 100
-    private static let avatarSpacing: CGFloat = 6 // The ring around the avatar
-    /// A clear glass droplet behind the avatar, 6pt wider all round (112pt), concentric with it
-    private static let avatarRingSize: CGFloat = avatarImageSize + (avatarSpacing * 2)
     // Match post card padding: 10pt list inset + 10pt card padding = 20pt total
     private static let profileContentPadding: CGFloat = CardLayoutConstants.horizontalPadding + 10 // 20pt total (matches posts)
-    private static let avatarOverlapOffset: CGFloat = -(avatarRingSize / 2) // -56pt: centers the ring on the banner's edge
+    /// How far the avatar's row is pulled up over the wallpaper: its top 56pt overlap the photo
+    private static let avatarOverlapOffset: CGFloat = -56
     /// Someone else's card ends with Follow and Message, which sit as far from the sheet's bottom edge as from
     /// its sides, so their capsules stay concentric with the sheet's corners
     private var profileCardBottomPadding: CGFloat {
@@ -423,7 +421,7 @@ struct ProfileView: View {
     
     // MARK: - Banner
     
-    /// The wallpaper, whole: the avatar's glass droplet bends the photo and its bottom edge where they pass under it
+    /// The wallpaper, ending in a straight edge that the avatar overlaps
     private var bannerContent: some View {
         GeometryReader { bannerGeometry in
             if let bannerURL = currentUser?.bannerURL, let url = URL(string: bannerURL) {
@@ -442,9 +440,6 @@ struct ProfileView: View {
                         ProgressView()
                     }
                 }
-            } else if currentUser?.avatarURL != nil {
-                // No wallpaper: the header light fills this frame with the portrait's colors instead of gray
-                Color.clear
             } else {
                 // Default gray background
                 Color(.systemGray5)
@@ -457,12 +452,6 @@ struct ProfileView: View {
     
     private var avatarView: some View {
         ZStack {
-            // Clear glass the size of the ring, so the ring bends the wallpaper instead of cutting a hole in it.
-            // It overhangs the avatar's frame, as the ring always has, without changing the layout
-            Color.clear
-                .frame(width: Self.avatarRingSize, height: Self.avatarRingSize)
-                .glassEffect(.clear, in: Circle())
-            
             if let avatarURL = currentUser?.avatarURL, let url = URL(string: avatarURL) {
                 // Load from Firebase Storage URL with caching
                 CachedAsyncImage(url: url) { image in
@@ -745,8 +734,10 @@ struct ProfileView: View {
             .padding(.bottom, profileCardBottomPadding)
             .background(showLayoutDebugOverlays ? Color.cyan.opacity(0.05) : Color.clear)
         
-        // No background of its own: at full height the header's light shows behind the text, over the header's page
+        // A background that changes rather than two branches, so reaching full height doesn't rebuild the card's
+        // text and buttons in the middle of the transition
         base
+            .background(isSheetFullyExpanded ? Color(.systemBackground) : Color.clear)
             .clipShape(RoundedRectangle(cornerRadius: CardLayoutConstants.cornerRadius))
             .overlay(debugCardOutline())
     }
@@ -802,17 +793,6 @@ struct ProfileView: View {
                 .offset(y: Self.avatarOverlapOffset)
                 .padding(.bottom, Self.avatarOverlapOffset)
             }
-        }
-        // The person's wallpaper and avatar as light, above the page's own background
-        .background(alignment: .top) {
-            ProfileHeaderLight(
-                bannerURL: currentUser?.bannerURL.flatMap { URL(string: $0) },
-                avatarURL: currentUser?.avatarURL.flatMap { URL(string: $0) },
-                bannerHeight: bannerHeight,
-                avatarCenter: CGPoint(x: Self.profileContentPadding + Self.avatarImageSize / 2, y: bannerHeight - Self.avatarSpacing),
-                avatarSize: Self.avatarImageSize,
-                ringSize: Self.avatarRingSize
-            )
         }
         .background(isSheetFullyExpanded ? Color(.systemBackground) : Color.clear)
         .coordinateSpace(.named(Self.headerCoordinateSpace))
@@ -1283,7 +1263,7 @@ extension ProfileView {
             .sizeThatFits(in: CGSize(width: contentWidth, height: .greatestFiniteMagnitude))
             .height
         
-        // Banner, the avatar row pulled up by half its mask, the card's top padding, text and buttons, and the
+        // Banner, the avatar row pulled up over it, the card's top padding, text and buttons, and the
         // bottom padding that matches the side inset
         let headerHeight = bannerHeight + avatarImageSize + avatarOverlapOffset + CardLayoutConstants.topPadding
             + textAndButtonsHeight + profileContentPadding
