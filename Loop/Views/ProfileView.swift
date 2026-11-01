@@ -92,11 +92,12 @@ struct ProfileView: View {
     // Layout constants
     private static let bannerHeight: CGFloat = 180
     private static let avatarImageSize: CGFloat = 100
-    private static let avatarSpacing: CGFloat = 6 // Spacing around avatar for mask (reduced from 8pt for tighter mask)
-    private static let avatarMaskSize: CGFloat = avatarImageSize + (avatarSpacing * 2) // 112pt: avatar + 6pt spacing on each side
+    private static let avatarSpacing: CGFloat = 6 // The ring around the avatar
+    /// A clear glass droplet behind the avatar, 6pt wider all round (112pt), concentric with it
+    private static let avatarRingSize: CGFloat = avatarImageSize + (avatarSpacing * 2)
     // Match post card padding: 10pt list inset + 10pt card padding = 20pt total
     private static let profileContentPadding: CGFloat = CardLayoutConstants.horizontalPadding + 10 // 20pt total (matches posts)
-    private static let avatarOverlapOffset: CGFloat = -(avatarMaskSize / 2) // -56pt: half of mask size to center overlap
+    private static let avatarOverlapOffset: CGFloat = -(avatarRingSize / 2) // -56pt: centers the ring on the banner's edge
     /// Someone else's card ends with Follow and Message, which sit as far from the sheet's bottom edge as from
     /// its sides, so their capsules stay concentric with the sheet's corners
     private var profileCardBottomPadding: CGFloat {
@@ -422,59 +423,32 @@ struct ProfileView: View {
     
     // MARK: - Banner
     
+    /// The wallpaper, whole: the avatar's glass droplet bends the photo and its bottom edge where they pass under it
     private var bannerContent: some View {
         GeometryReader { bannerGeometry in
-            // Calculate avatar image center position based on actual layout
-            // Avatar image is left-aligned within its frame, with left edge at content padding (20pt)
-            // Avatar image left edge = profileContentPadding (20pt) from screen left
-            // Avatar image center X = profileContentPadding + (avatarImageSize / 2) = 20pt + 50pt = 70pt
-            // Avatar overlaps banner, mask must be centered on avatar (not aligned at top)
-            // If mask top = avatar top, mask center is 6pt too low (mask is 112pt, avatar is 100pt, difference is 12pt/2 = 6pt)
-            // Banner GeometryReader coordinate space matches screen width, so we can use the same calculation
-            let avatarCenterX = Self.profileContentPadding + (Self.avatarImageSize / 2)
-            let avatarCenterY = bannerGeometry.size.height - 6
-            
-            ZStack(alignment: .bottomTrailing) {
-                Group {
-                    if let bannerURL = currentUser?.bannerURL, let url = URL(string: bannerURL) {
-                        // Load from Firebase Storage URL with caching
-                        CachedAsyncImage(url: url) { image in
-                            image
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                                .frame(width: bannerGeometry.size.width, height: bannerGeometry.size.height)
-                                .clipped()
-                        } placeholder: {
-                            ZStack {
-                                Color(.systemGray5)
-                                    .frame(width: bannerGeometry.size.width, height: bannerGeometry.size.height)
-                                
-                                ProgressView()
-                            }
-                        }
-                    } else {
-                        // Default gray background
+            if let bannerURL = currentUser?.bannerURL, let url = URL(string: bannerURL) {
+                // Load from Firebase Storage URL with caching
+                CachedAsyncImage(url: url) { image in
+                    image
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: bannerGeometry.size.width, height: bannerGeometry.size.height)
+                        .clipped()
+                } placeholder: {
+                    ZStack {
                         Color(.systemGray5)
                             .frame(width: bannerGeometry.size.width, height: bannerGeometry.size.height)
+                        
+                        ProgressView()
                     }
                 }
-                .mask {
-                    ZStack {
-                        Rectangle()
-                        // Position mask circle center at exact avatar image center using bannerGeometry coordinates
-                        // Avatar image left edge: profileContentPadding (20pt) - aligns with content padding
-                        // Avatar image center X: profileContentPadding + (avatarImageSize / 2) = 20pt + 50pt = 70pt
-                        // Avatar center Y: adjusted to center mask on avatar (mask is 112pt, avatar is 100pt)
-                        // The mask circle is avatarMaskSize (112pt) to create even spacing around the 100pt avatar image
-                        Circle()
-                            .frame(width: Self.avatarMaskSize, height: Self.avatarMaskSize)
-                            .position(
-                                x: avatarCenterX, // Avatar image center X: profileContentPadding + avatarImageSize/2 = 70pt
-                                y: avatarCenterY // Avatar center Y: at bottom of banner
-                            )
-                            .blendMode(.destinationOut)
-                    }
-                }
+            } else if currentUser?.avatarURL != nil {
+                // No wallpaper: the header light fills this frame with the portrait's colors instead of gray
+                Color.clear
+            } else {
+                // Default gray background
+                Color(.systemGray5)
+                    .frame(width: bannerGeometry.size.width, height: bannerGeometry.size.height)
             }
         }
     }
@@ -483,6 +457,12 @@ struct ProfileView: View {
     
     private var avatarView: some View {
         ZStack {
+            // Clear glass the size of the ring, so the ring bends the wallpaper instead of cutting a hole in it.
+            // It overhangs the avatar's frame, as the ring always has, without changing the layout
+            Color.clear
+                .frame(width: Self.avatarRingSize, height: Self.avatarRingSize)
+                .glassEffect(.clear, in: Circle())
+            
             if let avatarURL = currentUser?.avatarURL, let url = URL(string: avatarURL) {
                 // Load from Firebase Storage URL with caching
                 CachedAsyncImage(url: url) { image in
@@ -765,10 +745,8 @@ struct ProfileView: View {
             .padding(.bottom, profileCardBottomPadding)
             .background(showLayoutDebugOverlays ? Color.cyan.opacity(0.05) : Color.clear)
         
-        // A background that changes rather than two branches, so reaching full height doesn't rebuild the card's
-        // text and buttons in the middle of the transition
+        // No background of its own: at full height the header's light shows behind the text, over the header's page
         base
-            .background(isSheetFullyExpanded ? Color(.systemBackground) : Color.clear)
             .clipShape(RoundedRectangle(cornerRadius: CardLayoutConstants.cornerRadius))
             .overlay(debugCardOutline())
     }
@@ -824,6 +802,17 @@ struct ProfileView: View {
                 .offset(y: Self.avatarOverlapOffset)
                 .padding(.bottom, Self.avatarOverlapOffset)
             }
+        }
+        // The person's wallpaper and avatar as light, above the page's own background
+        .background(alignment: .top) {
+            ProfileHeaderLight(
+                bannerURL: currentUser?.bannerURL.flatMap { URL(string: $0) },
+                avatarURL: currentUser?.avatarURL.flatMap { URL(string: $0) },
+                bannerHeight: bannerHeight,
+                avatarCenter: CGPoint(x: Self.profileContentPadding + Self.avatarImageSize / 2, y: bannerHeight - Self.avatarSpacing),
+                avatarSize: Self.avatarImageSize,
+                ringSize: Self.avatarRingSize
+            )
         }
         .background(isSheetFullyExpanded ? Color(.systemBackground) : Color.clear)
         .coordinateSpace(.named(Self.headerCoordinateSpace))
