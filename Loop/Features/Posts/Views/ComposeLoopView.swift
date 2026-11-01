@@ -300,6 +300,7 @@ struct ComposeLoopView: View {
         }
         .frame(width: Layout.avatarSize, height: Layout.avatarSize)
         .clipShape(Circle())
+        .modifier(AvatarDrift())
         .accessibilityHidden(true)
     }
 
@@ -705,6 +706,33 @@ private struct ComposeUploadTile: View {
             }
             .frame(width: side, height: side)
             .accessibilityLabel("Uploading photo")
+    }
+}
+
+// MARK: - Avatar Drift
+
+/// Floats the avatar a few points on a slow loop that never quite repeats, so it reads as a person beside the text
+/// rather than another round control stacked on the corner arcs. Still with Reduce Motion. An offset only, so the
+/// text beside it never moves.
+private struct AvatarDrift: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        TimelineView(.animation(paused: reduceMotion)) { timeline in
+            content
+                .offset(reduceMotion ? .zero : Self.offset(at: timeline.date.timeIntervalSinceReferenceDate))
+        }
+    }
+
+    /// Two slow sines per axis at unrelated periods, up to about 3.5pt from rest
+    private static func offset(at time: TimeInterval) -> CGSize {
+        func wave(_ period: Double, _ phase: Double = 0) -> Double {
+            sin(2 * .pi * time / period + phase)
+        }
+        return CGSize(
+            width: 2.5 * wave(6.1) + wave(2.9, 0.7),
+            height: 2.5 * wave(7.3, 1.3) + wave(3.7, 2.1)
+        )
     }
 }
 
