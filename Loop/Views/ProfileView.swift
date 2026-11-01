@@ -91,11 +91,12 @@ struct ProfileView: View {
     
     // Layout constants
     private static let bannerHeight: CGFloat = 180
-    private static let avatarImageSize: CGFloat = 100
+    private static let avatarImageSize: CGFloat = 116
     // Match post card padding: 10pt list inset + 10pt card padding = 20pt total
     private static let profileContentPadding: CGFloat = CardLayoutConstants.horizontalPadding + 10 // 20pt total (matches posts)
-    /// How far the avatar's row is pulled up over the wallpaper: its top 56pt overlap the photo
-    private static let avatarOverlapOffset: CGFloat = -56
+    /// How far the avatar's row is pulled up over the wallpaper: its center sits 6pt above the wallpaper's edge, so
+    /// its top 64pt overlap the photo
+    private static let avatarOverlapOffset: CGFloat = -(avatarImageSize / 2 + 6)
     /// The ring cut out of the wallpaper around the avatar, so the page shows between them
     private static let avatarRingWidth: CGFloat = 4
     /// Someone else's card ends with Follow and Message, which sit as far from the sheet's bottom edge as from
@@ -126,6 +127,18 @@ struct ProfileView: View {
         isOwnProfile ? 0 : -tabLabelCapInset
     }
     
+    /// The name's capitals sit 20pt below the avatar, the profile's spacing between parts, so its line starts that
+    /// much less the space above its capitals
+    private var nameTopPadding: CGFloat {
+        Self.nameTopPadding(for: dynamicTypeSize)
+    }
+    
+    private static func nameTopPadding(for dynamicTypeSize: DynamicTypeSize) -> CGFloat {
+        let traits = UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(dynamicTypeSize))
+        let font = UIFont.preferredFont(forTextStyle: .title2, compatibleWith: traits)
+        return profileContentPadding - (font.ascender - font.capHeight)
+    }
+    
     /// The space between the top of the tab labels' line and their capitals
     private var tabLabelCapInset: CGFloat {
         let traits = UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(dynamicTypeSize))
@@ -150,7 +163,11 @@ struct ProfileView: View {
     // Calculate baseline minimum height needed for profile content
     private var baseProfileHeight: CGFloat {
         let bannerHeight: CGFloat = 180
-        let avatarSection: CGFloat = 30 // Avatar overlap area (reduced)
+        // The avatar overlap area, fitted when the avatar showed 44pt below the wallpaper with 8pt above the name,
+        // plus what the larger avatar and the name's spacing add since
+        let avatarSection: CGFloat = 30
+            + (Self.avatarImageSize + Self.avatarOverlapOffset - 44)
+            + (nameTopPadding - CardLayoutConstants.topPadding)
         let nameHeight: CGFloat = 28 // Display name
         let usernameHeight: CGFloat = 18 // Username/location line
         let followersHeight: CGFloat = 18 // Followers/following line
@@ -743,7 +760,7 @@ struct ProfileView: View {
             .padding(.horizontal, Self.profileContentPadding)
             .background(showLayoutDebugOverlays ? Color.yellow.opacity(0.05) : Color.clear)
             .overlay(debugPaddingLine())
-            .padding(.top, CardLayoutConstants.topPadding)
+            .padding(.top, nameTopPadding)
             .background(showLayoutDebugOverlays ? Color.pink.opacity(0.05) : Color.clear)
             .padding(.bottom, profileCardBottomPadding)
             .background(showLayoutDebugOverlays ? Color.cyan.opacity(0.05) : Color.clear)
@@ -1277,10 +1294,10 @@ extension ProfileView {
             .sizeThatFits(in: CGSize(width: contentWidth, height: .greatestFiniteMagnitude))
             .height
         
-        // Banner, the avatar row pulled up over it, the card's top padding, text and buttons, and the
-        // bottom padding that matches the side inset
-        let headerHeight = bannerHeight + avatarImageSize + avatarOverlapOffset + CardLayoutConstants.topPadding
-            + textAndButtonsHeight + profileContentPadding
+        // Banner, the avatar row pulled up over it, the space above the name, text and buttons, and the bottom
+        // padding that matches the side inset
+        let headerHeight = bannerHeight + avatarImageSize + avatarOverlapOffset
+            + nameTopPadding(for: context.dynamicTypeSize) + textAndButtonsHeight + profileContentPadding
         return headerHeight - context.bottomInset
     }
 }
