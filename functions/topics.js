@@ -182,7 +182,12 @@ function parseFeed(xml, feed) {
 async function freshStories(topic, log) {
   const cutoff = Date.now() - MAX_AGE_HOURS * 3600 * 1000;
   const results = await Promise.allSettled(topic.feeds.map(async (feed) => {
-    const stories = parseFeed(await fetchText(feed.url), feed);
+    const body = await fetchText(feed.url);
+    const stories = parseFeed(body, feed);
+    if (stories.length === 0) {
+      // A page that isn't a feed, such as a bot check served with a 200, would otherwise pass silently
+      throw new Error(`no items; the response starts: ${body.slice(0, 160).replace(/\s+/g, ' ')}`);
+    }
     return feed.match ? stories.filter((story) => feed.match.test(`${story.title} ${story.summary}`)) : stories;
   }));
   const stories = [];
@@ -329,6 +334,7 @@ async function runTopics({ store, writer, log, topics = TOPICS }) {
         await store.save(storyId, loop);
         posted.push(loop);
         count += 1;
+        log.info(`Posted ${topic.id}, significance ${post.significance}${loop.link.isLead ? ', lead' : ''}: ${loop.content} [${loop.link.source}: ${loop.link.title}]`);
       } catch (error) {
         log.error(`Post failed for ${topic.id}: ${story.link}: ${error.message}`);
         await store.skip(storyId, error.message);
