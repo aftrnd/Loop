@@ -2,3 +2,7 @@ node_modules/
 *.log
 .firebase/
 
+# Local environment and secrets: the API key lives only in Secret Manager
+.env
+.env.*
+.secret.local

@@ -15,6 +15,9 @@ async function main() {
       return true;
     },
     skip: async (storyId, reason) => console.log(`skipped ${storyId}: ${reason}`),
+    release: async (storyId) => {
+      claimed.delete(storyId);
+    },
     save: async () => {},
   };
   const writer = process.env.ANTHROPIC_API_KEY

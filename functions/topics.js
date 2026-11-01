@@ -326,6 +326,7 @@ function claudeWriter(client) {
 
 // MARK: - Run
 
+
 /**
  * One pass over every topic. `store` claims stories and saves posts, `writer` writes a post for a story, `log` is
  * a functions logger; the scheduled function passes Firestore and Claude, the dry run passes stand-ins.
@@ -359,8 +360,15 @@ async function runTopics({ store, writer, log, topics = TOPICS }) {
         count += 1;
         log.info(`Posted ${topic.id}, significance ${post.significance}${loop.link.isLead ? ', lead' : ''}: ${loop.content} [${loop.link.source}: ${loop.link.title}]`);
       } catch (error) {
+        // A failed call or save says nothing about the story, so a later run can post it. Only Claude's own
+        // judgment that a story isn't postable skips it for good
+        await store.release(storyId);
+        if (error instanceof Anthropic.APIError) {
+          // A bad key, a rate limit, an outage or a broken request fails every story alike: try again next hour
+          log.error(`Stopping the run: ${error.constructor.name}: ${error.message}`);
+          throw error;
+        }
         log.error(`Post failed for ${topic.id}: ${story.link}: ${error.message}`);
-        await store.skip(storyId, error.message);
       }
     }
     log.info(`Topic ${topic.id}: ${stories.length} fresh stories, ${count} posted`);
@@ -415,6 +423,9 @@ function firestoreStore(db) {
     },
     async skip(storyId, reason) {
       await stories.doc(storyId).set({ skipped: String(reason).slice(0, 200) }, { merge: true });
+    },
+    async release(storyId) {
+      await stories.doc(storyId).delete();
     },
     async save(storyId, loop) {
       const loopRef = db.collection('loops').doc();
