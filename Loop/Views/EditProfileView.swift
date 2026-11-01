@@ -83,7 +83,7 @@ struct EditProfileView: View {
                                                     .resizable()
                                                     .aspectRatio(contentMode: .fill)
                                                     .frame(width: 80, height: 80)
-                                                    .clipShape(Circle())
+                                                    .clipShape(AvatarShape())
                                             } else if let avatarURL = currentUser?.avatarURL,
                                                       let url = URL(string: avatarURL) {
                                                 CachedAsyncImage(url: url) { image in
@@ -91,7 +91,7 @@ struct EditProfileView: View {
                                                         .resizable()
                                                         .aspectRatio(contentMode: .fill)
                                                         .frame(width: 80, height: 80)
-                                                        .clipShape(Circle())
+                                                        .clipShape(AvatarShape())
                                                 } placeholder: {
                                                     avatarPlaceholder
                                                 }
@@ -415,7 +415,7 @@ struct EditProfileView: View {
     
     private var avatarPlaceholder: some View {
         ZStack {
-            Circle()
+            AvatarShape()
                 .fill(Color(.systemGray5))
                 .frame(width: 80, height: 80)
             

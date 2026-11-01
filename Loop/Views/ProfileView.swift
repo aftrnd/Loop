@@ -449,7 +449,7 @@ struct ProfileView: View {
             }
         }
         .mask {
-            AvatarRingCutout(center: avatarCenter, diameter: Self.avatarImageSize + Self.avatarRingWidth * 2)
+            AvatarRingCutout(center: avatarCenter, avatarSize: Self.avatarImageSize, ringWidth: Self.avatarRingWidth)
                 .fill(style: FillStyle(eoFill: true))
         }
     }
@@ -473,10 +473,10 @@ struct ProfileView: View {
                         .resizable()
                         .aspectRatio(contentMode: .fill)
                         .frame(width: Self.avatarImageSize, height: Self.avatarImageSize)
-                        .clipShape(Circle())
+                        .clipShape(AvatarShape())
                 } placeholder: {
                     ZStack {
-                        Circle()
+                        AvatarShape()
                             .fill(Color(.systemGray5))
                             .frame(width: Self.avatarImageSize, height: Self.avatarImageSize)
                         
@@ -485,13 +485,13 @@ struct ProfileView: View {
                 }
             } else {
                 // Default initials view
-                Circle()
+                AvatarShape()
                     .fill(Color(.systemGray5))
                     .frame(width: Self.avatarImageSize, height: Self.avatarImageSize)
                 
                 Color.clear
                     .frame(width: Self.avatarImageSize, height: Self.avatarImageSize)
-                    .glassEffect(.regular, in: Circle())
+                    .glassEffect(.regular, in: AvatarShape())
                 
                 Text(userInitials)
                     .font(.system(size: 48, weight: .semibold))
@@ -1503,19 +1503,22 @@ private struct ProfileNavigationModifiers: ViewModifier {
 
 // MARK: - Avatar Ring
 
-/// A rectangle with a circle cut out of it, filled even-odd: the ring that shows the page around the avatar
+/// A rectangle with the avatar's ring cut out of it, filled even-odd, so the page shows around the avatar: the
+/// avatar's shape grown by the ring's width all round, its corners grown by the same amount so the ring stays even
 private struct AvatarRingCutout: Shape {
     let center: CGPoint
-    let diameter: CGFloat
+    let avatarSize: CGFloat
+    let ringWidth: CGFloat
     
     func path(in rect: CGRect) -> Path {
         var path = Path(rect)
-        path.addEllipse(in: CGRect(
-            x: center.x - diameter / 2,
-            y: center.y - diameter / 2,
-            width: diameter,
-            height: diameter
-        ))
+        let side = avatarSize + ringWidth * 2
+        let radius = avatarSize * AvatarShape.cornerRatio + ringWidth
+        path.addRoundedRect(
+            in: CGRect(x: center.x - side / 2, y: center.y - side / 2, width: side, height: side),
+            cornerSize: CGSize(width: radius, height: radius),
+            style: .continuous
+        )
         return path
     }
 }

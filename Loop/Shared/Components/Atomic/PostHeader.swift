@@ -73,9 +73,9 @@ struct PostHeader: View {
                         .resizable()
                         .aspectRatio(contentMode: .fill)
                         .frame(width: avatarSize, height: avatarSize)
-                        .clipShape(Circle())
+                        .clipShape(AvatarShape())
                 } placeholder: {
-                    Circle()
+                    AvatarShape()
                         .fill(Color(.systemGray5))
                         .frame(width: avatarSize, height: avatarSize)
                         .overlay {
@@ -86,13 +86,13 @@ struct PostHeader: View {
             } else {
                 // Default avatar with initials
                 ZStack {
-                    Circle()
+                    AvatarShape()
                         .fill(Color(.systemGray5))
                         .frame(width: avatarSize, height: avatarSize)
                     
                     Color.clear
                         .frame(width: avatarSize, height: avatarSize)
-                        .glassEffect(.regular, in: Circle())
+                        .glassEffect(.regular, in: AvatarShape())
                     
                     Text(String(displayName.prefix(1)).uppercased())
                         .font(.headline)

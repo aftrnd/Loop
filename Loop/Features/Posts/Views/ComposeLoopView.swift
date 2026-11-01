@@ -299,7 +299,7 @@ struct ComposeLoopView: View {
             }
         }
         .frame(width: Layout.avatarSize, height: Layout.avatarSize)
-        .clipShape(Circle())
+        .clipShape(AvatarShape())
         .modifier(PlayfulAvatar())
         .accessibilityHidden(true)
     }
