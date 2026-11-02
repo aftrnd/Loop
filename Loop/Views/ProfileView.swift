@@ -752,7 +752,8 @@ private enum ProfileGeometry {
     static let margin: CGFloat = CardLayoutConstants.horizontalPadding * 2
     /// The space between the profile's parts, measured where they visibly end and start
     static let part: CGFloat = 20
-    /// The name and the handle belong together: 12pt from the name's baseline to the handle's capitals
+    /// The name, the location and the handle belong together: 12pt from each line's baseline to the next one's
+    /// capitals
     static let nameToHandle: CGFloat = 12
     /// Twice the feed's 56pt avatar, as the name beside it is twice the feed's 17pt
     static let avatarSize: CGFloat = 2 * CardLayoutConstants.avatarSize
@@ -867,8 +868,8 @@ private struct ProfileActionLabel: View {
 
 // MARK: - Profile Text
 
-/// The avatar on the left and the name and handle beside it, centered on the avatar by where they visibly start and
-/// end (the name's capitals and the handle's baseline). A view of its own so the card's height can be worked out
+/// The avatar on the left and the name, location and handle beside it, centered on the avatar by where they visibly
+/// start and end (the name's capitals and the handle's baseline). A view of its own so the card's height can be worked out
 /// with the same layout before the sheet opens.
 private struct ProfileIdentityRow<Avatar: View>: View {
     let user: User
@@ -888,9 +889,9 @@ private struct ProfileIdentityRow<Avatar: View>: View {
     }
 }
 
-/// The name, and the handle line under it, beside the avatar: a post header's two lines. White, on the wallpaper.
-/// Both start their ink, not their frames, a part spacing from the avatar: at 34pt the name's first letter sits
-/// visibly inside its frame (2.67pt for an M), which set it further from the avatar than the handle under it.
+/// The name, then the location and the handle on lines of their own, beside the avatar. White, on the wallpaper.
+/// Every line starts its ink, not its frame, a part spacing from the avatar: at 34pt the name's first letter sits
+/// visibly inside its frame (2pt for an M), which set it further from the avatar than the lines under it.
 private struct ProfileNameBlock: View {
     let user: User
     
@@ -913,36 +914,33 @@ private struct ProfileNameBlock: View {
                 .visibleTopAtCapHeight(of: .largeTitle)
                 .accessibilityAddTraits(.isHeader)
             
-            ProfileHandleLine(user: user)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            if let location = user.location, !location.isEmpty {
+                ProfileSubtitleLine(text: location)
+            }
+            
+            ProfileSubtitleLine(text: "@\(user.username ?? "username")")
         }
         .foregroundStyle(.white)
     }
 }
 
-/// The handle and location, as one line under the name: a post's second line, in callout.
-private struct ProfileHandleLine: View {
-    let user: User
+/// A line under the name, the location or the handle, in callout like a post's second line.
+private struct ProfileSubtitleLine: View {
+    let text: String
     
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    
-    private var handleAndLocation: String {
-        let handle = "@\(user.username ?? "username")"
-        guard let location = user.location, !location.isEmpty else { return handle }
-        return "\(handle) \u{00B7} \(location)"
-    }
     
     var body: some View {
         let traits = UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(dynamicTypeSize))
         let font = UIFont.roundedSystemFont(.callout, weight: .regular, compatibleWith: traits)
-        Text(handleAndLocation)
+        Text(text)
             .font(.callout)
             .foregroundStyle(.white.opacity(0.85))
             .lineLimit(1)
+            .frame(maxWidth: .infinity, alignment: .leading)
             // Its ink starts where the name's does
-            .offset(x: -font.leadingSideBearing(of: handleAndLocation))
+            .offset(x: -font.leadingSideBearing(of: text))
             .visibleTopAtCapHeight(of: .callout)
-            .accessibilityLabel(handleAndLocation.replacingOccurrences(of: " \u{00B7} ", with: ", "))
     }
 }
 
