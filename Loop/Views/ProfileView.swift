@@ -91,9 +91,9 @@ struct ProfileView: View {
     private static let headerCoordinateSpace = "profileHeader"
     /// How the profile follows the sheet's height as it opens and closes
     private static let expansionAnimation = Animation.easeInOut(duration: 0.2)
-    /// The card's height while the profile loads: about a card with a two-line bio (502.33pt on iPhone 18 Pro), so
-    /// a typical profile barely moves once it appears
-    private static let loadingCardHeight: CGFloat = 502
+    /// The card's height while the profile loads: about a card with a two-line bio (435pt on iPhone 18 Pro), so a
+    /// typical profile barely moves once it appears
+    private static let loadingCardHeight: CGFloat = 435
     /// Measured on iOS 27.2 at 3x, light and dark: the segmented control lays out 31pt tall and draws its 32pt
     /// track from its top, so the track visibly ends 1pt below its frame
     private static let segmentedTrackOverhang: CGFloat = 1
@@ -389,19 +389,23 @@ struct ProfileView: View {
         .coordinateSpace(.named(Self.headerCoordinateSpace))
     }
     
-    /// The avatar, lit like an icon and centered between the sheet's top edge and the name, and the handle under
-    /// the name. On the wallpaper in every detent.
+    /// The avatar, lit like an icon, with the badges centered under it, the two centered between the sheet's top
+    /// edge and the name, and the handle under the name. On the wallpaper in every detent.
     private func profileHero(for user: User) -> some View {
         BaselineSpacedVStack(spacing: ProfileGeometry.part) {
             BaselineSpacedVStack(spacing: ProfileGeometry.avatarToName(for: dynamicTypeSize)) {
-                avatarView
-                    .overlay {
-                        ProfileAvatarRim()
-                    }
-                    .modifier(ProfileAvatarShadow())
-                    .frame(maxWidth: .infinity)
-                    // The initials are text, but the avatar visibly ends at its edge
-                    .alignmentGuide(.visibleBottom) { $0[.bottom] }
+                BaselineSpacedVStack(spacing: ProfileGeometry.avatarToBadges) {
+                    avatarView
+                        .overlay {
+                            ProfileAvatarRim()
+                        }
+                        .modifier(ProfileAvatarShadow())
+                        .frame(maxWidth: .infinity)
+                        // The initials are text, but the avatar visibly ends at its edge
+                        .alignmentGuide(.visibleBottom) { $0[.bottom] }
+                    
+                    ProfileBadges(user: user)
+                }
                 
                 ProfileNameBlock(user: user)
             }
@@ -421,11 +425,10 @@ struct ProfileView: View {
         .environment(\.colorScheme, .dark)
     }
     
-    /// The bio, the counts, the highlights and the buttons: on the wallpaper on the card, on the plain page at full
-    /// height.
+    /// The bio, the counts and the buttons: on the wallpaper on the card, on the plain page at full height.
     private func profilePage(for user: User) -> some View {
         BaselineSpacedVStack(spacing: ProfileGeometry.part) {
-            ProfileDetails(user: user, canAddHighlights: isOwnProfile)
+            ProfileDetails(user: user)
             
             profileActions
                 .modifier(SheetExpansionHeight(
@@ -765,14 +768,27 @@ private enum ProfileGeometry {
     /// The name and the handle belong together: 12pt from the name's baseline to the handle's capitals
     static let nameToHandle: CGFloat = 12
     static let avatarSize: CGFloat = 124
-    /// The avatar is centered between the sheet's top edge and the name, this far from each. Below it the space runs
-    /// to the name's x-height, not its capitals: most of a name is lowercase, and measured to the capitals the space
-    /// below looked about 7pt larger than the space above. It clears the full-height close button to its side, so it
-    /// can start above the button's bottom edge. The card keeps the same top, so the avatar, name and handle don't
-    /// move as the sheet expands
+    /// The badges belong to the avatar, as the handle does to the name
+    static let avatarToBadges: CGFloat = nameToHandle
+    /// The avatar and its badges are centered between the sheet's top edge and the name, this far from each. Below
+    /// them the space runs to the name's x-height, not its capitals: most of a name is lowercase, and measured to the
+    /// capitals the space below looked about 7pt larger than the space above. The avatar clears the full-height close
+    /// button to its side, so it can start above the button's bottom edge. The card keeps the same top, so the
+    /// avatar, name and handle don't move as the sheet expands
     static let avatarGap: CGFloat = 40
     
-    /// From the avatar's outline to the name's capitals: the avatar gap less the capitals' rise above the x-height
+    /// The badges' side: the year plate is a title2 squircle, the size picked on the joined badge board (K4)
+    static func badgeSide(for dynamicTypeSize: DynamicTypeSize) -> CGFloat {
+        let traits = UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(dynamicTypeSize))
+        return UIFont.preferredFont(forTextStyle: .title2, compatibleWith: traits).pointSize
+    }
+    
+    /// The avatar and the badges under it
+    static func avatarGroupHeight(for dynamicTypeSize: DynamicTypeSize) -> CGFloat {
+        avatarSize + avatarToBadges + badgeSide(for: dynamicTypeSize)
+    }
+    
+    /// From the badges to the name's capitals: the avatar gap less the capitals' rise above the x-height
     static func avatarToName(for dynamicTypeSize: DynamicTypeSize) -> CGFloat {
         let traits = UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(dynamicTypeSize))
         let name = UIFont.preferredFont(forTextStyle: .largeTitle, compatibleWith: traits)
@@ -781,7 +797,7 @@ private enum ProfileGeometry {
     
     /// Where the name's capitals start, from the header's top
     static func nameTop(for dynamicTypeSize: DynamicTypeSize) -> CGFloat {
-        avatarGap + avatarSize + avatarToName(for: dynamicTypeSize)
+        avatarGap + avatarGroupHeight(for: dynamicTypeSize) + avatarToName(for: dynamicTypeSize)
     }
     /// Follow and Message on the card: 20pt in from the sheet's sides and bottom, capsules this tall are concentric
     /// with its 54pt corners (iPhone 18 Pro)
@@ -927,10 +943,74 @@ private struct ProfileHandleLine: View {
     }
 }
 
-/// The year someone joined, cut out of a squircle in the ink with the avatar's 2/7 corners, two digits over two.
+/// The verified seal, when there is one, and the year someone joined, centered under the avatar, each on a white
+/// squircle with the avatar's corners. The seal is in its badge color; the year is black, or gold for the founders who
+/// joined in the first two years, in the premium seal's gold.
+private struct ProfileBadges: View {
+    let user: User
+    
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    
+    /// The years whose members are founders
+    private static let founderYears = 2025...2026
+    /// The space between the two plates
+    private static let gap: CGFloat = 8
+    
+    private var joinedYear: Int {
+        Calendar(identifier: .gregorian).component(.year, from: user.createdAt)
+    }
+    
+    private var isFounder: Bool {
+        Self.founderYears.contains(joinedYear)
+    }
+    
+    var body: some View {
+        let side = ProfileGeometry.badgeSide(for: dynamicTypeSize)
+        HStack(spacing: Self.gap) {
+            if let badgeType = user.badgeType {
+                AvatarShape()
+                    .fill(.white)
+                    .frame(width: side, height: side)
+                    .overlay {
+                        // The seal's ink is 1.106 times its point size (measured on iOS 27.2); this fills the middle
+                        // four sevenths of the plate, as the year's digits do. The check shows the plate's white
+                        Image(systemName: badgeType.iconName)
+                            .font(.system(size: side * 4 / 7 / 1.106))
+                            .foregroundStyle(badgeType.color)
+                    }
+            }
+            
+            ProfileYearPlate(
+                year: joinedYear,
+                side: side,
+                digitColor: isFounder ? BadgeType.premium.color : .black
+            )
+        }
+        .frame(maxWidth: .infinity)
+        .alignmentGuide(.visibleTop) { $0[.top] }
+        .alignmentGuide(.visibleBottom) { $0[.bottom] }
+        // One element that reads the badges in words
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityText)
+    }
+    
+    private var accessibilityText: String {
+        var parts: [String] = []
+        switch user.badgeType {
+        case .verified: parts.append("Verified")
+        case .premium: parts.append("Premium")
+        case nil: break
+        }
+        parts.append(isFounder ? "Founder, joined \(joinedYear)" : "Joined \(joinedYear)")
+        return parts.joined(separator: ", ")
+    }
+}
+
+/// The year someone joined on a white squircle with the avatar's 2/7 corners, two digits over two.
 private struct ProfileYearPlate: View {
     let year: Int
     let side: CGFloat
+    let digitColor: Color
     
     /// Two lines of capitals with a quarter of a capital between them fill the middle four sevenths of the plate, as
     /// the avatar's photo fills a tile
@@ -945,7 +1025,7 @@ private struct ProfileYearPlate: View {
     var body: some View {
         let digits = String(year)
         AvatarShape()
-            .fill(.primary)
+            .fill(.white)
             .frame(width: side, height: side)
             .overlay {
                 BaselineSpacedVStack(spacing: capHeight / 4) {
@@ -953,10 +1033,8 @@ private struct ProfileYearPlate: View {
                     line(String(digits.suffix(2)))
                 }
                 .fixedSize()
-                .blendMode(.destinationOut)
+                .foregroundStyle(digitColor)
             }
-            // The digits show what is behind the plate
-            .compositingGroup()
     }
     
     private func line(_ text: String) -> some View {
@@ -968,12 +1046,10 @@ private struct ProfileYearPlate: View {
     }
 }
 
-/// The bio, the counts and the highlights. A view of its own so the card's height can be worked out with the same
-/// layout before the sheet opens. Their colors come from `SheetExpansionInk`.
+/// The bio and the counts. A view of its own so the card's height can be worked out with the same layout before
+/// the sheet opens. Their colors come from `SheetExpansionInk`.
 private struct ProfileDetails: View {
     let user: User
-    /// Your own profile also shows the tile that adds a highlight
-    let canAddHighlights: Bool
     
     @Environment(\.profileSecondaryInk) private var secondaryInk
     
@@ -998,8 +1074,6 @@ private struct ProfileDetails: View {
             .font(.subheadline)
             .frame(maxWidth: .infinity, alignment: .leading)
             .visibleTopAtCapHeight(of: .subheadline)
-            
-            ProfileHighlights(user: user, canAdd: canAddHighlights)
         }
     }
     
@@ -1016,90 +1090,6 @@ private struct ProfileDetails: View {
             Text(label)
                 .foregroundStyle(secondaryInk)
         }
-    }
-}
-
-/// The highlights row: squircles with the avatar's corners and a label under each, five of them across the text
-/// column. The first are the verified badge, when there is one, and the year someone joined, as plates in the ink
-/// with the seal and the year cut out. Your own profile ends the row with the empty tile that adds a highlight, in a
-/// gray from the ink so it reads on the wallpaper and on the page.
-private struct ProfileHighlights: View {
-    let user: User
-    let canAdd: Bool
-    
-    @Environment(\.profileSecondaryInk) private var secondaryInk
-    
-    /// Five tiles 13pt apart fill the 362pt column on iPhone 18 Pro
-    private static let tile: CGFloat = 62
-    /// The seal's ink is 1.106 times its point size (measured on iOS 27.2); this size fills the middle four sevenths
-    /// of the tile, as the year's digits do
-    private static let sealSize = tile * 4 / 7 / 1.106
-    
-    private var joinedYear: Int {
-        Calendar(identifier: .gregorian).component(.year, from: user.createdAt)
-    }
-    
-    var body: some View {
-        HStack(alignment: .top, spacing: 13) {
-            if let badgeType = user.badgeType {
-                highlight(badgeType == .premium ? "Premium" : "Verified") {
-                    AvatarShape()
-                        .fill(.primary)
-                        .frame(width: Self.tile, height: Self.tile)
-                        .overlay {
-                            Image(systemName: badgeType.iconName)
-                                .font(.system(size: Self.sealSize))
-                                .blendMode(.destinationOut)
-                        }
-                        // The seal shows what is behind the plate, around the check in the ink
-                        .compositingGroup()
-                }
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(badgeType == .premium ? "Premium" : "Verified")
-            }
-            
-            highlight("Joined") {
-                ProfileYearPlate(year: joinedYear, side: Self.tile)
-            }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Joined \(joinedYear)")
-            
-            if canAdd {
-                Button {
-                    // Adding highlights waits for the feature behind them
-                } label: {
-                    highlight("New") {
-                        AvatarShape()
-                            .fill(.quaternary)
-                            .frame(width: Self.tile, height: Self.tile)
-                            .overlay {
-                                Image(systemName: "plus")
-                                    .font(.title2.weight(.medium))
-                                    .foregroundStyle(secondaryInk)
-                            }
-                    }
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("New highlight")
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        // Starts at the tiles' top and ends at the labels' baseline
-        .alignmentGuide(.visibleTop) { $0[.top] }
-        .alignmentGuide(.visibleBottom) { $0[.lastTextBaseline] }
-    }
-    
-    /// A tile with its label under it
-    private func highlight<Tile: View>(_ title: String, @ViewBuilder tile: () -> Tile) -> some View {
-        VStack(spacing: 8) {
-            tile()
-            
-            Text(title)
-                .font(.caption)
-                .fontWeight(.medium)
-                .foregroundStyle(secondaryInk)
-        }
-        .frame(width: Self.tile)
     }
 }
 
@@ -1230,14 +1220,14 @@ extension ProfileView {
     /// same name block and details the card shows; the avatar and the buttons stand in as fixed sizes. Must match
     /// `profileHeader`: the live header measurement corrects any difference, but only after the sheet has opened,
     /// as a visible jump.
-    static func collapsedCardHeight(for user: User, isOwnProfile: Bool, in context: ProfileLayoutContext) -> CGFloat {
+    static func collapsedCardHeight(for user: User, in context: ProfileLayoutContext) -> CGFloat {
         let contentWidth = context.width - ProfileGeometry.margin * 2
         let header = BaselineSpacedVStack(spacing: ProfileGeometry.avatarToName(for: context.dynamicTypeSize)) {
             Color.clear
-                .frame(height: ProfileGeometry.avatarSize)
+                .frame(height: ProfileGeometry.avatarGroupHeight(for: context.dynamicTypeSize))
             BaselineSpacedVStack(spacing: ProfileGeometry.part) {
                 ProfileNameBlock(user: user)
-                ProfileDetails(user: user, canAddHighlights: isOwnProfile)
+                ProfileDetails(user: user)
                 Color.clear
                     .frame(height: ProfileGeometry.cardActionHeight)
             }
