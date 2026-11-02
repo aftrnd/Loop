@@ -2,11 +2,18 @@ import SwiftUI
 
 /// The story a topic post links to, set in ink: the story's photo inside an ink frame, with the headline and the
 /// story's domain in a tab of the frame cut from the photo's bottom leading corner. A big story's photo is 4:3 and any
-/// other's 5:2; a story without a photo is all ink. The whole card opens the story.
+/// other's 5:2; a story without a photo is all ink. The ink is black in both appearances, so in dark mode, on a black
+/// page, the card keeps its edge with a hairline. The whole card opens the story.
 struct NewsLinkCard: View {
     let link: LoopLink
 
     @Environment(\.openURL) private var openURL
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.displayScale) private var displayScale
+
+    /// The card and the tab, with the text reversed out of them
+    private static let ink = Color.black
+    private static let paper = Color.white
 
     private var imageURL: URL? {
         link.imageURL.flatMap { URL(string: $0) }
@@ -25,6 +32,7 @@ struct NewsLinkCard: View {
     }
 
     var body: some View {
+        let card = RoundedRectangle(cornerRadius: NewsCardMetrics.cornerRadius, style: .continuous)
         Button {
             if let url = URL(string: link.url) {
                 openURL(url)
@@ -34,16 +42,22 @@ struct NewsLinkCard: View {
                 if let imageURL {
                     photo(imageURL)
                     CutoutTab()
-                        .fill(Color.primary)
+                        .fill(Self.ink)
                 }
                 headline
                 if let domain {
                     domainLine(domain)
                 }
             }
-            .background(Color.primary)
-            .clipShape(RoundedRectangle(cornerRadius: NewsCardMetrics.cornerRadius, style: .continuous))
-            .contentShape(RoundedRectangle(cornerRadius: NewsCardMetrics.cornerRadius, style: .continuous))
+            .background(Self.ink)
+            .clipShape(card)
+            .overlay {
+                // The system's color for thin borders, the feed's divider color, a pixel wide inside the card's edge
+                if colorScheme == .dark {
+                    card.strokeBorder(Color(.separator), lineWidth: 1 / displayScale)
+                }
+            }
+            .contentShape(card)
         }
         .buttonStyle(PressableButtonStyle(pressedScale: 0.98))
         // A card visibly starts and ends at its own edges, not at the text inside it
@@ -61,7 +75,7 @@ struct NewsLinkCard: View {
         let isLead = style == .lead
         return Text(link.title)
             .font(isLead ? .title3.weight(.bold) : .headline)
-            .foregroundStyle(Color(.systemBackground))
+            .foregroundStyle(Self.paper)
             .multilineTextAlignment(.leading)
             .lineLimit(3)
             .fixedSize(horizontal: false, vertical: true)
@@ -73,7 +87,7 @@ struct NewsLinkCard: View {
     private func domainLine(_ domain: String) -> some View {
         Text("\(domain)  \(Image(systemName: "arrow.up.right"))")
             .font(.footnote.weight(.medium))
-            .foregroundStyle(Color(.systemBackground).opacity(0.6))
+            .foregroundStyle(Self.paper.opacity(0.6))
             .lineLimit(1)
             .truncationMode(.middle)
             .visibleTopAtCapHeight(of: .footnote)
