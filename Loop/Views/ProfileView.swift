@@ -947,34 +947,52 @@ private struct ProfileYearPlate: View {
     /// Two lines of capitals with a quarter of a capital between them fill the middle four sevenths of the plate, as
     /// the avatar's photo fills a tile
     private var capHeight: CGFloat { side * 4 / 7 / 2.25 }
-    /// A heavy rounded face with those capitals
+    /// A heavy rounded face with tabular digits and those capitals, drawn and measured as the same font
     private var digitFont: UIFont {
-        let probe = UIFont.systemFont(ofSize: 10, weight: .heavy)
+        let probe = UIFont.monospacedDigitSystemFont(ofSize: 10, weight: .heavy)
         let rounded = probe.fontDescriptor.withDesign(.rounded).map { UIFont(descriptor: $0, size: 10) } ?? probe
         return rounded.withSize(10 * capHeight / rounded.capHeight)
     }
     
-    var body: some View {
+    private var lines: [String] {
         let digits = String(year)
+        return [String(digits.prefix(2)), String(digits.suffix(2))]
+    }
+    
+    var body: some View {
+        let font = digitFont
         AvatarShape()
             .fill(.white)
             .frame(width: side, height: side)
             .overlay {
                 BaselineSpacedVStack(spacing: capHeight / 4) {
-                    line(String(digits.prefix(2)))
-                    line(String(digits.suffix(2)))
+                    // By position: a year like 2020 repeats its halves
+                    ForEach(lines.indices, id: \.self) { index in
+                        Text(lines[index])
+                            .font(Font(font))
+                            .visibleTopAtCapHeight(of: font)
+                    }
                 }
                 .fixedSize()
+                .offset(x: inkCentering(font))
                 .foregroundStyle(.black)
             }
     }
     
-    private func line(_ text: String) -> some View {
-        let font = digitFont
-        return Text(text)
-            .font(.system(size: font.pointSize, weight: .heavy))
-            .monospacedDigit()
-            .visibleTopAtCapHeight(of: font)
+    /// How far to move the digits so their ink, rather than their advances, is centered on the plate. Tabular digits
+    /// leave more room after the last digit than before the first, which set "20 / 23" 0.5pt left of center.
+    private func inkCentering(_ font: UIFont) -> CGFloat {
+        var inkMinX = CGFloat.infinity
+        var inkMaxX = -CGFloat.infinity
+        var width: CGFloat = 0
+        for text in lines {
+            let line = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: [.font: font]))
+            let ink = CTLineGetBoundsWithOptions(line, .useGlyphPathBounds)
+            inkMinX = min(inkMinX, ink.minX)
+            inkMaxX = max(inkMaxX, ink.maxX)
+            width = max(width, CTLineGetTypographicBounds(line, nil, nil, nil))
+        }
+        return width / 2 - (inkMinX + inkMaxX) / 2
     }
 }
 
