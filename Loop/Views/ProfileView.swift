@@ -91,9 +91,9 @@ struct ProfileView: View {
     private static let headerCoordinateSpace = "profileHeader"
     /// How the profile follows the sheet's height as it opens and closes
     private static let expansionAnimation = Animation.easeInOut(duration: 0.2)
-    /// The card's height while the profile loads: about a card with a two-line bio (349pt on iPhone 18 Pro), so a
-    /// typical profile barely moves once it appears
-    private static let loadingCardHeight: CGFloat = 349
+    /// The card's height while the profile loads: about a card with a two-line bio (362.33pt on iPhone 18 Pro), so
+    /// a typical profile barely moves once it appears
+    private static let loadingCardHeight: CGFloat = 362
     /// Measured on iOS 27.2 at 3x, light and dark: the segmented control lays out 31pt tall and draws its 32pt
     /// track from its top, so the track visibly ends 1pt below its frame
     private static let segmentedTrackOverhang: CGFloat = 1
@@ -735,8 +735,7 @@ private enum ProfileGeometry {
     static let margin: CGFloat = CardLayoutConstants.horizontalPadding * 2
     /// The space between the profile's parts, measured where they visibly end and start
     static let part: CGFloat = 20
-    /// The name, the handle and the badges belong together: 12pt from the name's baseline to the handle's capitals,
-    /// and from the handle's baseline to the badge plates
+    /// The name and the handle belong together: 12pt from the name's baseline to the handle's capitals
     static let nameToHandle: CGFloat = 12
     /// Twice the feed's 56pt avatar, as the name beside it is twice the feed's 17pt
     static let avatarSize: CGFloat = 2 * CardLayoutConstants.avatarSize
@@ -843,8 +842,8 @@ private struct ProfileActionLabel: View {
 
 // MARK: - Profile Text
 
-/// The avatar on the left and the name, handle and badges beside it, centered on the avatar by where they visibly
-/// start and end (the name's capitals and the badge plates' foot). A view of its own so the card's height can be worked out
+/// The avatar on the left and the name and handle beside it, centered on the avatar by where they visibly start and
+/// end (the name's capitals and the handle's baseline). A view of its own so the card's height can be worked out
 /// with the same layout before the sheet opens.
 private struct ProfileIdentityRow<Avatar: View>: View {
     let user: User
@@ -864,16 +863,11 @@ private struct ProfileIdentityRow<Avatar: View>: View {
     }
 }
 
-/// The name, the handle line under it, and the badges under that, beside the avatar: a post header's two lines, and
-/// a third for the badges. White, on the wallpaper.
+/// The name, and the handle line under it, beside the avatar: a post header's two lines. White, on the wallpaper.
 private struct ProfileNameBlock: View {
     let user: User
     
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    
     var body: some View {
-        let traits = UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(dynamicTypeSize))
-        let nameCapHeight = UIFont.preferredFont(forTextStyle: .largeTitle, compatibleWith: traits).capHeight
         BaselineSpacedVStack(spacing: ProfileGeometry.nameToHandle) {
             Text(user.displayName ?? "Display Name")
                 .font(.largeTitle)
@@ -884,10 +878,6 @@ private struct ProfileNameBlock: View {
                 .accessibilityAddTraits(.isHeader)
             
             ProfileHandleLine(user: user)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            
-            // Plates as tall as the name's capitals
-            ProfileBadges(user: user, side: nameCapHeight)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .foregroundStyle(.white)
@@ -915,8 +905,7 @@ private struct ProfileHandleLine: View {
 }
 
 /// The verified seal, when there is one, and the year someone joined, each in black on a white squircle with the
-/// avatar's corners, a quarter of a plate apart. The row visibly starts and ends at the plates' edges, not at the
-/// year's digits.
+/// avatar's corners, a quarter of a plate apart.
 private struct ProfileBadges: View {
     let user: User
     let side: CGFloat
@@ -944,8 +933,6 @@ private struct ProfileBadges: View {
             
             ProfileYearPlate(year: joinedYear, side: side)
         }
-        .alignmentGuide(.visibleTop) { $0[.top] }
-        .alignmentGuide(.visibleBottom) { $0[.bottom] }
         // One element that reads the badges in words
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityText)
@@ -1020,12 +1007,18 @@ private struct ProfileYearPlate: View {
     }
 }
 
-/// The bio and the counts. A view of its own so the card's height can be worked out with the same layout before
-/// the sheet opens.
+/// The bio, and the counts with the badges at the other end of their row. A view of its own so the card's height can
+/// be worked out with the same layout before the sheet opens.
 private struct ProfileDetails: View {
     let user: User
     
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    
     var body: some View {
+        let traits = UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(dynamicTypeSize))
+        let countsCapHeight = UIFont.preferredFont(forTextStyle: .subheadline, compatibleWith: traits).capHeight
+        // The badge plates are as tall as the name's capitals
+        let plate = UIFont.preferredFont(forTextStyle: .largeTitle, compatibleWith: traits).capHeight
         BaselineSpacedVStack(spacing: ProfileGeometry.part) {
             if let bio = user.bio, !bio.isEmpty {
                 Text(bio)
@@ -1036,16 +1029,25 @@ private struct ProfileDetails: View {
                     .visibleTopAtCapHeight(of: .callout)
             }
             
-            HStack(alignment: .firstTextBaseline, spacing: 14) {
-                count(user.followerCount, followersWord)
-                count(user.followingCount, "following")
+            HStack(spacing: 0) {
+                HStack(alignment: .firstTextBaseline, spacing: 14) {
+                    count(user.followerCount, followersWord)
+                    count(user.followingCount, "following")
+                }
+                // Read as one phrase rather than four words
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("\(user.followerCount) \(followersWord), \(user.followingCount) following")
+                .font(.subheadline)
+                // Its capitals centered on the plates
+                .alignmentGuide(VerticalAlignment.center) { $0[.firstTextBaseline] - countsCapHeight / 2 }
+                
+                Spacer(minLength: ProfileGeometry.part)
+                
+                ProfileBadges(user: user, side: plate)
             }
-            // Read as one phrase rather than four words
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("\(user.followerCount) \(followersWord), \(user.followingCount) following")
-            .font(.subheadline)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .visibleTopAtCapHeight(of: .subheadline)
+            // The row visibly spans the plates, which reach past the counts' capitals and baseline
+            .alignmentGuide(.visibleTop) { $0[VerticalAlignment.center] - plate / 2 }
+            .alignmentGuide(.visibleBottom) { $0[VerticalAlignment.center] + plate / 2 }
         }
     }
     
