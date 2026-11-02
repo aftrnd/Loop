@@ -306,10 +306,10 @@ struct ProfileView: View {
     private var profileGeometryContent: some View {
         profileContent
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            // The height changes on every frame of a sheet drag; only the SheetExpansion modifiers and the wallpaper's
-            // mask read it. The top safe area is included, so the toolbar appearing at full height doesn't make the
-            // sheet look shorter. Changed in one animated transaction, so the layout around the buttons (the page,
-            // the tabs) moves with them as they shrink; animated on their own, the card cut them off
+            // The height changes on every frame of a sheet drag; only the SheetExpansion modifiers read it. The top
+            // safe area is included, so the toolbar appearing at full height doesn't make the sheet look shorter.
+            // Changed in one animated transaction, so the layout around the buttons (the wallpaper's foot, the tabs)
+            // moves with them as they shrink; animated on their own, the card cut them off
             .onGeometryChange(for: CGFloat.self) { proxy in
                 proxy.size.height + proxy.safeAreaInsets.top
             } action: { height in
@@ -354,34 +354,24 @@ struct ProfileView: View {
     
     // MARK: - Header
     
-    /// The card is the wallpaper with every part on it: the avatar, the name and handle, the bio, the counts and
-    /// the buttons, a part spacing apart. At full height the wallpaper keeps only the hero (avatar, name and handle,
-    /// which stay where they were) and the rest moves onto the plain page a part spacing below the photo's edge.
+    /// The wallpaper with every part on it, at every height: the avatar, the name and handle, the bio, the counts and
+    /// the buttons, a part spacing apart.
     private func profileHeader(for user: User) -> some View {
-        // The hero ends a part spacing below the handle, which on the card is where the bio starts
+        // The hero ends a part spacing below the handle, where the bio starts
         BaselineSpacedVStack(spacing: 0) {
             profileHero(for: user)
             
             profilePage(for: user)
-                .modifier(SheetExpansionDrop(
-                    metrics: sheetMetrics,
-                    minimumHeight: minimumProfileHeight,
-                    isFullyExpanded: isSheetFullyExpanded,
-                    distance: ProfileGeometry.part
-                ))
         }
         .padding(.horizontal, ProfileGeometry.margin)
-        // The card ends as far below its buttons as they sit from its sides, so they stay concentric with its
-        // corners. At full height the same space is the gap to the tabs
+        // The wallpaper ends as far below the buttons as they sit from its sides, so on the card they stay concentric
+        // with its corners
         .padding(.bottom, ProfileGeometry.part)
-        .background(alignment: .top) {
+        .background {
             ProfileBackdrop(
                 bannerURL: user.bannerURL,
                 cardHeight: cardHeaderHeight,
-                heroHeight: heroHeight,
-                metrics: sheetMetrics,
-                minimumHeight: minimumProfileHeight,
-                isFullyExpanded: isSheetFullyExpanded
+                heroHeight: heroHeight
             )
         }
         // Nothing in the header sits on the sheet's glass, so nothing in it is vibrant
@@ -390,7 +380,7 @@ struct ProfileView: View {
     }
     
     /// The avatar, lit like an icon and centered between the sheet's top edge and the name, and the handle under
-    /// the name. On the wallpaper in every detent.
+    /// the name.
     private func profileHero(for user: User) -> some View {
         BaselineSpacedVStack(spacing: ProfileGeometry.part) {
             BaselineSpacedVStack(spacing: ProfileGeometry.avatarToName(for: dynamicTypeSize)) {
@@ -421,7 +411,7 @@ struct ProfileView: View {
         .environment(\.colorScheme, .dark)
     }
     
-    /// The bio, the counts and the buttons: on the wallpaper on the card, on the plain page at full height.
+    /// The bio, the counts and the buttons, in white type and white glass on the wallpaper.
     private func profilePage(for user: User) -> some View {
         BaselineSpacedVStack(spacing: ProfileGeometry.part) {
             ProfileDetails(user: user)
@@ -434,31 +424,19 @@ struct ProfileView: View {
                     collapsed: ProfileGeometry.cardActionHeight,
                     expanded: ProfileGeometry.fullHeightActionHeight
                 ))
-                // Sizes the card; `syncDetentIfNeeded` moves the sheet when its height changes. Read only at rest, on
-                // the card or at full height, where the page has dropped by exactly a part spacing; in between it
-                // moves with the drag and the card's height doesn't
-                .onGeometryChange(for: HeaderLayout?.self) { proxy in
-                    let progress = sheetMetrics.expansionProgress(
-                        minimumHeight: minimumProfileHeight,
-                        isFullyExpanded: isSheetFullyExpanded
-                    )
-                    guard progress == 0 || progress == 1 else { return nil }
+                // Sizes the card; `syncDetentIfNeeded` moves the sheet when its height changes. The buttons' top
+                // doesn't move as they shorten with the sheet's expansion, so the card's height doesn't either
+                .onGeometryChange(for: HeaderLayout.self) { proxy in
                     let header = NamedCoordinateSpace.named(Self.headerCoordinateSpace)
-                    return HeaderLayout(
-                        width: proxy.bounds(of: header)?.width ?? 0,
-                        actionsTop: proxy.frame(in: header).minY - ProfileGeometry.part * progress
-                    )
+                    return HeaderLayout(width: proxy.bounds(of: header)?.width ?? 0, actionsTop: proxy.frame(in: header).minY)
                 } action: { layout in
-                    if let layout {
-                        headerLayout = layout
-                    }
+                    headerLayout = layout
                 }
         }
-        .modifier(SheetExpansionInk(
-            metrics: sheetMetrics,
-            minimumHeight: minimumProfileHeight,
-            isFullyExpanded: isSheetFullyExpanded
-        ))
+        .foregroundStyle(.white)
+        // White glass, with labels in black
+        .tint(.white)
+        .backgroundStyle(.black)
     }
     
     // MARK: - Avatar
@@ -621,8 +599,8 @@ struct ProfileView: View {
     
     // MARK: - Action Buttons
     
-    /// Follow and Message on someone else's profile, Edit profile on your own. Their glass takes the tint and
-    /// their labels the background style that `SheetExpansionInk` sets for what is behind them.
+    /// Follow and Message on someone else's profile, Edit profile on your own. Their glass takes the page's white
+    /// tint and their labels its black background style.
     private var profileActions: some View {
         GlassEffectContainer(spacing: 12) {
             HStack(spacing: 12) {
@@ -748,6 +726,8 @@ struct ProfileView: View {
         .pickerStyle(.segmented)
         .labelsHidden()
         .padding(.horizontal, ProfileGeometry.margin)
+        // A part spacing below the wallpaper's edge
+        .padding(.top, ProfileGeometry.part)
         // The first post's avatar starts a part spacing below the track, and 8pt inside its card
         .padding(.bottom, ProfileGeometry.part + Self.segmentedTrackOverhang - CardLayoutConstants.topPadding)
     }
@@ -1040,11 +1020,9 @@ private struct ProfileYearPlate: View {
 }
 
 /// The bio and the counts. A view of its own so the card's height can be worked out with the same layout before
-/// the sheet opens. Their colors come from `SheetExpansionInk`.
+/// the sheet opens.
 private struct ProfileDetails: View {
     let user: User
-    
-    @Environment(\.profileSecondaryInk) private var secondaryInk
     
     var body: some View {
         BaselineSpacedVStack(spacing: ProfileGeometry.part) {
@@ -1081,31 +1059,36 @@ private struct ProfileDetails: View {
                 .fontWeight(.semibold)
                 .foregroundStyle(.primary)
             Text(label)
-                .foregroundStyle(secondaryInk)
+                .foregroundStyle(.white.opacity(0.85))
         }
     }
-}
-
-extension EnvironmentValues {
-    /// The quieter of the profile page's two text colors, which `SheetExpansionInk` changes with what is behind it
-    @Entry fileprivate var profileSecondaryInk = Color(.secondaryLabel)
 }
 
 // MARK: - Wallpaper
 
 /// The wallpaper behind the header, darkened a little toward its foot so white type stays legible. It is laid out at
-/// the card's height in every detent, so it never re-crops as the sheet opens. With no wallpaper, the dark gray it
-/// shows while loading stands in. At full height only the hero keeps it: the rest fades out with the sheet's expansion.
+/// the card's height in every detent and clipped to the header, so it never re-crops as the sheet opens; at full
+/// height the shorter buttons end it 4pt sooner. With no wallpaper, the dark gray it shows while loading stands in. At full height only the hero keeps it: the rest fades out with the sheet's expansion.
 private struct ProfileBackdrop: View {
     let bannerURL: String?
     /// The card's header height, or 0 before it is measured, when the wallpaper fills the header
     let cardHeight: CGFloat
     let heroHeight: CGFloat
-    let metrics: ProfileSheetMetrics
-    let minimumHeight: CGFloat
-    let isFullyExpanded: Bool
     
     var body: some View {
+        Color.clear
+            .overlay(alignment: .top) {
+                wallpaper
+                    .frame(height: cardHeight > 0 ? cardHeight : nil)
+            }
+            .clipped()
+            // The wallpaper always renders dark, like a contact poster
+            .environment(\.colorScheme, .dark)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+    
+    private var wallpaper: some View {
         Color(.systemGray5)
             .overlay {
                 if let bannerURL, let url = URL(string: bannerURL) {
@@ -1121,20 +1104,6 @@ private struct ProfileBackdrop: View {
             .overlay {
                 ProfileWallpaperShade(heroHeight: heroHeight)
             }
-            .frame(height: cardHeight > 0 ? cardHeight : nil)
-            .clipped()
-            .mask(alignment: .top) {
-                ProfileHeroMask(
-                    heroHeight: heroHeight,
-                    metrics: metrics,
-                    minimumHeight: minimumHeight,
-                    isFullyExpanded: isFullyExpanded
-                )
-            }
-            // The wallpaper always renders dark, like a contact poster
-            .environment(\.colorScheme, .dark)
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
     }
 }
 
@@ -1162,26 +1131,6 @@ private struct ProfileWallpaperShade: View {
                 )
             }
             LinearGradient(stops: stops, startPoint: .top, endPoint: .bottom)
-        }
-    }
-}
-
-/// Shows the wallpaper whole on the card and only the hero at full height, fading the rest with the sheet's
-/// expansion. Reads the live height, so per-frame updates stop here.
-private struct ProfileHeroMask: View {
-    let heroHeight: CGFloat
-    let metrics: ProfileSheetMetrics
-    let minimumHeight: CGFloat
-    let isFullyExpanded: Bool
-    
-    var body: some View {
-        let progress = metrics.expansionProgress(minimumHeight: minimumHeight, isFullyExpanded: isFullyExpanded)
-        // The hero over the whole, rather than one above the other, so no seam shows where they meet on the card
-        ZStack(alignment: .top) {
-            Rectangle()
-                .opacity(1 - progress)
-            Rectangle()
-                .frame(height: heroHeight)
         }
     }
 }
@@ -1346,8 +1295,7 @@ private struct ProfileFeedSection: View {
 // MARK: - Sheet Expansion
 
 /// The live height of the profile's content area. It changes on every frame of a sheet drag, so only
-/// the SheetExpansion modifiers and the wallpaper's mask read it, and the rest of the profile doesn't re-render
-/// while the sheet moves.
+/// the SheetExpansion modifiers read it, and the rest of the profile doesn't re-render while the sheet moves.
 @Observable
 private final class ProfileSheetMetrics {
     var height: CGFloat = 0
@@ -1410,55 +1358,6 @@ private struct SheetExpansionHeight: ViewModifier {
         
         content
             .frame(height: collapsed + (expanded - collapsed) * progress)
-    }
-}
-
-/// Lowers a view in a `BaselineSpacedVStack` by up to `distance` as the sheet opens, in step with the tabs fading
-/// in: the page starts a part spacing below the handle on the card and a part spacing below the wallpaper's edge at
-/// full height. Animated by the transaction that changes the height, like `SheetExpansionHeight`.
-private struct SheetExpansionDrop: ViewModifier {
-    let metrics: ProfileSheetMetrics
-    let minimumHeight: CGFloat
-    let isFullyExpanded: Bool
-    let distance: CGFloat
-
-    func body(content: Content) -> some View {
-        let progress = metrics.expansionProgress(minimumHeight: minimumHeight, isFullyExpanded: isFullyExpanded)
-        
-        content
-            .alignmentGuide(.visibleTop) { $0[.visibleTop] - distance * progress }
-    }
-}
-
-/// Colors the page for what is behind it as the sheet opens: white type and white glass with dark labels on the
-/// wallpaper, the page's own ink at full height, mixed in between while the wallpaper below the hero fades out.
-/// Sets the primary style and the secondary ink for text, the tint for the buttons' glass and the background style
-/// for their labels.
-private struct SheetExpansionInk: ViewModifier {
-    let metrics: ProfileSheetMetrics
-    let minimumHeight: CGFloat
-    let isFullyExpanded: Bool
-    
-    func body(content: Content) -> some View {
-        let progress = metrics.expansionProgress(minimumHeight: minimumHeight, isFullyExpanded: isFullyExpanded)
-        let ink = Self.blend(.white, Color(.label), progress)
-        
-        content
-            .foregroundStyle(ink)
-            .environment(\.profileSecondaryInk, Self.blend(.white.opacity(0.85), Color(.secondaryLabel), progress))
-            .tint(ink)
-            .backgroundStyle(Self.blend(.black, Color(.systemBackground), progress))
-    }
-    
-    /// The wallpaper's color at 0, the page's at 1, and a mix in between
-    private static func blend(_ onWallpaper: Color, _ onPage: Color, _ progress: CGFloat) -> Color {
-        if progress <= 0 {
-            return onWallpaper
-        }
-        if progress >= 1 {
-            return onPage
-        }
-        return onWallpaper.mix(with: onPage, by: progress)
     }
 }
 
