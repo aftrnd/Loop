@@ -845,9 +845,9 @@ private struct ProfileNameBlock: View {
     }
 }
 
-/// The badge, the handle and location, and the year plate, centered as one line. The badge and the plate sit on the
-/// middle of the handle's capitals and don't count toward the line's height: it visibly starts at the handle's
-/// capitals and ends at its baseline.
+/// The handle and location, then the badge and the year plate together, centered as one line. The badge and the
+/// plate sit on the middle of the handle's capitals and don't count toward the line's height: it visibly starts at
+/// the handle's capitals and ends at its baseline.
 ///
 /// Both badges are set at body size, the largest that keeps them clear of the name: the seal's ink is 1.106 times
 /// its point size (measured on iOS 27.2), so centered on the handle's capitals it rises 4.1pt above them and stays
@@ -858,9 +858,10 @@ private struct ProfileHandleLine: View {
     
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     
-    /// The space between each badge and the text's line, as the seal had after the name
+    /// The space between the text and the badge, and between the two badges, as the seal had after the name
     private static let badgeGap: CGFloat = 6
-    /// The seal draws its ink this share of its point size inside its frame (2.17pt at title2, measured on iOS 27.2)
+    /// The seal draws its ink this share of its point size inside its frame on each side (2.17pt at title2,
+    /// measured on iOS 27.2)
     private static let sealSideBearing: CGFloat = 2.17 / 22
     
     private var joinedYear: Int {
@@ -877,7 +878,13 @@ private struct ProfileHandleLine: View {
         let traits = UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(dynamicTypeSize))
         let capHeight = UIFont.preferredFont(forTextStyle: .subheadline, compatibleWith: traits).capHeight
         let badgeSize = UIFont.preferredFont(forTextStyle: .body, compatibleWith: traits).pointSize
+        let sealBearing = badgeSize * Self.sealSideBearing
         HStack(alignment: .firstTextBaseline, spacing: 0) {
+            Text(handleAndLocation)
+                .font(.subheadline)
+                .foregroundStyle(.white.opacity(0.85))
+                .lineLimit(1)
+            
             if let badgeType = user.badgeType {
                 // The check in white, so the seal reads on any wallpaper
                 Image(systemName: badgeType.iconName)
@@ -885,17 +892,12 @@ private struct ProfileHandleLine: View {
                     .foregroundStyle(.white, badgeType.color)
                     .font(.body)
                     .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + capHeight / 2 }
-                    .padding(.trailing, Self.badgeGap - badgeSize * Self.sealSideBearing)
+                    .padding(.leading, Self.badgeGap - sealBearing)
             }
-            
-            Text(handleAndLocation)
-                .font(.subheadline)
-                .foregroundStyle(.white.opacity(0.85))
-                .lineLimit(1)
             
             ProfileYearPlate(year: joinedYear, side: badgeSize)
                 .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + capHeight / 2 }
-                .padding(.leading, Self.badgeGap)
+                .padding(.leading, Self.badgeGap - (user.badgeType == nil ? 0 : sealBearing))
         }
         .alignmentGuide(.visibleTop) { $0[.firstTextBaseline] - capHeight }
         .alignmentGuide(.visibleBottom) { $0[.firstTextBaseline] }
@@ -917,9 +919,7 @@ private struct ProfileHandleLine: View {
 }
 
 /// The year someone joined, cut out of a small squircle with the avatar's 2/7 corners, two digits over two. Its side
-/// is the seal's point size, so the two carry about the same ink. It is yellow, the brightest system color, so it
-/// reads on the darkened wallpaper and on the dark gray that stands in for a missing one, where the badge colors'
-/// blue doesn't.
+/// is the seal's point size, so the two carry about the same ink. It is in the handle's white, as part of its line.
 private struct ProfileYearPlate: View {
     let year: Int
     let side: CGFloat
@@ -937,7 +937,7 @@ private struct ProfileYearPlate: View {
     var body: some View {
         let digits = String(year)
         AvatarShape()
-            .fill(Color.yellow)
+            .fill(.white.opacity(0.85))
             .frame(width: side, height: side)
             .overlay {
                 BaselineSpacedVStack(spacing: capHeight / 4) {
