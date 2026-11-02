@@ -17,6 +17,7 @@ struct PostCard: View {
     let replyPreviews: [Loop]?
     let onReplyPreviewTap: (() -> Void)?
     let onReplyDelete: ((Loop) -> Void)? // Delete individual replies
+    let canDeleteReply: ((Loop) -> Bool)? // Check if the current user can delete the reply
     let isReplyLiked: ((Loop) -> Bool)? // Check if reply is liked by current user
     
     // Debug overlays
@@ -34,6 +35,7 @@ struct PostCard: View {
         replyPreviews: [Loop]? = nil,
         onReplyPreviewTap: (() -> Void)? = nil,
         onReplyDelete: ((Loop) -> Void)? = nil,
+        canDeleteReply: ((Loop) -> Bool)? = nil,
         isReplyLiked: ((Loop) -> Bool)? = nil,
         showDebugOverlays: Bool = false
     ) {
@@ -47,6 +49,7 @@ struct PostCard: View {
         self.replyPreviews = replyPreviews
         self.onReplyPreviewTap = onReplyPreviewTap
         self.onReplyDelete = onReplyDelete
+        self.canDeleteReply = canDeleteReply
         self.isReplyLiked = isReplyLiked
         self.showDebugOverlays = showDebugOverlays
     }
@@ -224,7 +227,7 @@ struct PostCard: View {
             .opacity(entranceOpacity)
             .background(showDebugOverlays ? Color.purple.opacity(0.05) : Color.clear) // Debug: Bottom padding
             
-            // Actions - same as main posts, show delete menu if deletable
+            // Actions - same as main posts, show delete menu only on replies the current user can delete
             PostActions(
                 isLiked: isReplyLiked?(reply) ?? false,
                 likeCount: reply.likeCount,
@@ -237,7 +240,7 @@ struct PostCard: View {
                     onReplyPreviewTap?()
                 },
                 onShare: nil,
-                onDelete: self.onReplyDelete != nil ? {
+                onDelete: self.onReplyDelete != nil && canDeleteReply?(reply) == true ? {
                     self.onReplyDelete?(reply)
                 } : nil,
                 isReplyPreview: true, // Show arrow icon for reply previews

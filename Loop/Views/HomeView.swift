@@ -140,11 +140,12 @@ struct HomeView: View {
                         showThread(loop)
                     },
                     onReplyDelete: { reply in
-                        if viewModel.canDeleteLoop(reply) {
-                            Task {
-                                await viewModel.deleteLoop(reply)
-                            }
+                        Task {
+                            await viewModel.deleteLoop(reply)
                         }
+                    },
+                    canDeleteReply: { reply in
+                        viewModel.canDeleteLoop(reply)
                     },
                     isReplyLiked: { reply in
                         viewModel.isLikedByCurrentUser(reply)
