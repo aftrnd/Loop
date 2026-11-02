@@ -91,9 +91,9 @@ struct ProfileView: View {
     private static let headerCoordinateSpace = "profileHeader"
     /// How the profile follows the sheet's height as it opens and closes
     private static let expansionAnimation = Animation.easeInOut(duration: 0.2)
-    /// The card's height while the profile loads: about a card with a two-line bio (435pt on iPhone 18 Pro), so a
+    /// The card's height while the profile loads: about a card with a two-line bio (401pt on iPhone 18 Pro), so a
     /// typical profile barely moves once it appears
-    private static let loadingCardHeight: CGFloat = 435
+    private static let loadingCardHeight: CGFloat = 401
     /// Measured on iOS 27.2 at 3x, light and dark: the segmented control lays out 31pt tall and draws its 32pt
     /// track from its top, so the track visibly ends 1pt below its frame
     private static let segmentedTrackOverhang: CGFloat = 1
@@ -389,23 +389,19 @@ struct ProfileView: View {
         .coordinateSpace(.named(Self.headerCoordinateSpace))
     }
     
-    /// The avatar, lit like an icon, with the badges centered under it, the two centered between the sheet's top
-    /// edge and the name, and the handle under the name. On the wallpaper in every detent.
+    /// The avatar, lit like an icon and centered between the sheet's top edge and the name, and the handle under
+    /// the name. On the wallpaper in every detent.
     private func profileHero(for user: User) -> some View {
         BaselineSpacedVStack(spacing: ProfileGeometry.part) {
             BaselineSpacedVStack(spacing: ProfileGeometry.avatarToName(for: dynamicTypeSize)) {
-                BaselineSpacedVStack(spacing: ProfileGeometry.avatarToBadges) {
-                    avatarView
-                        .overlay {
-                            ProfileAvatarRim()
-                        }
-                        .modifier(ProfileAvatarShadow())
-                        .frame(maxWidth: .infinity)
-                        // The initials are text, but the avatar visibly ends at its edge
-                        .alignmentGuide(.visibleBottom) { $0[.bottom] }
-                    
-                    ProfileBadges(user: user)
-                }
+                avatarView
+                    .overlay {
+                        ProfileAvatarRim()
+                    }
+                    .modifier(ProfileAvatarShadow())
+                    .frame(maxWidth: .infinity)
+                    // The initials are text, but the avatar visibly ends at its edge
+                    .alignmentGuide(.visibleBottom) { $0[.bottom] }
                 
                 ProfileNameBlock(user: user)
             }
@@ -768,27 +764,14 @@ private enum ProfileGeometry {
     /// The name and the handle belong together: 12pt from the name's baseline to the handle's capitals
     static let nameToHandle: CGFloat = 12
     static let avatarSize: CGFloat = 124
-    /// The badges belong to the avatar, as the handle does to the name
-    static let avatarToBadges: CGFloat = nameToHandle
-    /// The avatar and its badges are centered between the sheet's top edge and the name, this far from each. Below
-    /// them the space runs to the name's x-height, not its capitals: most of a name is lowercase, and measured to the
-    /// capitals the space below looked about 7pt larger than the space above. The avatar clears the full-height close
-    /// button to its side, so it can start above the button's bottom edge. The card keeps the same top, so the
-    /// avatar, name and handle don't move as the sheet expands
+    /// The avatar is centered between the sheet's top edge and the name, this far from each. Below it the space runs
+    /// to the name's x-height, not its capitals: most of a name is lowercase, and measured to the capitals the space
+    /// below looked about 7pt larger than the space above. It clears the full-height close button to its side, so it
+    /// can start above the button's bottom edge. The card keeps the same top, so the avatar, name and handle don't
+    /// move as the sheet expands
     static let avatarGap: CGFloat = 40
     
-    /// The badges' side: the year plate is a title2 squircle, the size picked on the joined badge board (K4)
-    static func badgeSide(for dynamicTypeSize: DynamicTypeSize) -> CGFloat {
-        let traits = UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(dynamicTypeSize))
-        return UIFont.preferredFont(forTextStyle: .title2, compatibleWith: traits).pointSize
-    }
-    
-    /// The avatar and the badges under it
-    static func avatarGroupHeight(for dynamicTypeSize: DynamicTypeSize) -> CGFloat {
-        avatarSize + avatarToBadges + badgeSide(for: dynamicTypeSize)
-    }
-    
-    /// From the badges to the name's capitals: the avatar gap less the capitals' rise above the x-height
+    /// From the avatar to the name's capitals: the avatar gap less the capitals' rise above the x-height
     static func avatarToName(for dynamicTypeSize: DynamicTypeSize) -> CGFloat {
         let traits = UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(dynamicTypeSize))
         let name = UIFont.preferredFont(forTextStyle: .largeTitle, compatibleWith: traits)
@@ -797,7 +780,7 @@ private enum ProfileGeometry {
     
     /// Where the name's capitals start, from the header's top
     static func nameTop(for dynamicTypeSize: DynamicTypeSize) -> CGFloat {
-        avatarGap + avatarGroupHeight(for: dynamicTypeSize) + avatarToName(for: dynamicTypeSize)
+        avatarGap + avatarSize + avatarToName(for: dynamicTypeSize)
     }
     /// Follow and Message on the card: 20pt in from the sheet's sides and bottom, capsules this tall are concentric
     /// with its 54pt corners (iPhone 18 Pro)
@@ -924,9 +907,14 @@ private struct ProfileNameBlock: View {
     }
 }
 
-/// The handle and location, centered as one line under the name.
+/// The handle and location, then the badges, centered as one line under the name. The badges sit on the middle of the
+/// handle's capitals and don't count toward the line's height: it visibly starts at the handle's capitals and ends at
+/// its baseline. They are body size, so a plate rises 3.2pt above the handle's capitals and stays clear of the name's
+/// descenders, which reach 6pt into the 12pt between the two lines.
 private struct ProfileHandleLine: View {
     let user: User
+    
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     
     private var handleAndLocation: String {
         let handle = "@\(user.username ?? "username")"
@@ -935,26 +923,35 @@ private struct ProfileHandleLine: View {
     }
     
     var body: some View {
-        Text(handleAndLocation)
-            .font(.subheadline)
-            .foregroundStyle(.white.opacity(0.85))
-            .lineLimit(1)
-            .visibleTopAtCapHeight(of: .subheadline)
+        let traits = UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(dynamicTypeSize))
+        let capHeight = UIFont.preferredFont(forTextStyle: .subheadline, compatibleWith: traits).capHeight
+        HStack(alignment: .firstTextBaseline, spacing: ProfileBadges.gap) {
+            Text(handleAndLocation)
+                .font(.subheadline)
+                .foregroundStyle(.white.opacity(0.85))
+                .lineLimit(1)
+                .accessibilityLabel(handleAndLocation.replacingOccurrences(of: " \u{00B7} ", with: ", "))
+            
+            ProfileBadges(user: user, side: UIFont.preferredFont(forTextStyle: .body, compatibleWith: traits).pointSize)
+                .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + capHeight / 2 }
+        }
+        .alignmentGuide(.visibleTop) { $0[.firstTextBaseline] - capHeight }
+        .alignmentGuide(.visibleBottom) { $0[.firstTextBaseline] }
+        .accessibilityElement(children: .combine)
     }
 }
 
-/// The verified seal, when there is one, and the year someone joined, centered under the avatar, each on a white
-/// squircle with the avatar's corners. The seal is in its badge color; the year is black, or gold for the founders who
-/// joined in the first two years, in the premium seal's gold.
+/// The verified seal, when there is one, and the year someone joined, each on a white squircle with the avatar's
+/// corners. The seal is in its badge color; the year is black, or gold for the founders who joined in the first two
+/// years, in the premium seal's gold.
 private struct ProfileBadges: View {
     let user: User
-    
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    let side: CGFloat
     
     /// The years whose members are founders
     private static let founderYears = 2025...2026
-    /// The space between the two plates
-    private static let gap: CGFloat = 8
+    /// The space between the plates, and between the handle line's text and the first, as the seal had after the name
+    static let gap: CGFloat = 6
     
     private var joinedYear: Int {
         Calendar(identifier: .gregorian).component(.year, from: user.createdAt)
@@ -965,7 +962,6 @@ private struct ProfileBadges: View {
     }
     
     var body: some View {
-        let side = ProfileGeometry.badgeSide(for: dynamicTypeSize)
         HStack(spacing: Self.gap) {
             if let badgeType = user.badgeType {
                 AvatarShape()
@@ -986,9 +982,6 @@ private struct ProfileBadges: View {
                 digitColor: isFounder ? BadgeType.premium.color : .black
             )
         }
-        .frame(maxWidth: .infinity)
-        .alignmentGuide(.visibleTop) { $0[.top] }
-        .alignmentGuide(.visibleBottom) { $0[.bottom] }
         // One element that reads the badges in words
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityText)
@@ -1222,7 +1215,7 @@ extension ProfileView {
         let contentWidth = context.width - ProfileGeometry.margin * 2
         let header = BaselineSpacedVStack(spacing: ProfileGeometry.avatarToName(for: context.dynamicTypeSize)) {
             Color.clear
-                .frame(height: ProfileGeometry.avatarGroupHeight(for: context.dynamicTypeSize))
+                .frame(height: ProfileGeometry.avatarSize)
             BaselineSpacedVStack(spacing: ProfileGeometry.part) {
                 ProfileNameBlock(user: user)
                 ProfileDetails(user: user)
