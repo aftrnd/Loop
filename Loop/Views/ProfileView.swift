@@ -200,23 +200,22 @@ struct ProfileView: View {
             VStack(spacing: 0) {
                 profileHeader(for: user)
                 
-                // Tabs and feed, always rendered, fading in as the sheet opens, on the page that rises over the
-                // wallpaper's foot with rounded corners
+                // Tabs and feed, always rendered, fading in as the sheet opens on the page that rises over the
+                // wallpaper's foot
                 VStack(spacing: 0) {
                     feedPicker
                     
                     // Its own view, so feed updates don't re-render the header
                     ProfileFeedSection(viewModel: feedViewModel, selectedTab: selectedTab)
                 }
-                .background {
-                    UnevenRoundedRectangle(
-                        topLeadingRadius: ProfileGeometry.pageCornerRadius,
-                        topTrailingRadius: ProfileGeometry.pageCornerRadius,
-                        style: .continuous
-                    )
-                    .fill(Color(.systemBackground))
-                }
                 .modifier(expansionFade)
+                .background {
+                    ProfilePageBackground(
+                        metrics: sheetMetrics,
+                        minimumHeight: minimumProfileHeight,
+                        isFullyExpanded: isSheetFullyExpanded
+                    )
+                }
             }
         }
         .scrollIndicators(.hidden)
@@ -384,7 +383,7 @@ struct ProfileView: View {
                 heroHeight: heroHeight
             )
             // On under the page's rounded corners
-            .padding(.bottom, -ProfileGeometry.pageCornerRadius)
+            .padding(.bottom, -ProfileGeometry.wallpaperReach)
         }
         // Nothing in the header sits on the sheet's glass, so nothing in it is vibrant
         .environment(\.backgroundMaterial, nil)
@@ -768,6 +767,10 @@ private enum ProfileGeometry {
     /// The page under the wallpaper rounds its top corners concentric with the segmented control's ends: their 16pt
     /// radius (half its 32pt track) and the part spacing it sits from the page's top and sides
     static let pageCornerRadius: CGFloat = 32 / 2 + part
+    /// How far the wallpaper runs on under the page. A continuous corner's curve carries on down the side past its
+    /// radius, so the wallpaper reaching only the radius ended in a flat cut inside the curve; twice the radius covers
+    /// it
+    static let wallpaperReach: CGFloat = pageCornerRadius * 2
 }
 
 /// The avatar's edge lit like a macOS 27 app icon's, so it reads on any wallpaper: a highlight inside the top edge
@@ -1082,11 +1085,29 @@ private struct ProfileDetails: View {
     }
 }
 
+// MARK: - Page
+
+/// The page behind the tabs and the feed. Always opaque, so the sheet's glass never shows below the buttons as the
+/// sheet opens, and its top corners round in from square on the card to the page corner radius at full height, in
+/// step with the tabs fading in. Reads the live height, so per-frame updates stop here.
+private struct ProfilePageBackground: View {
+    let metrics: ProfileSheetMetrics
+    let minimumHeight: CGFloat
+    let isFullyExpanded: Bool
+    
+    var body: some View {
+        let progress = metrics.expansionProgress(minimumHeight: minimumHeight, isFullyExpanded: isFullyExpanded)
+        let radius = ProfileGeometry.pageCornerRadius * progress
+        UnevenRoundedRectangle(topLeadingRadius: radius, topTrailingRadius: radius, style: .continuous)
+            .fill(Color(.systemBackground))
+    }
+}
+
 // MARK: - Wallpaper
 
 /// The wallpaper behind the header, darkened a little toward its foot so white type stays legible. It is laid out at
-/// the card's height, plus the page's corner radius that it reaches on under, in every detent, so it never re-crops as
-/// the sheet opens. With no wallpaper, the dark gray it shows while loading stands in.
+/// the card's height, plus the reach it runs on under the page, in every detent, so it never re-crops as the sheet
+/// opens. With no wallpaper, the dark gray it shows while loading stands in.
 private struct ProfileBackdrop: View {
     let bannerURL: String?
     /// The card's header height, or 0 before it is measured, when the wallpaper fills the header
@@ -1097,7 +1118,7 @@ private struct ProfileBackdrop: View {
         Color.clear
             .overlay(alignment: .top) {
                 wallpaper
-                    .frame(height: cardHeight > 0 ? cardHeight + ProfileGeometry.pageCornerRadius : nil)
+                    .frame(height: cardHeight > 0 ? cardHeight + ProfileGeometry.wallpaperReach : nil)
             }
             .clipped()
             // The wallpaper always renders dark, like a contact poster
