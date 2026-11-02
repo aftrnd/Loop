@@ -91,9 +91,9 @@ struct ProfileView: View {
     private static let headerCoordinateSpace = "profileHeader"
     /// How the profile follows the sheet's height as it opens and closes
     private static let expansionAnimation = Animation.easeInOut(duration: 0.2)
-    /// The card's height while the profile loads: about a card with a two-line bio (401pt on iPhone 18 Pro), so a
-    /// typical profile barely moves once it appears
-    private static let loadingCardHeight: CGFloat = 401
+    /// The card's height while the profile loads: about a card with a two-line bio (502.33pt on iPhone 18 Pro), so
+    /// a typical profile barely moves once it appears
+    private static let loadingCardHeight: CGFloat = 502
     /// Measured on iOS 27.2 at 3x, light and dark: the segmented control lays out 31pt tall and draws its 32pt
     /// track from its top, so the track visibly ends 1pt below its frame
     private static let segmentedTrackOverhang: CGFloat = 1
@@ -908,28 +908,9 @@ private struct ProfileNameBlock: View {
     }
 }
 
-/// The handle and location, then the badge and the year plate together, centered as one line. The badge and the
-/// plate sit on the middle of the handle's capitals and don't count toward the line's height: it visibly starts at
-/// the handle's capitals and ends at its baseline.
-///
-/// Both badges are set at body size, the largest that keeps them clear of the name: the seal's ink is 1.106 times
-/// its point size (measured on iOS 27.2), so centered on the handle's capitals it rises 4.1pt above them and stays
-/// about 2pt below the name's descenders, which reach 6pt into the 12pt between the two lines. At title2, the size
-/// they had beside the name, the seal touched the "y" of a name above it.
+/// The handle and location, centered as one line under the name.
 private struct ProfileHandleLine: View {
     let user: User
-    
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    
-    /// The space between the text and the badge, and between the two badges, as the seal had after the name
-    private static let badgeGap: CGFloat = 6
-    /// The seal draws its ink this share of its point size inside its frame on each side (2.17pt at title2,
-    /// measured on iOS 27.2)
-    private static let sealSideBearing: CGFloat = 2.17 / 22
-    
-    private var joinedYear: Int {
-        Calendar(identifier: .gregorian).component(.year, from: user.createdAt)
-    }
     
     private var handleAndLocation: String {
         let handle = "@\(user.username ?? "username")"
@@ -938,51 +919,15 @@ private struct ProfileHandleLine: View {
     }
     
     var body: some View {
-        let traits = UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(dynamicTypeSize))
-        let capHeight = UIFont.preferredFont(forTextStyle: .subheadline, compatibleWith: traits).capHeight
-        let badgeSize = UIFont.preferredFont(forTextStyle: .body, compatibleWith: traits).pointSize
-        let sealBearing = badgeSize * Self.sealSideBearing
-        HStack(alignment: .firstTextBaseline, spacing: 0) {
-            Text(handleAndLocation)
-                .font(.subheadline)
-                .foregroundStyle(.white.opacity(0.85))
-                .lineLimit(1)
-            
-            if let badgeType = user.badgeType {
-                // The check in white, so the seal reads on any wallpaper
-                Image(systemName: badgeType.iconName)
-                    .symbolRenderingMode(.palette)
-                    .foregroundStyle(.white, badgeType.color)
-                    .font(.body)
-                    .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + capHeight / 2 }
-                    .padding(.leading, Self.badgeGap - sealBearing)
-            }
-            
-            ProfileYearPlate(year: joinedYear, side: badgeSize)
-                .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + capHeight / 2 }
-                .padding(.leading, Self.badgeGap - (user.badgeType == nil ? 0 : sealBearing))
-        }
-        .alignmentGuide(.visibleTop) { $0[.firstTextBaseline] - capHeight }
-        .alignmentGuide(.visibleBottom) { $0[.firstTextBaseline] }
-        // One element that reads the line in words: the dot, the seal and the plate's digits don't read well alone
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(accessibilityText)
-    }
-    
-    private var accessibilityText: String {
-        var parts = [handleAndLocation.replacingOccurrences(of: " \u{00B7} ", with: ", ")]
-        switch user.badgeType {
-        case .verified: parts.append("Verified")
-        case .premium: parts.append("Premium")
-        case nil: break
-        }
-        parts.append("Joined \(joinedYear)")
-        return parts.joined(separator: ", ")
+        Text(handleAndLocation)
+            .font(.subheadline)
+            .foregroundStyle(.white.opacity(0.85))
+            .lineLimit(1)
+            .visibleTopAtCapHeight(of: .subheadline)
     }
 }
 
-/// The year someone joined, cut out of a small squircle with the avatar's 2/7 corners, two digits over two. Its side
-/// is the seal's point size, so the two carry about the same ink. It is in the handle's white, as part of its line.
+/// The year someone joined, cut out of a squircle in the ink with the avatar's 2/7 corners, two digits over two.
 private struct ProfileYearPlate: View {
     let year: Int
     let side: CGFloat
@@ -1000,7 +945,7 @@ private struct ProfileYearPlate: View {
     var body: some View {
         let digits = String(year)
         AvatarShape()
-            .fill(.white.opacity(0.85))
+            .fill(.primary)
             .frame(width: side, height: side)
             .overlay {
                 BaselineSpacedVStack(spacing: capHeight / 4) {
@@ -1010,7 +955,7 @@ private struct ProfileYearPlate: View {
                 .fixedSize()
                 .blendMode(.destinationOut)
             }
-            // The digits show the wallpaper through the plate
+            // The digits show what is behind the plate
             .compositingGroup()
     }
     
@@ -1027,7 +972,7 @@ private struct ProfileYearPlate: View {
 /// layout before the sheet opens. Their colors come from `SheetExpansionInk`.
 private struct ProfileDetails: View {
     let user: User
-    /// Your own profile shows the tile that adds a highlight
+    /// Your own profile also shows the tile that adds a highlight
     let canAddHighlights: Bool
     
     @Environment(\.profileSecondaryInk) private var secondaryInk
@@ -1054,9 +999,7 @@ private struct ProfileDetails: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .visibleTopAtCapHeight(of: .subheadline)
             
-            if canAddHighlights {
-                ProfileHighlights()
-            }
+            ProfileHighlights(user: user, canAdd: canAddHighlights)
         }
     }
     
@@ -1077,43 +1020,86 @@ private struct ProfileDetails: View {
 }
 
 /// The highlights row: squircles with the avatar's corners and a label under each, five of them across the text
-/// column. Highlights don't exist yet, so it holds only the empty tile your own profile shows to add one, in a gray
-/// from the ink so it reads on the wallpaper and on the page.
+/// column. The first are the verified badge, when there is one, and the year someone joined, as plates in the ink
+/// with the seal and the year cut out. Your own profile ends the row with the empty tile that adds a highlight, in a
+/// gray from the ink so it reads on the wallpaper and on the page.
 private struct ProfileHighlights: View {
+    let user: User
+    let canAdd: Bool
+    
     @Environment(\.profileSecondaryInk) private var secondaryInk
     
     /// Five tiles 13pt apart fill the 362pt column on iPhone 18 Pro
     private static let tile: CGFloat = 62
+    /// The seal's ink is 1.106 times its point size (measured on iOS 27.2); this size fills the middle four sevenths
+    /// of the tile, as the year's digits do
+    private static let sealSize = tile * 4 / 7 / 1.106
+    
+    private var joinedYear: Int {
+        Calendar(identifier: .gregorian).component(.year, from: user.createdAt)
+    }
     
     var body: some View {
         HStack(alignment: .top, spacing: 13) {
-            Button {
-                // Adding highlights waits for the feature behind them
-            } label: {
-                VStack(spacing: 8) {
+            if let badgeType = user.badgeType {
+                highlight(badgeType == .premium ? "Premium" : "Verified") {
                     AvatarShape()
-                        .fill(.quaternary)
+                        .fill(.primary)
                         .frame(width: Self.tile, height: Self.tile)
                         .overlay {
-                            Image(systemName: "plus")
-                                .font(.title2.weight(.medium))
-                                .foregroundStyle(secondaryInk)
+                            Image(systemName: badgeType.iconName)
+                                .font(.system(size: Self.sealSize))
+                                .blendMode(.destinationOut)
                         }
-                    
-                    Text("New")
-                        .font(.caption)
-                        .fontWeight(.medium)
-                        .foregroundStyle(secondaryInk)
+                        // The seal shows what is behind the plate, around the check in the ink
+                        .compositingGroup()
                 }
-                .frame(width: Self.tile)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(badgeType == .premium ? "Premium" : "Verified")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("New highlight")
+            
+            highlight("Joined") {
+                ProfileYearPlate(year: joinedYear, side: Self.tile)
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Joined \(joinedYear)")
+            
+            if canAdd {
+                Button {
+                    // Adding highlights waits for the feature behind them
+                } label: {
+                    highlight("New") {
+                        AvatarShape()
+                            .fill(.quaternary)
+                            .frame(width: Self.tile, height: Self.tile)
+                            .overlay {
+                                Image(systemName: "plus")
+                                    .font(.title2.weight(.medium))
+                                    .foregroundStyle(secondaryInk)
+                            }
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("New highlight")
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         // Starts at the tiles' top and ends at the labels' baseline
         .alignmentGuide(.visibleTop) { $0[.top] }
         .alignmentGuide(.visibleBottom) { $0[.lastTextBaseline] }
+    }
+    
+    /// A tile with its label under it
+    private func highlight<Tile: View>(_ title: String, @ViewBuilder tile: () -> Tile) -> some View {
+        VStack(spacing: 8) {
+            tile()
+            
+            Text(title)
+                .font(.caption)
+                .fontWeight(.medium)
+                .foregroundStyle(secondaryInk)
+        }
+        .frame(width: Self.tile)
     }
 }
 
