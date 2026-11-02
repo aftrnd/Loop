@@ -389,18 +389,18 @@ struct ProfileView: View {
         .coordinateSpace(.named(Self.headerCoordinateSpace))
     }
     
-    /// The avatar in its outline, centered between the sheet's top edge and the name, and the handle under the
-    /// name. On the wallpaper in every detent.
+    /// The avatar, lit like an icon and centered between the sheet's top edge and the name, and the handle under
+    /// the name. On the wallpaper in every detent.
     private func profileHero(for user: User) -> some View {
         BaselineSpacedVStack(spacing: ProfileGeometry.part) {
             BaselineSpacedVStack(spacing: ProfileGeometry.avatarToName(for: dynamicTypeSize)) {
                 avatarView
-                    .padding(ProfileGeometry.avatarOutline)
-                    .background {
-                        ProfileAvatarOutline()
+                    .overlay {
+                        ProfileAvatarRim()
                     }
+                    .modifier(ProfileAvatarShadow())
                     .frame(maxWidth: .infinity)
-                    // The initials are text, but the avatar visibly ends at its outline's edge
+                    // The initials are text, but the avatar visibly ends at its edge
                     .alignmentGuide(.visibleBottom) { $0[.bottom] }
                 
                 ProfileNameBlock(user: user)
@@ -764,15 +764,7 @@ private enum ProfileGeometry {
     static let part: CGFloat = 20
     /// The name and the handle belong together: 12pt from the name's baseline to the handle's capitals
     static let nameToHandle: CGFloat = 12
-    static let avatarSize: CGFloat = 116
-    /// The outline's width around the avatar
-    static let avatarOutline: CGFloat = 4
-    /// The avatar with its outline, which is where the space around it is measured from
-    static let avatarFrame: CGFloat = avatarSize + avatarOutline * 2
-    /// The outline's corners, concentric with the avatar's
-    static var avatarOutlineShape: RoundedRectangle {
-        RoundedRectangle(cornerRadius: avatarSize * AvatarShape.cornerRatio + avatarOutline, style: .continuous)
-    }
+    static let avatarSize: CGFloat = 124
     /// The avatar is centered between the sheet's top edge and the name, this far from each. Below it the space runs
     /// to the name's x-height, not its capitals: most of a name is lowercase, and measured to the capitals the space
     /// below looked about 7pt larger than the space above. It clears the full-height close button to its side, so it
@@ -789,7 +781,7 @@ private enum ProfileGeometry {
     
     /// Where the name's capitals start, from the header's top
     static func nameTop(for dynamicTypeSize: DynamicTypeSize) -> CGFloat {
-        avatarGap + avatarFrame + avatarToName(for: dynamicTypeSize)
+        avatarGap + avatarSize + avatarToName(for: dynamicTypeSize)
     }
     /// Follow and Message on the card: 20pt in from the sheet's sides and bottom, capsules this tall are concentric
     /// with its 54pt corners (iPhone 18 Pro)
@@ -807,11 +799,49 @@ private enum ProfileGeometry {
     }
 }
 
-/// The outline around the avatar, in the name's white, so the avatar's edge reads on any wallpaper.
-private struct ProfileAvatarOutline: View {
+/// The avatar's edge lit like a macOS 27 app icon's, so it reads on any wallpaper: a highlight inside the top edge
+/// and its corners, a fainter one inside the bottom, none along the sides. Measured on the Messages icon rendered at
+/// 1024px (an 824px tile): white at the top edge fading into the fill over 1.2% of the side, half as bright and half
+/// as deep at the bottom.
+private struct ProfileAvatarRim: View {
+    /// How far the top highlight reaches in, 1.2% of the side: the inner half of a stroke this wide, softened by a
+    /// third of it, stays white at the edge and is gone by this depth
+    private static let depth = ProfileGeometry.avatarSize * 0.012
+    
     var body: some View {
-        ProfileGeometry.avatarOutlineShape
-            .fill(.white)
+        // The corners stay lit down to where they meet the sides
+        let corner = AvatarShape.cornerRatio
+        // Stroked on the edge and clipped to the avatar, so only its inner half shows
+        AvatarShape()
+            .stroke(
+                LinearGradient(
+                    stops: [
+                        .init(color: .white, location: 0),
+                        .init(color: .white.opacity(0), location: corner),
+                        .init(color: .white.opacity(0), location: 1 - corner),
+                        .init(color: .white.opacity(0.5), location: 1)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                ),
+                lineWidth: Self.depth
+            )
+            .blur(radius: Self.depth / 3)
+            .clipShape(AvatarShape())
+            .allowsHitTesting(false)
+    }
+}
+
+/// The soft shadow a macOS 27 app icon casts, scaled from the 824px tile measured at 1024px to the avatar: it reaches
+/// about 3% of the side above, 4% to the sides and 5% below, 10% dark at the sides.
+private struct ProfileAvatarShadow: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .shadow(
+                color: .black.opacity(0.25),
+                radius: ProfileGeometry.avatarSize * 0.02,
+                y: ProfileGeometry.avatarSize * 0.011
+            )
     }
 }
 
@@ -1218,7 +1248,7 @@ extension ProfileView {
         let contentWidth = context.width - ProfileGeometry.margin * 2
         let header = BaselineSpacedVStack(spacing: ProfileGeometry.avatarToName(for: context.dynamicTypeSize)) {
             Color.clear
-                .frame(height: ProfileGeometry.avatarFrame)
+                .frame(height: ProfileGeometry.avatarSize)
             BaselineSpacedVStack(spacing: ProfileGeometry.part) {
                 ProfileNameBlock(user: user)
                 ProfileDetails(user: user, canAddHighlights: isOwnProfile)
