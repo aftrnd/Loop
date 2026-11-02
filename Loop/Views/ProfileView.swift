@@ -1100,8 +1100,9 @@ extension EnvironmentValues {
 
 // MARK: - Wallpaper
 
-/// The wallpaper behind the header, as it is, without darkening. It is laid out at the card's height in every detent,
-/// so it never re-crops as the sheet opens. With no wallpaper, the dark gray it shows while loading stands in. At full height only the hero keeps it: the rest fades out with the sheet's expansion.
+/// The wallpaper behind the header, darkened a little toward its foot so white type stays legible. It is laid out at
+/// the card's height in every detent, so it never re-crops as the sheet opens. With no wallpaper, the dark gray it
+/// shows while loading stands in. At full height only the hero keeps it: the rest fades out with the sheet's expansion.
 private struct ProfileBackdrop: View {
     let bannerURL: String?
     /// The card's header height, or 0 before it is measured, when the wallpaper fills the header
@@ -1124,6 +1125,9 @@ private struct ProfileBackdrop: View {
                     }
                 }
             }
+            .overlay {
+                ProfileWallpaperShade(heroHeight: heroHeight)
+            }
             .frame(height: cardHeight > 0 ? cardHeight : nil)
             .clipped()
             .mask(alignment: .top) {
@@ -1138,6 +1142,34 @@ private struct ProfileBackdrop: View {
             .environment(\.colorScheme, .dark)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
+    }
+}
+
+/// Darkens the wallpaper toward its foot just enough for white type: not at all down to the avatar's foot, so the
+/// photo above stays as it is, then easing in to its strongest where the bio starts (the hero's foot) and holding
+/// there behind the bio, the counts and the buttons. Eased rather than linear, so no edge shows where it begins.
+private struct ProfileWallpaperShade: View {
+    let heroHeight: CGFloat
+    
+    /// The darkest it gets, behind the smaller type
+    private static let strongest = 0.45
+    
+    var body: some View {
+        GeometryReader { proxy in
+            let height = max(proxy.size.height, 1)
+            let start = ProfileGeometry.avatarGap + ProfileGeometry.avatarSize
+            let end = max(heroHeight, start + 1)
+            // A smoothstep from clear to the strongest, in eight steps
+            let stops = (0...8).map { step in
+                let t = CGFloat(step) / 8
+                let eased = t * t * (3 - 2 * t)
+                return Gradient.Stop(
+                    color: .black.opacity(Self.strongest * eased),
+                    location: min((start + (end - start) * t) / height, 1)
+                )
+            }
+            LinearGradient(stops: stops, startPoint: .top, endPoint: .bottom)
+        }
     }
 }
 
