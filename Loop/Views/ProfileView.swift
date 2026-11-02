@@ -735,8 +735,8 @@ private enum ProfileGeometry {
     static let margin: CGFloat = CardLayoutConstants.horizontalPadding * 2
     /// The space between the profile's parts, measured where they visibly end and start
     static let part: CGFloat = 20
-    /// The name, the handle and the year belong together: 12pt from the name's baseline to the handle's capitals, and
-    /// from the handle's baseline to the year plate
+    /// The name, the handle and the badges belong together: 12pt from the name's baseline to the handle's capitals,
+    /// and from the handle's baseline to the badge plates
     static let nameToHandle: CGFloat = 12
     /// Twice the feed's 56pt avatar, as the name beside it is twice the feed's 17pt
     static let avatarSize: CGFloat = 2 * CardLayoutConstants.avatarSize
@@ -843,8 +843,8 @@ private struct ProfileActionLabel: View {
 
 // MARK: - Profile Text
 
-/// The avatar on the left and the name, handle and year beside it, centered on the avatar by where they visibly start
-/// and end (the name's capitals and the year plate's foot). A view of its own so the card's height can be worked out
+/// The avatar on the left and the name, handle and badges beside it, centered on the avatar by where they visibly
+/// start and end (the name's capitals and the badge plates' foot). A view of its own so the card's height can be worked out
 /// with the same layout before the sheet opens.
 private struct ProfileIdentityRow<Avatar: View>: View {
     let user: User
@@ -864,16 +864,12 @@ private struct ProfileIdentityRow<Avatar: View>: View {
     }
 }
 
-/// The name, the handle line under it, and the year someone joined under that, beside the avatar: a post header's two
-/// lines, and a third for the year. White, on the wallpaper.
+/// The name, the handle line under it, and the badges under that, beside the avatar: a post header's two lines, and
+/// a third for the badges. White, on the wallpaper.
 private struct ProfileNameBlock: View {
     let user: User
     
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    
-    private var joinedYear: Int {
-        Calendar(identifier: .gregorian).component(.year, from: user.createdAt)
-    }
     
     var body: some View {
         let traits = UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(dynamicTypeSize))
@@ -890,20 +886,15 @@ private struct ProfileNameBlock: View {
             ProfileHandleLine(user: user)
                 .frame(maxWidth: .infinity, alignment: .leading)
             
-            // As tall as the name's capitals; it visibly starts and ends at its edges, not at its digits
-            ProfileYearPlate(year: joinedYear, side: nameCapHeight)
-                .alignmentGuide(.visibleTop) { $0[.top] }
-                .alignmentGuide(.visibleBottom) { $0[.bottom] }
+            // Plates as tall as the name's capitals
+            ProfileBadges(user: user, side: nameCapHeight)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel("Joined \(joinedYear)")
         }
         .foregroundStyle(.white)
     }
 }
 
-/// The badge, then the handle and location, as one line under the name: a post's second line, with the seal before
-/// the handle at the feed's size and spacing, in the line's white.
+/// The handle and location, as one line under the name: a post's second line, in callout.
 private struct ProfileHandleLine: View {
     let user: User
     
@@ -913,29 +904,62 @@ private struct ProfileHandleLine: View {
         return "\(handle) \u{00B7} \(location)"
     }
     
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    var body: some View {
+        Text(handleAndLocation)
+            .font(.callout)
+            .foregroundStyle(.white.opacity(0.85))
+            .lineLimit(1)
+            .visibleTopAtCapHeight(of: .callout)
+            .accessibilityLabel(handleAndLocation.replacingOccurrences(of: " \u{00B7} ", with: ", "))
+    }
+}
+
+/// The verified seal, when there is one, and the year someone joined, each in black on a white squircle with the
+/// avatar's corners, a quarter of a plate apart. The row visibly starts and ends at the plates' edges, not at the
+/// year's digits.
+private struct ProfileBadges: View {
+    let user: User
+    let side: CGFloat
+    
+    private var joinedYear: Int {
+        Calendar(identifier: .gregorian).component(.year, from: user.createdAt)
+    }
     
     var body: some View {
-        let traits = UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(dynamicTypeSize))
-        let capHeight = UIFont.preferredFont(forTextStyle: .callout, compatibleWith: traits).capHeight
-        HStack(alignment: .firstTextBaseline, spacing: 4) {
+        HStack(spacing: side / 4) {
             if let badgeType = user.badgeType {
-                Image(systemName: badgeType.iconName)
-                    .font(.system(size: 14))
-                    // Centered on the handle's capitals
-                    .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + capHeight / 2 }
-                    .accessibilityLabel(badgeType == .premium ? "Premium" : "Verified")
+                AvatarShape()
+                    .fill(.white)
+                    .frame(width: side, height: side)
+                    .overlay {
+                        // Fits the middle four sevenths of the plate, as the year's digits and the AI mark's symbol
+                        // do, centered by its drawn bounds. The check shows the plate's white
+                        Image(systemName: badgeType.iconName)
+                            .resizable()
+                            .scaledToFit()
+                            .padding(side * 3 / 14)
+                            .foregroundStyle(.black)
+                    }
             }
             
-            Text(handleAndLocation)
-                .font(.callout)
-                .lineLimit(1)
-                .accessibilityLabel(handleAndLocation.replacingOccurrences(of: " \u{00B7} ", with: ", "))
+            ProfileYearPlate(year: joinedYear, side: side)
         }
-        .foregroundStyle(.white.opacity(0.85))
-        .visibleTopAtCapHeight(of: .callout)
-        .alignmentGuide(.visibleBottom) { $0[.firstTextBaseline] }
-        .accessibilityElement(children: .combine)
+        .alignmentGuide(.visibleTop) { $0[.top] }
+        .alignmentGuide(.visibleBottom) { $0[.bottom] }
+        // One element that reads the badges in words
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityText)
+    }
+    
+    private var accessibilityText: String {
+        var parts: [String] = []
+        switch user.badgeType {
+        case .verified: parts.append("Verified")
+        case .premium: parts.append("Premium")
+        case nil: break
+        }
+        parts.append("Joined \(joinedYear)")
+        return parts.joined(separator: ", ")
     }
 }
 
