@@ -28,12 +28,13 @@ const FETCH_TIMEOUT_MS = 10000;
 
 /**
  * The accounts, in the order they claim stories: a story both Steelers and NFL could post goes to Steelers.
- * "article" topics read as newspaper articles in the app; the rest show photo cards.
+ * "article" topics read as newspaper articles in the app; the rest show photo cards. A "team" topic's avatar wears its
+ * color and ink; every other topic's is drawn in the app's ink.
  */
 const TOPICS = [
   {
     id: 'steelers', name: 'Steelers', handle: 'steelers', about: 'the Pittsburgh Steelers',
-    symbol: 'football.fill', color: '#101820', ink: '#FFB612',
+    symbol: 'football.fill', color: '#101820', ink: '#FFB612', style: 'team',
     feeds: [
       { url: 'https://www.steelers.com/rss/news', source: 'Steelers.com' },
       { url: 'https://www.behindthesteelcurtain.com/rss/index.xml', source: 'Behind the Steel Curtain' },
@@ -43,7 +44,7 @@ const TOPICS = [
   },
   {
     id: 'nfl', name: 'NFL', handle: 'nfl', about: 'the NFL',
-    symbol: 'trophy.fill', color: '#013369', ink: '#FFFFFF',
+    symbol: 'trophy.fill', color: '#013369', ink: '#FFFFFF', style: 'team',
     // ESPN's feed answers Google Cloud with an empty body, so the league comes from three other sources
     feeds: [
       { url: 'https://profootballtalk.nbcsports.com/feed/', source: 'ProFootballTalk' },
@@ -387,7 +388,14 @@ function topicLoop(topic, story, post, imageURL) {
     likes: [],
     replies: [],
     isReply: false,
-    topic: { id: topic.id, symbol: topic.symbol, color: topic.color, ink: topic.ink, layout: topic.layout ?? null },
+    topic: {
+      id: topic.id,
+      symbol: topic.symbol,
+      color: topic.color,
+      ink: topic.ink,
+      layout: topic.layout ?? null,
+      style: topic.style ?? null,
+    },
     link: {
       url: canonicalURL(story.link),
       // Publishers' headlines follow Loop's copy rules too
