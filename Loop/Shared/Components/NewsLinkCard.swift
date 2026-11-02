@@ -93,16 +93,17 @@ struct NewsLinkCard: View {
             .visibleTopAtCapHeight(of: .footnote)
     }
 
-    /// The story's photo filling its place in the frame, its corners concentric with the card's
+    /// The story's photo filling its place in the frame, its corners concentric with the card's, gray while it loads.
+    /// Left under the photo, the gray would show through the clip's antialiased corners as a light or dark fringe
     private func photo(_ url: URL) -> some View {
-        Color(.systemGray5)
+        Color.clear
             .overlay {
                 CachedAsyncImage(url: url) { image in
                     image
                         .resizable()
                         .aspectRatio(contentMode: .fill)
                 } placeholder: {
-                    Color.clear
+                    Color(.systemGray5)
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: NewsCardMetrics.photoRadius, style: .continuous))

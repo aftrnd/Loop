@@ -64,8 +64,10 @@ struct NewsArticle: View {
         .accessibilityAddTraits(.isLink)
     }
 
+    /// The story's photo, gray while it loads. Left under the photo, the gray would show through the clip's
+    /// antialiased corners as a fringe
     private var photo: some View {
-        Color(.systemGray5)
+        Color.clear
             .frame(height: Self.photoHeight)
             .frame(maxWidth: .infinity)
             .overlay {
@@ -74,7 +76,7 @@ struct NewsArticle: View {
                         .resizable()
                         .aspectRatio(contentMode: .fill)
                 } placeholder: {
-                    Color.clear
+                    Color(.systemGray5)
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: CardLayoutConstants.mediaCornerRadius, style: .continuous))
