@@ -23,11 +23,9 @@ struct ProfileView: View {
     /// The sheet's glass, which makes secondary text vibrant on the card
     @Environment(\.backgroundMaterial) private var sheetMaterial
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.displayScale) private var displayScale
     /// Present when the app's root presented this profile, or a sheet it presented did
     @Environment(SheetRouter.self) private var sheetRouter: SheetRouter?
-    
-    // Debug settings
-    @AppStorage("showLayoutDebugOverlays") private var showLayoutDebugOverlays = false
     
     // Follow system
     @State private var isFollowLoading = false
@@ -40,10 +38,12 @@ struct ProfileView: View {
     @State private var isMessageLoading = false
     
     // Dynamic sheet height
-    @State private var currentDetent: PresentationDetent = .height(366)
+    @State private var currentDetent: PresentationDetent = .height(ProfileView.loadingCardHeight)
     @State private var sheetMetrics = ProfileSheetMetrics()
-    /// The header's width and where Follow and Message start in it, from its latest layout at any width
+    /// The header's width and where its buttons start on the card, from its latest layout at any width
     @State private var headerLayout = HeaderLayout()
+    /// The hero's width and height, from its latest layout at any width
+    @State private var heroLayout = HeroLayout()
     /// The content's width and the sheet's bottom safe area, from a layout pass with a real height
     @State private var contentMetrics = ContentMetrics()
     
@@ -52,10 +52,8 @@ struct ProfileView: View {
     private var sheetBottomInset: CGFloat {
         sheetRouter?.profileLayout?.bottomInset ?? contentMetrics.bottomInset
     }
-    /// Someone else's collapsed height worked out before the sheet opened, used until the header is measured
+    /// The collapsed height worked out before the sheet opened, used until the header is measured
     @State private var predictedCollapsedHeight: CGFloat?
-    @State private var ownershipHintOpacity: Double = 0
-    @State private var ownershipHintMeasuredHeight: CGFloat = 0
     
     // Profile feed
     @State private var feedViewModel: ProfileFeedViewModel
@@ -79,80 +77,26 @@ struct ProfileView: View {
         return [minDetent, currentDetent, .large]
     }
     
-    /// Fades a part of the profile with the sheet's expansion without making this body depend on the live height.
-    private func expansionFade(_ style: SheetExpansionFade.Style) -> SheetExpansionFade {
+    /// Fades the tabs and feed in with the sheet's expansion without making this body depend on the live height.
+    private var expansionFade: SheetExpansionFade {
         SheetExpansionFade(
             metrics: sheetMetrics,
-            minimumHeight: expansionBaselineHeight,
-            isFullyExpanded: isSheetFullyExpanded,
-            style: style
+            minimumHeight: minimumProfileHeight,
+            isFullyExpanded: isSheetFullyExpanded
         )
     }
     
     // Layout constants
-    private static let bannerHeight: CGFloat = 180
-    private static let avatarImageSize: CGFloat = 116
-    // Match post card padding: 10pt list inset + 10pt card padding = 20pt total
-    private static let profileContentPadding: CGFloat = CardLayoutConstants.horizontalPadding + 10 // 20pt total (matches posts)
-    /// How far the avatar's row is pulled up over the wallpaper: its center sits 6pt above the wallpaper's edge, so
-    /// its top 64pt overlap the photo
-    private static let avatarOverlapOffset: CGFloat = -(avatarImageSize / 2 + 6)
-    /// The ring cut out of the wallpaper around the avatar, so the page shows between them
-    private static let avatarRingWidth: CGFloat = 4
-    /// Someone else's card ends with Follow and Message, which sit as far from the sheet's bottom edge as from
-    /// its sides, so their capsules stay concentric with the sheet's corners
-    private var profileCardBottomPadding: CGFloat {
-        isOwnProfile ? CardLayoutConstants.bottomPadding : Self.profileContentPadding
-    }
-    /// Follow and Message are capsules sized to be concentric with the collapsed card: they sit 20pt from the
-    /// sheet's edges, and the sheet's corner radius (54pt on iPhone 18 Pro) is that inset plus half this height
-    private static let actionButtonHeight: CGFloat = 68
-    /// At full height they no longer sit in the sheet's corners, so they take the height of the toolbar's buttons
-    /// above them, which is also the minimum touch target
-    private static let fullHeightActionButtonHeight: CGFloat = 44
-    /// The header's coordinate space, where Follow and Message are measured from
+    /// The header's coordinate space, where its parts are measured from
     private static let headerCoordinateSpace = "profileHeader"
     /// How the profile follows the sheet's height as it opens and closes
     private static let expansionAnimation = Animation.easeInOut(duration: 0.2)
-    private var ownershipHintHeight: CGFloat {
-        if ownershipHintMeasuredHeight > 0 {
-            return ownershipHintMeasuredHeight
-        }
-        return CardLayoutConstants.topPadding + profileCardBottomPadding + 24
-    }
-    /// Someone else's card already ends 20pt below Follow and Message, the profile's spacing between parts. At full
-    /// height that is the gap to the tabs, measured to the labels' capitals like the gap above the buttons, so the
-    /// tabs start higher by the space over their capitals
-    private var tabTopPadding: CGFloat {
-        isOwnProfile ? 0 : -tabLabelCapInset
-    }
-    
-    /// The name's capitals sit 20pt below the avatar, the profile's spacing between parts, so its line starts that
-    /// much less the space above its capitals
-    private var nameTopPadding: CGFloat {
-        Self.nameTopPadding(for: dynamicTypeSize)
-    }
-    
-    private static func nameTopPadding(for dynamicTypeSize: DynamicTypeSize) -> CGFloat {
-        let traits = UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(dynamicTypeSize))
-        let font = UIFont.preferredFont(forTextStyle: .title2, compatibleWith: traits)
-        return profileContentPadding - (font.ascender - font.capHeight)
-    }
-    
-    /// The space between the top of the tab labels' line and their capitals
-    private var tabLabelCapInset: CGFloat {
-        let traits = UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(dynamicTypeSize))
-        let font = UIFont.preferredFont(forTextStyle: .body, compatibleWith: traits)
-        return font.ascender - font.capHeight
-    }
-    
-    private var tabBottomPadding: CGFloat {
-        // Add bottom padding for ALL profiles (both own and others)
-        CardLayoutConstants.headerBottomSpacing
-    }
-    private var shouldShowOwnershipHint: Bool {
-        isOwnProfile && !isSheetFullyExpanded
-    }
+    /// The card's height while the profile loads: about a card with a two-line bio (479.67pt on iPhone 18 Pro), so
+    /// a typical profile barely moves once it appears
+    private static let loadingCardHeight: CGFloat = 480
+    /// Measured on iOS 27.2 at 3x, light and dark: the segmented control lays out 31pt tall and draws its 32pt
+    /// track from its top, so the track visibly ends 1pt below its frame
+    private static let segmentedTrackOverhang: CGFloat = 1
     
     /// Read from the profile's followers list, so the button and the follower count always agree.
     private var isFollowing: Bool {
@@ -160,63 +104,35 @@ struct ProfileView: View {
         return currentUser?.followers.contains(currentUserId) ?? false
     }
     
-    // Calculate baseline minimum height needed for profile content
-    private var baseProfileHeight: CGFloat {
-        let bannerHeight: CGFloat = 180
-        // The avatar overlap area, fitted when the avatar showed 44pt below the wallpaper with 8pt above the name,
-        // plus what the larger avatar and the name's spacing add since
-        let avatarSection: CGFloat = 30
-            + (Self.avatarImageSize + Self.avatarOverlapOffset - 44)
-            + (nameTopPadding - CardLayoutConstants.topPadding)
-        let nameHeight: CGFloat = 28 // Display name
-        let usernameHeight: CGFloat = 18 // Username/location line
-        let followersHeight: CGFloat = 18 // Followers/following line
-        let bioMinHeight: CGFloat = 44 // Minimum 2 lines for bio
-        let actionButtonsHeight: CGFloat = Self.actionButtonHeight // Follow/Message buttons (only for other users' profiles)
-        let spacing: CGFloat = 8 * 3 // 3 gaps of 8px each
-        let spacingAfterBio: CGFloat = 12 // Spacing after bio before action buttons
-        let padding: CGFloat = 24 // Reduced bottom padding
-        
-        // Include action buttons height when viewing someone else's profile
-        // Use isOwnProfile (which works with userId) to avoid sheet resizing when currentUser loads
-        let buttonsHeight = !isOwnProfile ? actionButtonsHeight + spacingAfterBio : 0
-        
-        return bannerHeight + avatarSection + nameHeight + usernameHeight + followersHeight + bioMinHeight + buttonsHeight + spacing + padding
-    }
-    
-    /// Someone else's header height at the card detent, from a layout at the sheet's real width, or 0 before there
-    /// is one. Presenting a sheet first lays its content out at throwaway sizes (120pt wide and 0 tall in the
-    /// simulator) where the bio wraps across many lines; measured there, the card opened far too tall.
-    /// It counts from where Follow and Message start, which their height doesn't move, so their shorter full-height
-    /// size never changes the detent mid-drag.
-    private var otherProfileHeaderHeight: CGFloat {
+    /// The header's height on the card, from a layout at the sheet's real width, or 0 before there is one.
+    /// Presenting a sheet first lays its content out at throwaway sizes (120pt wide and 0 tall in the simulator)
+    /// where the bio wraps across many lines; measured there, the card opened far too tall.
+    /// It counts from where the buttons start, which their height doesn't move, so their shorter full-height size
+    /// never changes the detent mid-drag. Rounded up to whole pixels like the height worked out before the sheet
+    /// opens (UIHostingController sizes to whole pixels), so the two agree and the open sheet doesn't move by a
+    /// fraction of a point.
+    private var cardHeaderHeight: CGFloat {
         guard contentMetrics.width > 0, abs(headerLayout.width - contentMetrics.width) < 0.5 else { return 0 }
-        return headerLayout.actionsTop + Self.actionButtonHeight + profileCardBottomPadding
+        let height = headerLayout.actionsTop + ProfileGeometry.cardActionHeight + ProfileGeometry.part
+        return (height * displayScale).rounded(.up) / displayScale
     }
     
-    /// The collapsed detent. On your own profile it always leaves room for the ownership hint, even while
-    /// fully expanded, so collapsing settles once instead of stopping short and then growing as the hint appears.
+    /// From the header's top to a part spacing below the handle, where the wallpaper ends at full height. Until the
+    /// hero has been laid out at the sheet's width, the height of a hero whose name fits on one line.
+    private var heroHeight: CGFloat {
+        guard contentMetrics.width > 0, abs(heroLayout.width - contentMetrics.width) < 0.5 else {
+            return ProfileGeometry.singleLineHeroHeight(for: dynamicTypeSize)
+        }
+        return heroLayout.height
+    }
+    
+    /// The collapsed detent: the card ends exactly where its header does.
     private var minimumProfileHeight: CGFloat {
-        if isOwnProfile {
-            return baseProfileHeight + ownershipHintHeight
+        if cardHeaderHeight > 0 {
+            // A height detent sizes the area above the bottom safe area, and the header runs into it
+            return cardHeaderHeight - sheetBottomInset
         }
-        
-        if otherProfileHeaderHeight > 0 {
-            // A height detent sizes the area above the bottom safe area, and the header runs into it, so the
-            // card ends exactly where its content does
-            return otherProfileHeaderHeight - sheetBottomInset
-        }
-        
-        return predictedCollapsedHeight ?? baseProfileHeight
-    }
-    
-    /// Where the tabs and feed start fading in. While your own profile is fully expanded this leaves out the
-    /// hidden ownership hint, as it always has, so the fade timing doesn't depend on the detent fix above.
-    private var expansionBaselineHeight: CGFloat {
-        if isOwnProfile && !shouldShowOwnershipHint {
-            return baseProfileHeight
-        }
-        return minimumProfileHeight
+        return predictedCollapsedHeight ?? Self.loadingCardHeight
     }
     
     /// Size and safe area of the frame the profile content fills.
@@ -225,10 +141,16 @@ struct ProfileView: View {
         var bottomInset: CGFloat = 0
     }
     
-    /// The header's width, and where Follow and Message start, from its top.
+    /// The header's width, and where its buttons start on the card, from its top.
     private nonisolated struct HeaderLayout: Equatable {
         var width: CGFloat = 0
         var actionsTop: CGFloat = 0
+    }
+    
+    /// The header's width, and how far down its hero reaches.
+    private nonisolated struct HeroLayout: Equatable {
+        var width: CGFloat = 0
+        var height: CGFloat = 0
     }
     
     /// - Parameter preview: The profile and its collapsed height, when they are known before the sheet opens.
@@ -242,11 +164,8 @@ struct ProfileView: View {
         self.isOwnProfile = isOwnProfile
         if let preview {
             _currentUser = State(initialValue: preview.user)
-            // Your own card keeps its estimate, which already includes the ownership hint
-            if !isOwnProfile {
-                _currentDetent = State(initialValue: .height(preview.collapsedHeight))
-                _predictedCollapsedHeight = State(initialValue: preview.collapsedHeight)
-            }
+            _currentDetent = State(initialValue: .height(preview.collapsedHeight))
+            _predictedCollapsedHeight = State(initialValue: preview.collapsedHeight)
         } else if userId != nil {
             // Start in loading state if we need to fetch a user
             _isLoading = State(initialValue: true)
@@ -258,11 +177,9 @@ struct ProfileView: View {
     
     @ViewBuilder
     private var profileContent: some View {
-        let bannerHeight = Self.bannerHeight
-        
         // Unified view structure - always the same, components fade in/out
-        if currentUser != nil {
-            profileMainContent(bannerHeight: bannerHeight)
+        if let currentUser {
+            profileMainContent(for: currentUser)
         } else if isLoading {
             loadingView
         } else if loadError != nil {
@@ -278,22 +195,18 @@ struct ProfileView: View {
         }
     }
     
-    @ViewBuilder
-    private func profileMainContent(bannerHeight: CGFloat) -> some View {
+    private func profileMainContent(for user: User) -> some View {
         ScrollView {
             VStack(spacing: 0) {
-                // Profile header - always rendered with same structure
-                if let user = currentUser {
-                    profileHeaderCompact(for: user, bannerHeight: bannerHeight, showProfileInfo: true)
-                }
+                profileHeader(for: user)
                 
                 // Tabs and feed - always rendered, fade in during swipe
-                profileTabs
-                    .modifier(expansionFade(.reveal))
+                feedPicker
+                    .modifier(expansionFade)
                 
                 // Tab content - fade in as sheet expands. Its own view, so feed updates don't re-render the header
                 ProfileFeedSection(viewModel: feedViewModel, selectedTab: selectedTab)
-                    .modifier(expansionFade(.reveal))
+                    .modifier(expansionFade)
             }
         }
         .scrollIndicators(.hidden)
@@ -359,9 +272,7 @@ struct ProfileView: View {
         return NavigationStack(path: $navigationPath) {
             profileGeometryContent
                 .modifier(ProfileNavigationModifiers(
-                    isOwnProfile: isOwnProfile,
                     isSheetFullyExpanded: isSheetFullyExpanded,
-                    showEditProfile: $showEditProfile,
                     dismissAction: { dismiss() }
                 ))
                 // Runs alongside the feed's task below, so the header and the feed load in parallel. Runs again
@@ -395,10 +306,10 @@ struct ProfileView: View {
     private var profileGeometryContent: some View {
         profileContent
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            // The height changes on every frame of a sheet drag; only SheetExpansionFade and SheetExpansionHeight
-            // read it. The top safe area is included, so the toolbar appearing at full height doesn't make the sheet
-            // look shorter. Changed in one animated transaction, so the layout around Follow and Message (the card's
-            // clip, the tabs) moves with them as they shrink; animated on their own, the card cut them off
+            // The height changes on every frame of a sheet drag; only the SheetExpansion modifiers and the wallpaper's
+            // mask read it. The top safe area is included, so the toolbar appearing at full height doesn't make the
+            // sheet look shorter. Changed in one animated transaction, so the layout around the buttons (the page,
+            // the tabs) moves with them as they shrink; animated on their own, the card cut them off
             .onGeometryChange(for: CGFloat.self) { proxy in
                 proxy.size.height + proxy.safeAreaInsets.top
             } action: { height in
@@ -420,6 +331,9 @@ struct ProfileView: View {
                     contentMetrics = metrics
                 }
             }
+            .onChange(of: sheetRouter?.profileLayout?.height, initial: true) { _, height in
+                sheetMetrics.expectedFullHeight = height
+            }
             .onChange(of: isSheetFullyExpanded) { _, isExpanded in
                 if isExpanded {
                     withAnimation(Self.expansionAnimation) {
@@ -438,45 +352,109 @@ struct ProfileView: View {
             }
     }
     
-    // MARK: - Banner
+    // MARK: - Header
     
-    /// The wallpaper, ending in a straight edge that the avatar overlaps, with a ring cut out around the avatar
-    private var bannerContent: some View {
-        GeometryReader { bannerGeometry in
-            if let bannerURL = currentUser?.bannerURL, let url = URL(string: bannerURL) {
-                // Load from Firebase Storage URL with caching
-                CachedAsyncImage(url: url) { image in
-                    image
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(width: bannerGeometry.size.width, height: bannerGeometry.size.height)
-                        .clipped()
-                } placeholder: {
-                    ZStack {
-                        Color(.systemGray5)
-                            .frame(width: bannerGeometry.size.width, height: bannerGeometry.size.height)
-                        
-                        ProgressView()
-                    }
-                }
-            } else {
-                // Default gray background
-                Color(.systemGray5)
-                    .frame(width: bannerGeometry.size.width, height: bannerGeometry.size.height)
-            }
+    /// The card is the wallpaper with every part on it: the avatar, the name and handle, the bio, the counts and
+    /// the buttons, a part spacing apart. At full height the wallpaper keeps only the hero (avatar, name and handle,
+    /// which stay where they were) and the rest moves onto the plain page a part spacing below the photo's edge.
+    private func profileHeader(for user: User) -> some View {
+        // The hero ends a part spacing below the handle, which on the card is where the bio starts
+        BaselineSpacedVStack(spacing: 0) {
+            profileHero(for: user)
+            
+            profilePage(for: user)
+                .modifier(SheetExpansionDrop(
+                    metrics: sheetMetrics,
+                    minimumHeight: minimumProfileHeight,
+                    isFullyExpanded: isSheetFullyExpanded,
+                    distance: ProfileGeometry.part
+                ))
         }
-        .mask {
-            AvatarRingCutout(center: avatarCenter, avatarSize: Self.avatarImageSize, ringWidth: Self.avatarRingWidth)
-                .fill(style: FillStyle(eoFill: true))
+        .padding(.horizontal, ProfileGeometry.margin)
+        // The card ends as far below its buttons as they sit from its sides, so they stay concentric with its
+        // corners. At full height the same space is the gap to the tabs
+        .padding(.bottom, ProfileGeometry.part)
+        .background(alignment: .top) {
+            ProfileBackdrop(
+                bannerURL: user.bannerURL,
+                cardHeight: cardHeaderHeight,
+                heroHeight: heroHeight,
+                metrics: sheetMetrics,
+                minimumHeight: minimumProfileHeight,
+                isFullyExpanded: isSheetFullyExpanded
+            )
         }
+        // Nothing in the header sits on the sheet's glass, so nothing in it is vibrant
+        .environment(\.backgroundMaterial, nil)
+        .coordinateSpace(.named(Self.headerCoordinateSpace))
     }
     
-    /// The avatar's center from the header's top leading corner, where the avatar row lands once pulled up
-    private var avatarCenter: CGPoint {
-        CGPoint(
-            x: Self.profileContentPadding + Self.avatarImageSize / 2,
-            y: Self.bannerHeight + Self.avatarOverlapOffset + Self.avatarImageSize / 2
-        )
+    /// The avatar centered under the close button's row, and the name and handle as far below it as it is below the
+    /// sheet's top edge. On the wallpaper in every detent.
+    private func profileHero(for user: User) -> some View {
+        BaselineSpacedVStack(spacing: ProfileGeometry.part) {
+            BaselineSpacedVStack(spacing: ProfileGeometry.avatarTop) {
+                avatarView
+                    .frame(maxWidth: .infinity)
+                    // The initials are text, but the avatar visibly ends at its edge
+                    .alignmentGuide(.visibleBottom) { $0[.bottom] }
+                
+                ProfileNameBlock(user: user)
+            }
+            
+            // Where the wallpaper ends at full height
+            Color.clear
+                .frame(height: 0)
+                .onGeometryChange(for: HeroLayout.self) { proxy in
+                    let header = NamedCoordinateSpace.named(Self.headerCoordinateSpace)
+                    return HeroLayout(width: proxy.bounds(of: header)?.width ?? 0, height: proxy.frame(in: header).minY)
+                } action: { layout in
+                    heroLayout = layout
+                }
+        }
+        .padding(.top, ProfileGeometry.avatarTop)
+        // The wallpaper always renders dark, like a contact poster
+        .environment(\.colorScheme, .dark)
+    }
+    
+    /// The bio, the counts and the buttons: on the wallpaper on the card, on the plain page at full height.
+    private func profilePage(for user: User) -> some View {
+        BaselineSpacedVStack(spacing: ProfileGeometry.part) {
+            ProfileDetails(user: user)
+            
+            profileActions
+                .modifier(SheetExpansionHeight(
+                    metrics: sheetMetrics,
+                    minimumHeight: minimumProfileHeight,
+                    isFullyExpanded: isSheetFullyExpanded,
+                    collapsed: ProfileGeometry.cardActionHeight,
+                    expanded: ProfileGeometry.fullHeightActionHeight
+                ))
+                // Sizes the card; `syncDetentIfNeeded` moves the sheet when its height changes. Read only at rest, on
+                // the card or at full height, where the page has dropped by exactly a part spacing; in between it
+                // moves with the drag and the card's height doesn't
+                .onGeometryChange(for: HeaderLayout?.self) { proxy in
+                    let progress = sheetMetrics.expansionProgress(
+                        minimumHeight: minimumProfileHeight,
+                        isFullyExpanded: isSheetFullyExpanded
+                    )
+                    guard progress == 0 || progress == 1 else { return nil }
+                    let header = NamedCoordinateSpace.named(Self.headerCoordinateSpace)
+                    return HeaderLayout(
+                        width: proxy.bounds(of: header)?.width ?? 0,
+                        actionsTop: proxy.frame(in: header).minY - ProfileGeometry.part * progress
+                    )
+                } action: { layout in
+                    if let layout {
+                        headerLayout = layout
+                    }
+                }
+        }
+        .modifier(SheetExpansionInk(
+            metrics: sheetMetrics,
+            minimumHeight: minimumProfileHeight,
+            isFullyExpanded: isSheetFullyExpanded
+        ))
     }
     
     // MARK: - Avatar
@@ -489,13 +467,13 @@ struct ProfileView: View {
                     image
                         .resizable()
                         .aspectRatio(contentMode: .fill)
-                        .frame(width: Self.avatarImageSize, height: Self.avatarImageSize)
+                        .frame(width: ProfileGeometry.avatarSize, height: ProfileGeometry.avatarSize)
                         .clipShape(AvatarShape())
                 } placeholder: {
                     ZStack {
                         AvatarShape()
                             .fill(Color(.systemGray5))
-                            .frame(width: Self.avatarImageSize, height: Self.avatarImageSize)
+                            .frame(width: ProfileGeometry.avatarSize, height: ProfileGeometry.avatarSize)
                         
                         ProgressView()
                     }
@@ -504,10 +482,10 @@ struct ProfileView: View {
                 // Default initials view
                 AvatarShape()
                     .fill(Color(.systemGray5))
-                    .frame(width: Self.avatarImageSize, height: Self.avatarImageSize)
+                    .frame(width: ProfileGeometry.avatarSize, height: ProfileGeometry.avatarSize)
                 
                 Color.clear
-                    .frame(width: Self.avatarImageSize, height: Self.avatarImageSize)
+                    .frame(width: ProfileGeometry.avatarSize, height: ProfileGeometry.avatarSize)
                     .glassEffect(.regular, in: AvatarShape())
                 
                 Text(userInitials)
@@ -515,7 +493,8 @@ struct ProfileView: View {
                     .foregroundColor(.primary)
             }
         }
-        .frame(width: Self.avatarImageSize, height: Self.avatarImageSize)
+        .frame(width: ProfileGeometry.avatarSize, height: ProfileGeometry.avatarSize)
+        .accessibilityHidden(true)
     }
     
     // MARK: - Helper Properties
@@ -636,292 +615,84 @@ struct ProfileView: View {
         )
     }
     
-    // MARK: - Expanded Profile Views
+    // MARK: - Action Buttons
     
-    // MARK: - Debug Overlay Helpers
-    
-    @ViewBuilder
-    private func profileInfoContent(for user: User) -> some View {
-        profileCardContainer {
-            VStack(alignment: .leading, spacing: CardLayoutConstants.headerBottomSpacing) {
-                // Follow and Message sit as far below the text's last baseline as above the sheet's bottom edge
-                BaselineSpacedVStack(spacing: Self.profileContentPadding) {
-                    ProfileTextBlock(user: user, isOwnProfile: isOwnProfile)
-                    
-                    if !isOwnProfile {
-                        actionButtons
-                            .modifier(SheetExpansionHeight(
-                                metrics: sheetMetrics,
-                                minimumHeight: expansionBaselineHeight,
-                                isFullyExpanded: isSheetFullyExpanded,
-                                collapsed: Self.actionButtonHeight,
-                                expanded: Self.fullHeightActionButtonHeight
-                            ))
-                            .background(debugSectionBackground(.actions))
-                            .overlay(debugStrokeOverlay())
-                            // Sizes someone else's card; `syncDetentIfNeeded` moves the sheet when its height changes
-                            .onGeometryChange(for: HeaderLayout.self) { proxy in
-                                let header = NamedCoordinateSpace.named(Self.headerCoordinateSpace)
-                                return HeaderLayout(
-                                    width: proxy.bounds(of: header)?.width ?? 0,
-                                    actionsTop: proxy.frame(in: header).minY
-                                )
-                            } action: { layout in
-                                headerLayout = layout
-                            }
-                    }
-                }
-                
-                if shouldShowOwnershipHint {
-                    ownershipHintLabel()
-                        .modifier(expansionFade(.conceal(baseOpacity: ownershipHintOpacity)))
-                        .transition(.opacity)
-                        .onAppear {
-                            ownershipHintOpacity = 0
-                            withAnimation(.easeInOut(duration: 0.35)) {
-                                ownershipHintOpacity = 1
-                            }
-                        }
-                        // Settle to a quieter opacity after a second; cancelled if the hint goes away first
-                        .task {
-                            try? await Task.sleep(for: .seconds(1))
-                            guard !Task.isCancelled else { return }
-                            withAnimation(.easeInOut(duration: 0.5)) {
-                                ownershipHintOpacity = 0.65
-                            }
-                        }
-                        .onDisappear {
-                            ownershipHintOpacity = 0
-                        }
-                        .allowsHitTesting(false)
-                }
-            }
-        }
-    }
-    
-    private enum ProfileDebugSection {
-        case content
-        case actions
-    }
-    
-    @ViewBuilder
-    private func debugStrokeOverlay() -> some View {
-        if showLayoutDebugOverlays {
-            Rectangle()
-                .stroke(Color.red, lineWidth: 1)
-        }
-    }
-    
-    @ViewBuilder
-    private func debugSectionBackground(_ section: ProfileDebugSection = .content) -> some View {
-        if showLayoutDebugOverlays {
-            switch section {
-            case .content:
-                Color.green.opacity(0.1)
-            case .actions:
-                Color.orange.opacity(0.1)
-            }
-        } else {
-            Color.clear
-        }
-    }
-    
-    @ViewBuilder
-    private func debugCardOutline(
-        horizontalInset: CGFloat = CardLayoutConstants.horizontalPadding,
-        verticalInset: CGFloat = 0
-    ) -> some View {
-        if showLayoutDebugOverlays {
-            RoundedRectangle(cornerRadius: CardLayoutConstants.cornerRadius)
-                .stroke(Color.red, lineWidth: 2)
-                .padding(.horizontal, horizontalInset)
-                .padding(.vertical, verticalInset)
-                .allowsHitTesting(false)
-        }
-    }
-    
-    @ViewBuilder
-    private func debugPaddingLine() -> some View {
-        if showLayoutDebugOverlays {
-            VStack {
-                Rectangle()
-                    .fill(Color.yellow)
-                    .frame(width: 1)
-                Spacer()
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.leading, Self.profileContentPadding)
-        }
-    }
-    
-    @ViewBuilder
-    private func profileCardContainer<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        let base = content()
-            .padding(.horizontal, Self.profileContentPadding)
-            .background(showLayoutDebugOverlays ? Color.yellow.opacity(0.05) : Color.clear)
-            .overlay(debugPaddingLine())
-            .padding(.top, nameTopPadding)
-            .background(showLayoutDebugOverlays ? Color.pink.opacity(0.05) : Color.clear)
-            .padding(.bottom, profileCardBottomPadding)
-            .background(showLayoutDebugOverlays ? Color.cyan.opacity(0.05) : Color.clear)
-        
-        // A background that changes rather than two branches, so reaching full height doesn't rebuild the card's
-        // text and buttons in the middle of the transition
-        base
-            .background(isSheetFullyExpanded ? Color(.systemBackground) : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: CardLayoutConstants.cornerRadius))
-            .overlay(debugCardOutline())
-    }
-    
-    @ViewBuilder
-    private func ownershipHintLabel() -> some View {
-        Text("This is your profile")
-            .font(.footnote.weight(.semibold))
-            .foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity, alignment: .center)
-            .padding(.vertical, 6)
-            .background(debugSectionBackground(.content))
-            .overlay(debugStrokeOverlay())
-        .background(
-            GeometryReader { proxy in
-                Color.clear
-                    .preference(key: OwnershipHintHeightKey.self, value: proxy.size.height)
-            }
-        )
-        .onPreferenceChange(OwnershipHintHeightKey.self) { height in
-            guard height > 0 else { return }
-            let delta = abs(ownershipHintMeasuredHeight - height)
-            if delta > 0.5 {
-                ownershipHintMeasuredHeight = height
-            }
-        }
-    }
-    
-    @ViewBuilder
-    private func profileHeaderCompact(for user: User, bannerHeight: CGFloat, showProfileInfo: Bool = true) -> some View {
-        VStack(spacing: 0) {
-            // Banner - fixed height in every detent, from the sheet's top edge (the scroll view ignores the top
-            // safe area). Its size must not follow the safe area, which grows when the full-height toolbar
-            // appears and would re-crop the photo
-            bannerContent
-                .id("profile-banner") // Consistent ID across all states
-                .frame(height: bannerHeight)
-                .clipped()
-                .ignoresSafeArea(edges: .top) // Extend to very top edge
-            
-            // Avatar and profile info - moves up to overlap banner
-            // Only show when expanded to prevent text duplication
-            if showProfileInfo {
-                VStack(alignment: .leading, spacing: 0) {
-                    // Avatar - left edge aligns with content padding
-                    avatarView
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.leading, Self.profileContentPadding)
-                    
-                    // Profile info - consistent spacing throughout
-                    profileInfoContent(for: user)
-                }
-                .offset(y: Self.avatarOverlapOffset)
-                .padding(.bottom, Self.avatarOverlapOffset)
-            }
-        }
-        .background(isSheetFullyExpanded ? Color(.systemBackground) : Color.clear)
-        .coordinateSpace(.named(Self.headerCoordinateSpace))
-    }
-    
-    private var actionButtons: some View {
-        // Buttons container - no padding here, padding is applied by parent VStack
+    /// Follow and Message on someone else's profile, Edit profile on your own. Their glass takes the tint and
+    /// their labels the background style that `SheetExpansionInk` sets for what is behind them.
+    private var profileActions: some View {
         GlassEffectContainer(spacing: 12) {
             HStack(spacing: 12) {
-                // Follow button - perfectly centered, equal width
-                Button(action: {
-                    // Haptic feedback
-                    let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
-                    impactFeedback.impactOccurred()
-                    
-                    Task {
-                        await toggleFollow()
-                    }
-                }) {
-                    HStack(spacing: 6) {
-                        if isFollowLoading {
-                            // Use a simple opacity approach instead of ProgressView to avoid icon issues
-                            Image(systemName: isFollowing ? "checkmark" : "plus")
-                                .font(.system(size: 12, weight: .bold))
-                                .foregroundColor(isFollowing ? Color.primary : Color(.systemBackground))
-                                .opacity(0.5)
-                        } else {
-                            Image(systemName: isFollowing ? "checkmark" : "plus")
-                                .font(.system(size: 12, weight: .bold))
-                                .foregroundColor(isFollowing ? Color.primary : Color(.systemBackground))
-                        }
-                        
-                        Text(isFollowing ? "Following" : "Follow")
-                            .font(.caption)
-                            .fontWeight(.semibold)
-                            .foregroundColor(isFollowing ? Color.primary : Color(.systemBackground))
-                    }
-                    // As tall as the row, which shortens as the sheet opens
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                if isOwnProfile {
+                    editButton
+                } else {
+                    followButton
+                    messageButton
                 }
-                .frame(maxWidth: .infinity)
-                // Not disabled while the follow saves: the glass would dim for the length of the write. toggleFollow
-                // ignores taps until it finishes
-                .modifier(ProfileActionGlass(isProminent: !isFollowing))
-                .overlay {
-                    // A fresh SparkleAnimation plays once when it appears, so each follow inserts a new one
-                    if let sparkleBurstID {
-                        SparkleAnimation()
-                            .id(sparkleBurstID)
-                            .allowsHitTesting(false)
-                            .task(id: sparkleBurstID) {
-                                // The burst runs 0.1s plus 1.5s; remove it once it has faded out
-                                try? await Task.sleep(for: .seconds(1.6))
-                                if !Task.isCancelled {
-                                    self.sparkleBurstID = nil
-                                }
-                            }
-                    }
-                }
-                
-                // Message button - perfectly centered, equal width
-                Button(action: {
-                    // Haptic feedback
-                    let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
-                    impactFeedback.impactOccurred()
-                    
-                    Task {
-                        await startMessage()
-                    }
-                }) {
-                    HStack(spacing: 6) {
-                        if isMessageLoading {
-                            // Use a simple opacity approach instead of ProgressView to avoid icon issues
-                            Image(systemName: "message.fill")
-                                .font(.system(size: 12, weight: .bold))
-                                .foregroundColor(Color(.systemBackground))
-                                .opacity(0.5)
-                        } else {
-                            Image(systemName: "message.fill")
-                                .font(.system(size: 12, weight: .bold))
-                                .foregroundColor(Color(.systemBackground))
-                        }
-                        
-                        Text("Message")
-                            .font(.caption)
-                            .fontWeight(.semibold)
-                            .foregroundColor(Color(.systemBackground))
-                    }
-                    // As tall as the row, which shortens as the sheet opens
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-                .frame(maxWidth: .infinity)
-                // Not disabled while the conversation opens, for the same reason as Follow; startMessage ignores taps
-                .modifier(ProfileActionGlass(isProminent: true))
             }
         }
-        .background(debugSectionBackground(.actions))
-        .overlay(debugStrokeOverlay())
+    }
+    
+    private var followButton: some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            Task {
+                await toggleFollow()
+            }
+        } label: {
+            ProfileActionLabel(
+                symbol: isFollowing ? "checkmark" : "plus",
+                title: isFollowing ? "Following" : "Follow",
+                isLoading: isFollowLoading
+            )
+            // Following is plain glass, so its label is in the type's color rather than cut from a tinted capsule
+            .foregroundStyle(isFollowing ? AnyShapeStyle(.primary) : AnyShapeStyle(.background))
+        }
+        .frame(maxWidth: .infinity)
+        // Not disabled while the follow saves: the glass would dim for the length of the write. toggleFollow
+        // ignores taps until it finishes
+        .modifier(ProfileActionGlass(isProminent: !isFollowing))
+        .overlay {
+            // A fresh SparkleAnimation plays once when it appears, so each follow inserts a new one
+            if let sparkleBurstID {
+                SparkleAnimation()
+                    .id(sparkleBurstID)
+                    .allowsHitTesting(false)
+                    .task(id: sparkleBurstID) {
+                        // The burst runs 0.1s plus 1.5s; remove it once it has faded out
+                        try? await Task.sleep(for: .seconds(1.6))
+                        if !Task.isCancelled {
+                            self.sparkleBurstID = nil
+                        }
+                    }
+            }
+        }
+    }
+    
+    private var messageButton: some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            Task {
+                await startMessage()
+            }
+        } label: {
+            ProfileActionLabel(symbol: "message.fill", title: "Message", isLoading: isMessageLoading)
+                .foregroundStyle(.background)
+        }
+        .frame(maxWidth: .infinity)
+        // Not disabled while the conversation opens, for the same reason as Follow; startMessage ignores taps
+        .modifier(ProfileActionGlass(isProminent: true))
+    }
+    
+    /// Your own profile edits where someone else's follows and messages
+    private var editButton: some View {
+        Button {
+            showEditProfile = true
+        } label: {
+            ProfileActionLabel(symbol: "pencil", title: "Edit profile", isLoading: false)
+                .foregroundStyle(.background)
+        }
+        .frame(maxWidth: .infinity)
+        .modifier(ProfileActionGlass(isProminent: true))
     }
     
     private func startMessage() async {
@@ -960,132 +731,62 @@ struct ProfileView: View {
         }
     }
     
-    private var profileTabs: some View {
-        VStack(spacing: 0) {
-            tabButtonsContainer
-            tabIndicatorArea
-            
-            // Bottom padding - for all profiles (both own and others)
-            if tabBottomPadding > 0 {
-                Color.clear
-                    .frame(height: tabBottomPadding)
-                    .background(showLayoutDebugOverlays ? Color.purple.opacity(0.3) : Color.clear)
-            }
-        }
-        .allowsHitTesting(true)
-        .background(Color(.systemBackground).opacity(0.01)) // Minimal background for hit testing
-        .overlay(tabDebugOverlay)
-        .padding(.top, tabTopPadding)
-    }
+    // MARK: - Tabs
     
-    private var tabButtonsContainer: some View {
-        HStack(spacing: 0) {
+    /// Posts, Media and Likes in the system's segmented control at its own height
+    private var feedPicker: some View {
+        Picker("Feed", selection: $selectedTab) {
             ForEach(ProfileFeedTab.allCases, id: \.self) { tab in
-                Button {
-                    selectedTab = tab
-                } label: {
-                    VStack(spacing: 8) {
-                        Text(tab.rawValue)
-                            .font(.body)
-                            .fontWeight(.semibold)
-                            .foregroundColor(selectedTab == tab ? .primary : .secondary)
-                        
-                        Rectangle()
-                            .fill(Color.clear)
-                            .frame(height: CardLayoutConstants.dividerHeight)
-                    }
-                    .frame(maxWidth: .infinity)
-                }
+                Text(tab.rawValue)
+                    .tag(tab)
             }
         }
-        .padding(.horizontal, Self.profileContentPadding) // Only side padding
-        .background(showLayoutDebugOverlays ? Color.pink.opacity(0.05) : Color(.systemBackground))
-        .overlay(debugPaddingLine())
-        .overlay(tabButtonsDebugStroke)
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .padding(.horizontal, ProfileGeometry.margin)
+        // The first post's avatar starts a part spacing below the track, and 8pt inside its card
+        .padding(.bottom, ProfileGeometry.part + Self.segmentedTrackOverhang - CardLayoutConstants.topPadding)
     }
+}
+
+// MARK: - Geometry
+
+/// The profile's measurements, shared by the header and the card height worked out before the sheet opens.
+private enum ProfileGeometry {
+    /// The side inset, as in posts: 10pt list inset plus 10pt card padding
+    static let margin: CGFloat = CardLayoutConstants.horizontalPadding * 2
+    /// The space between the profile's parts, measured where they visibly end and start
+    static let part: CGFloat = 20
+    /// The name and the handle belong together: 12pt from the name's baseline to the handle's capitals
+    static let nameToHandle: CGFloat = 12
+    static let avatarSize: CGFloat = 116
+    /// At full height the close button is 44pt tall and 16pt below the sheet's top edge (iOS 27.2), so the avatar
+    /// starts a part spacing below it. The card keeps the same top, so the avatar, name and handle don't move as
+    /// the sheet expands, and the name's capitals start as far below the avatar
+    static let avatarTop: CGFloat = 16 + 44 + part
+    /// Where the name's capitals start, from the header's top
+    static let nameTop: CGFloat = avatarTop + avatarSize + avatarTop
+    /// Follow and Message on the card: 20pt in from the sheet's sides and bottom, capsules this tall are concentric
+    /// with its 54pt corners (iPhone 18 Pro)
+    static let cardActionHeight: CGFloat = 68
+    /// At full height they no longer sit in the sheet's corners, so they take the height of the toolbar's buttons
+    /// above them, which is also the minimum touch target
+    static let fullHeightActionHeight: CGFloat = 44
     
-    @ViewBuilder
-    private var tabButtonsDebugStroke: some View {
-        if showLayoutDebugOverlays {
-            Rectangle()
-                .stroke(Color.red, lineWidth: 1)
-        }
-    }
-    
-    private var tabIndicatorArea: some View {
-        VStack(spacing: 0) {
-            ZStack(alignment: .top) {
-                fullWidthDivider
-                selectedTabIndicator
-            }
-            .frame(height: CardLayoutConstants.dividerHeight)
-            .background(Color(.systemBackground))
-            
-        }
-    }
-    
-    private var fullWidthDivider: some View {
-        HStack(spacing: 0) {
-            Spacer()
-                .frame(width: Self.profileContentPadding)
-            
-            Rectangle()
-                .fill(CardLayoutConstants.dividerColor)
-                .frame(maxWidth: .infinity)
-                .frame(height: CardLayoutConstants.dividerHeight)
-            
-            Spacer()
-                .frame(width: Self.profileContentPadding)
-        }
-        .frame(height: CardLayoutConstants.dividerHeight)
-    }
-    
-    private var selectedTabIndicator: some View {
-        HStack(spacing: 0) {
-            Spacer()
-                .frame(width: Self.profileContentPadding)
-            
-            HStack(spacing: 0) {
-                if selectedTab == .posts {
-                    Rectangle()
-                        .fill(Color.primary)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: CardLayoutConstants.dividerHeight)
-                    Rectangle()
-                        .fill(Color.clear)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: CardLayoutConstants.dividerHeight)
-                } else {
-                    Rectangle()
-                        .fill(Color.clear)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: CardLayoutConstants.dividerHeight)
-                    Rectangle()
-                        .fill(Color.primary)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: CardLayoutConstants.dividerHeight)
-                }
-            }
-            
-            Spacer()
-                .frame(width: Self.profileContentPadding)
-        }
-        .frame(height: CardLayoutConstants.dividerHeight)
-    }
-    
-    @ViewBuilder
-    private var tabDebugOverlay: some View {
-        if showLayoutDebugOverlays {
-            RoundedRectangle(cornerRadius: 0)
-                .stroke(Color.red, lineWidth: 2)
-        }
+    /// The hero's height when the name fits on one line: the name's capitals, the handle's capitals below them, and
+    /// a part spacing below the handle
+    static func singleLineHeroHeight(for dynamicTypeSize: DynamicTypeSize) -> CGFloat {
+        let traits = UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(dynamicTypeSize))
+        let name = UIFont.preferredFont(forTextStyle: .largeTitle, compatibleWith: traits).capHeight
+        let handle = UIFont.preferredFont(forTextStyle: .subheadline, compatibleWith: traits).capHeight
+        return nameTop + name + nameToHandle + handle + part
     }
 }
 
 // MARK: - Action Buttons
 
-/// Follow and Message in Liquid Glass, rendered like the toolbar's buttons: glass tinted ink (black in light mode,
-/// white in dark) for an action, plain glass once it is done (Following).
+/// Follow and Message in Liquid Glass, rendered like the toolbar's buttons: glass in the tint (white on the
+/// wallpaper, ink on the page) for an action, plain glass once it is done (Following).
 private struct ProfileActionGlass: ViewModifier {
     let isProminent: Bool
 
@@ -1093,7 +794,6 @@ private struct ProfileActionGlass: ViewModifier {
         if isProminent {
             content
                 .buttonStyle(.glassProminent)
-                .tint(.primary)
         } else {
             content
                 .buttonStyle(.glass)
@@ -1101,159 +801,214 @@ private struct ProfileActionGlass: ViewModifier {
     }
 }
 
-// MARK: - Profile Text
-
-/// Name, handle, counts and bio. A view of its own so the collapsed card's height can be worked out with the
-/// same layout before the sheet opens. Someone else's bio takes its natural height, since their card is sized
-/// to its content; your own keeps two lines of room, which the collapsed height estimate assumes.
-private struct ProfileTextBlock: View {
-    let user: User
-    let isOwnProfile: Bool
-    
-    @AppStorage("showLayoutDebugOverlays") private var showLayoutDebugOverlays = false
-    
-    // Date formatter for joined date (Month Year format), built once rather than on every render
-    private static let joinedDateFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMM yyyy"
-        return formatter
-    }()
+/// A symbol and a title, as tall as the button. The symbol dims while the action is in flight.
+private struct ProfileActionLabel: View {
+    let symbol: String
+    let title: String
+    let isLoading: Bool
     
     var body: some View {
-        VStack(alignment: .leading, spacing: CardLayoutConstants.headerBottomSpacing) {
-            displayNameView
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .modifier(DebugOutline(isOn: showLayoutDebugOverlays))
-            
-            usernameView
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .modifier(DebugOutline(isOn: showLayoutDebugOverlays))
-            
-            followerCountsView
-                .modifier(DebugOutline(isOn: showLayoutDebugOverlays))
-            
-            if isOwnProfile || !(user.bio ?? "").isEmpty {
-                bioView
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .frame(minHeight: isOwnProfile ? 44 : nil)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .modifier(DebugOutline(isOn: showLayoutDebugOverlays))
-            }
-        }
-    }
-    
-    private var displayNameView: some View {
         HStack(spacing: 6) {
-            Text(user.displayName ?? "Display Name")
-                .font(.title2)
-                .fontWeight(.bold)
-                .foregroundStyle(.primary)
+            Image(systemName: symbol)
+                .font(.system(size: 13, weight: .bold))
+                .opacity(isLoading ? 0.5 : 1)
             
-            // Badge inline with name
-            if let badgeType = user.badgeType {
-                Image(systemName: badgeType.iconName)
-                    .foregroundStyle(badgeType.color)
-                    .font(.title3)
-            }
-            
-            Spacer()
+            Text(title)
+                .font(.subheadline)
+                .fontWeight(.semibold)
         }
-    }
-    
-    private var usernameView: some View {
-        HStack(spacing: 8) {
-            // Username
-            HStack(spacing: 4) {
-                Image(systemName: "at")
-                    .font(.callout)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(.secondary)
-                Text(user.username ?? "username")
-                    .font(.callout)
-                    .fontWeight(.regular)
-                    .foregroundStyle(.secondary)
-            }
-            
-            // Location - only show if exists, with consistent styling
-            if let location = user.location, !location.isEmpty {
-                HStack(spacing: 4) {
-                    Image(systemName: "location")
-                        .font(.callout)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.secondary)
-                    
-                    Text(location)
-                        .font(.callout)
-                        .fontWeight(.regular)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            
-            // Joined date - with calendar icon, styled exactly like username and location
-            HStack(spacing: 4) {
-                Image(systemName: "calendar")
-                    .font(.callout)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(.secondary)
-                
-                Text(Self.joinedDateFormatter.string(from: user.createdAt))
-                    .font(.callout)
-                    .fontWeight(.regular)
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-    
-    private var followerCountsView: some View {
-        HStack(spacing: 16) {
-            HStack(spacing: 4) {
-                Text("\(user.followerCount)")
-                    .font(.callout)
-                    .fontWeight(.heavy)
-                    .foregroundColor(.primary)
-                Text("Followers")
-                    .font(.callout)
-                    .fontWeight(.regular)
-                    .foregroundStyle(.secondary)
-            }
-            
-            HStack(spacing: 4) {
-                Text("\(user.followingCount)")
-                    .font(.callout)
-                    .fontWeight(.heavy)
-                    .foregroundColor(.primary)
-                Text("Following")
-                    .font(.callout)
-                    .fontWeight(.regular)
-                    .foregroundStyle(.secondary)
-            }
-            
-            Spacer()
-        }
-    }
-    
-    private var bioView: some View {
-        Text(user.bio ?? "")
-            .font(.callout)
-            .foregroundStyle(.primary)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity, alignment: .topLeading)
+        // As tall as the row, which shortens as the sheet opens
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
-/// The layout debug tint and outline the profile's text sections show when debug overlays are on.
-private struct DebugOutline: ViewModifier {
-    let isOn: Bool
+// MARK: - Profile Text
+
+/// The name, and the handle line under it, centered. White, on the wallpaper in every detent.
+private struct ProfileNameBlock: View {
+    let user: User
     
-    func body(content: Content) -> some View {
-        content
-            .background(isOn ? Color.green.opacity(0.1) : Color.clear)
+    var body: some View {
+        BaselineSpacedVStack(spacing: ProfileGeometry.nameToHandle) {
+            Text(user.displayName ?? "Display Name")
+                .font(.largeTitle)
+                .fontWeight(.bold)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .frame(maxWidth: .infinity)
+                .visibleTopAtCapHeight(of: .largeTitle)
+                .accessibilityAddTraits(.isHeader)
+            
+            ProfileHandleLine(user: user)
+                .frame(maxWidth: .infinity)
+        }
+        .foregroundStyle(.white)
+    }
+}
+
+/// The handle and location, centered as one line under the name.
+private struct ProfileHandleLine: View {
+    let user: User
+    
+    private var handleAndLocation: String {
+        let handle = "@\(user.username ?? "username")"
+        guard let location = user.location, !location.isEmpty else { return handle }
+        return "\(handle) \u{00B7} \(location)"
+    }
+    
+    var body: some View {
+        Text(handleAndLocation)
+            .font(.subheadline)
+            .foregroundStyle(.white.opacity(0.85))
+            .lineLimit(1)
+            .visibleTopAtCapHeight(of: .subheadline)
+    }
+}
+
+/// The bio and the counts. A view of its own so the card's height can be worked out with the same layout before
+/// the sheet opens. Their colors come from `SheetExpansionInk`.
+private struct ProfileDetails: View {
+    let user: User
+    
+    @Environment(\.profileSecondaryInk) private var secondaryInk
+    
+    var body: some View {
+        BaselineSpacedVStack(spacing: ProfileGeometry.part) {
+            if let bio = user.bio, !bio.isEmpty {
+                Text(bio)
+                    .font(.callout)
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .visibleTopAtCapHeight(of: .callout)
+            }
+            
+            HStack(alignment: .firstTextBaseline, spacing: 14) {
+                count(user.followerCount, followersWord)
+                count(user.followingCount, "following")
+            }
+            // Read as one phrase rather than four words
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("\(user.followerCount) \(followersWord), \(user.followingCount) following")
+            .font(.subheadline)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .visibleTopAtCapHeight(of: .subheadline)
+        }
+    }
+    
+    private var followersWord: String {
+        user.followerCount == 1 ? "follower" : "followers"
+    }
+    
+    /// The number in the type's color, the word quieter
+    private func count(_ value: Int, _ label: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 4) {
+            Text("\(value)")
+                .fontWeight(.semibold)
+                .foregroundStyle(.primary)
+            Text(label)
+                .foregroundStyle(secondaryInk)
+        }
+    }
+}
+
+extension EnvironmentValues {
+    /// The quieter of the profile page's two text colors, which `SheetExpansionInk` changes with what is behind it
+    @Entry fileprivate var profileSecondaryInk = Color(.secondaryLabel)
+}
+
+// MARK: - Wallpaper
+
+/// The wallpaper behind the header. It is laid out at the card's height in every detent, so it never re-crops as
+/// the sheet opens, and darkened toward its foot so white type reads. With no wallpaper, the dark gray it shows
+/// while loading stands in. At full height only the hero keeps it: the rest fades out with the sheet's expansion.
+private struct ProfileBackdrop: View {
+    let bannerURL: String?
+    /// The card's header height, or 0 before it is measured, when the wallpaper fills the header
+    let cardHeight: CGFloat
+    let heroHeight: CGFloat
+    let metrics: ProfileSheetMetrics
+    let minimumHeight: CGFloat
+    let isFullyExpanded: Bool
+    
+    var body: some View {
+        Color(.systemGray5)
             .overlay {
-                if isOn {
-                    Rectangle()
-                        .stroke(Color.red, lineWidth: 1)
+                if let bannerURL, let url = URL(string: bannerURL) {
+                    CachedAsyncImage(url: url) { image in
+                        image
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                    } placeholder: {
+                        Color.clear
+                    }
                 }
             }
+            .overlay {
+                ProfileWallpaperShade(heroHeight: heroHeight)
+            }
+            .frame(height: cardHeight > 0 ? cardHeight : nil)
+            .clipped()
+            .mask(alignment: .top) {
+                ProfileHeroMask(
+                    heroHeight: heroHeight,
+                    metrics: metrics,
+                    minimumHeight: minimumHeight,
+                    isFullyExpanded: isFullyExpanded
+                )
+            }
+            // The wallpaper always renders dark, like a contact poster
+            .environment(\.colorScheme, .dark)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+}
+
+/// The poster layout's darkening, its stops pinned to the parts they sat behind there, so the name and handle get
+/// what they had: 0.06 down to the avatar's top, 0.41 at the name's capitals and 0.53 at the handle's baseline. The
+/// bio, counts and labels are smaller type than the poster had on the photo, so two parts below the handle it
+/// reaches the poster's darkest, 0.66, and holds to the foot.
+private struct ProfileWallpaperShade: View {
+    let heroHeight: CGFloat
+    
+    var body: some View {
+        GeometryReader { proxy in
+            let height = max(proxy.size.height, 1)
+            let handleBaseline = heroHeight - ProfileGeometry.part
+            let stops: [(y: CGFloat, opacity: Double)] = [
+                (0, 0.06),
+                (ProfileGeometry.avatarTop, 0.06),
+                (ProfileGeometry.nameTop, 0.41),
+                (handleBaseline, 0.53),
+                (handleBaseline + ProfileGeometry.part * 2, 0.66),
+                (height, 0.66)
+            ]
+            LinearGradient(
+                stops: stops.map { .init(color: .black.opacity($0.opacity), location: min($0.y / height, 1)) },
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        }
+    }
+}
+
+/// Shows the wallpaper whole on the card and only the hero at full height, fading the rest with the sheet's
+/// expansion. Reads the live height, so per-frame updates stop here.
+private struct ProfileHeroMask: View {
+    let heroHeight: CGFloat
+    let metrics: ProfileSheetMetrics
+    let minimumHeight: CGFloat
+    let isFullyExpanded: Bool
+    
+    var body: some View {
+        let progress = metrics.expansionProgress(minimumHeight: minimumHeight, isFullyExpanded: isFullyExpanded)
+        // The hero over the whole, rather than one above the other, so no seam shows where they meet on the card
+        ZStack(alignment: .top) {
+            Rectangle()
+                .opacity(1 - progress)
+            Rectangle()
+                .frame(height: heroHeight)
+        }
     }
 }
 
@@ -1262,6 +1017,8 @@ private struct DebugOutline: ViewModifier {
 /// The width and text settings profile sheets are laid out with, taken from the app's root view.
 struct ProfileLayoutContext: Equatable {
     var width: CGFloat
+    /// The root's height between its safe areas, which is the profile's height at the large detent
+    var height: CGFloat
     /// The sheet's bottom safe area, which a height detent doesn't include
     var bottomInset: CGFloat
     var dynamicTypeSize: DynamicTypeSize
@@ -1276,35 +1033,39 @@ struct ProfilePreview {
 }
 
 extension ProfileView {
-    /// Someone else's collapsed card height (the detent), worked out before the sheet is presented. Lays out the
-    /// same text block and buttons the card shows; the banner, avatar row and paddings are fixed. Must match
-    /// `profileHeaderCompact`: the live header measurement corrects any difference, but only after the sheet has
-    /// opened, as a visible jump.
+    /// A profile's collapsed card height (the detent), worked out before the sheet is presented. Lays out the
+    /// same name block and details the card shows; the avatar and the buttons stand in as fixed sizes. Must match
+    /// `profileHeader`: the live header measurement corrects any difference, but only after the sheet has opened,
+    /// as a visible jump.
     static func collapsedCardHeight(for user: User, in context: ProfileLayoutContext) -> CGFloat {
-        let contentWidth = context.width - profileContentPadding * 2
-        let textAndButtons = BaselineSpacedVStack(spacing: profileContentPadding) {
-            ProfileTextBlock(user: user, isOwnProfile: false)
+        let contentWidth = context.width - ProfileGeometry.margin * 2
+        let header = BaselineSpacedVStack(spacing: ProfileGeometry.avatarTop) {
             Color.clear
-                .frame(height: actionButtonHeight)
+                .frame(height: ProfileGeometry.avatarSize)
+            BaselineSpacedVStack(spacing: ProfileGeometry.part) {
+                ProfileNameBlock(user: user)
+                ProfileDetails(user: user)
+                Color.clear
+                    .frame(height: ProfileGeometry.cardActionHeight)
+            }
         }
+        // The app's type, which the sheet inherits from the root
+        .fontDesign(.rounded)
         .environment(\.dynamicTypeSize, context.dynamicTypeSize)
         .environment(\.legibilityWeight, context.legibilityWeight)
         .environment(\.displayScale, context.displayScale)
-        let textAndButtonsHeight = UIHostingController(rootView: textAndButtons)
+        let headerHeight = UIHostingController(rootView: header)
             .sizeThatFits(in: CGSize(width: contentWidth, height: .greatestFiniteMagnitude))
             .height
         
-        // Banner, the avatar row pulled up over it, the space above the name, text and buttons, and the bottom
-        // padding that matches the side inset
-        let headerHeight = bannerHeight + avatarImageSize + avatarOverlapOffset
-            + nameTopPadding(for: context.dynamicTypeSize) + textAndButtonsHeight + profileContentPadding
-        return headerHeight - context.bottomInset
+        // The avatar's distance from the top, and the bottom padding that matches the side inset
+        return ProfileGeometry.avatarTop + headerHeight + ProfileGeometry.part - context.bottomInset
     }
 }
 
 // MARK: - Feed
 
-/// The posts or likes list under the header. Reading the view model here rather than in ProfileView keeps
+/// The posts, photos or likes under the header. Reading the view model here rather than in ProfileView keeps
 /// feed loads and like changes from re-rendering the banner and header.
 private struct ProfileFeedSection: View {
     let viewModel: ProfileFeedViewModel
@@ -1313,10 +1074,29 @@ private struct ProfileFeedSection: View {
     @AppStorage("showLayoutDebugOverlays") private var showLayoutDebugOverlays = false
     
     var body: some View {
-        if selectedTab == .posts {
+        switch selectedTab {
+        case .posts:
             feed(loops: viewModel.posts, isLoading: viewModel.isLoadingPosts)
-        } else {
+        case .media:
+            feed(loops: viewModel.mediaPosts, isLoading: viewModel.isLoadingPosts)
+        case .likes:
             feed(loops: viewModel.likedPosts, isLoading: viewModel.isLoadingLikes)
+        }
+    }
+    
+    private var emptySymbol: String {
+        switch selectedTab {
+        case .posts: "square.and.pencil"
+        case .media: "photo"
+        case .likes: "heart"
+        }
+    }
+    
+    private var emptyTitle: String {
+        switch selectedTab {
+        case .posts: "No posts yet"
+        case .media: "No media yet"
+        case .likes: "No likes yet"
         }
     }
     
@@ -1333,10 +1113,10 @@ private struct ProfileFeedSection: View {
                 .padding(.top, 50)
             } else if loops.isEmpty {
                 VStack(spacing: 16) {
-                    Image(systemName: selectedTab == .posts ? "square.and.pencil" : "heart")
+                    Image(systemName: emptySymbol)
                         .font(.system(size: 50))
                         .foregroundColor(.secondary)
-                    Text(selectedTab == .posts ? "No posts yet" : "No likes yet")
+                    Text(emptyTitle)
                         .font(.headline)
                         .foregroundColor(.secondary)
                 }
@@ -1392,13 +1172,16 @@ private struct ProfileFeedSection: View {
 // MARK: - Sheet Expansion
 
 /// The live height of the profile's content area. It changes on every frame of a sheet drag, so only
-/// `SheetExpansionFade` reads it and the rest of the profile doesn't re-render while the sheet moves.
+/// the SheetExpansion modifiers and the wallpaper's mask read it, and the rest of the profile doesn't re-render
+/// while the sheet moves.
 @Observable
 private final class ProfileSheetMetrics {
     var height: CGFloat = 0
     /// The sheet's height at the large detent, once it has been there. The tallest height seen, so dragging
     /// down from full height still fades.
     private(set) var fullHeight: CGFloat?
+    /// The large detent's height from the app's root, for the first expansion
+    var expectedFullHeight: CGFloat?
     
     func recordFullHeight() {
         fullHeight = max(fullHeight ?? 0, height)
@@ -1409,8 +1192,10 @@ private final class ProfileSheetMetrics {
     func expansionProgress(minimumHeight: CGFloat, isFullyExpanded: Bool) -> CGFloat {
         guard height > 0 else { return isFullyExpanded ? 1 : 0 }
         guard height > minimumHeight else { return 0 }
-        // Until the sheet has been fully expanded, estimate its full height
-        let maxHeight = fullHeight ?? 900
+        // Until the sheet has been fully expanded, the root's height, or an estimate without one. With the estimate
+        // (900pt against 778 on iPhone 18 Pro) a finger held at the top left everything that follows this progress
+        // short of its full-height state until release
+        let maxHeight = fullHeight ?? expectedFullHeight ?? 900
         let range = maxHeight - minimumHeight
         guard range > 0 else { return 1 }
         let progress = min(max((height - minimumHeight) / range, 0), 1)
@@ -1418,36 +1203,20 @@ private final class ProfileSheetMetrics {
     }
 }
 
-/// Fades part of the profile as the sheet opens or closes. The live height is read here, so per-frame
-/// updates during a drag stop at this modifier instead of re-running ProfileView's body.
+/// Fades the tabs and feed in as the sheet opens, taking touches once mostly visible. The live height is read
+/// here, so per-frame updates during a drag stop at this modifier instead of re-running ProfileView's body.
 private struct SheetExpansionFade: ViewModifier {
-    enum Style {
-        /// Tabs and feed: fade in as the sheet opens, taking touches once mostly visible.
-        case reveal
-        /// Ownership hint: fade out as the sheet opens, scaled by the hint's own opacity.
-        case conceal(baseOpacity: Double)
-    }
-    
     let metrics: ProfileSheetMetrics
     let minimumHeight: CGFloat
     let isFullyExpanded: Bool
-    let style: Style
     
-    @ViewBuilder
     func body(content: Content) -> some View {
         let progress = metrics.expansionProgress(minimumHeight: minimumHeight, isFullyExpanded: isFullyExpanded)
         
-        switch style {
-        case .reveal:
-            content
-                .opacity(progress)
-                .animation(.easeInOut(duration: 0.2), value: progress)
-                .allowsHitTesting(progress > 0.5)
-        case .conceal(let baseOpacity):
-            content
-                .opacity(baseOpacity * max(0, 1 - progress))
-                .animation(.easeInOut(duration: 0.25), value: progress)
-        }
+        content
+            .opacity(progress)
+            .animation(.easeInOut(duration: 0.2), value: progress)
+            .allowsHitTesting(progress > 0.5)
     }
 }
 
@@ -1470,21 +1239,59 @@ private struct SheetExpansionHeight: ViewModifier {
     }
 }
 
-// MARK: - Preference Keys
+/// Lowers a view in a `BaselineSpacedVStack` by up to `distance` as the sheet opens, in step with the tabs fading
+/// in: the page starts a part spacing below the handle on the card and a part spacing below the wallpaper's edge at
+/// full height. Animated by the transaction that changes the height, like `SheetExpansionHeight`.
+private struct SheetExpansionDrop: ViewModifier {
+    let metrics: ProfileSheetMetrics
+    let minimumHeight: CGFloat
+    let isFullyExpanded: Bool
+    let distance: CGFloat
 
-private struct OwnershipHintHeightKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
+    func body(content: Content) -> some View {
+        let progress = metrics.expansionProgress(minimumHeight: minimumHeight, isFullyExpanded: isFullyExpanded)
+        
+        content
+            .alignmentGuide(.visibleTop) { $0[.visibleTop] - distance * progress }
+    }
+}
+
+/// Colors the page for what is behind it as the sheet opens: white type and white glass with dark labels on the
+/// wallpaper, the page's own ink at full height, mixed in between while the wallpaper below the hero fades out.
+/// Sets the primary style and the secondary ink for text, the tint for the buttons' glass and the background style
+/// for their labels.
+private struct SheetExpansionInk: ViewModifier {
+    let metrics: ProfileSheetMetrics
+    let minimumHeight: CGFloat
+    let isFullyExpanded: Bool
+    
+    func body(content: Content) -> some View {
+        let progress = metrics.expansionProgress(minimumHeight: minimumHeight, isFullyExpanded: isFullyExpanded)
+        let ink = Self.blend(.white, Color(.label), progress)
+        
+        content
+            .foregroundStyle(ink)
+            .environment(\.profileSecondaryInk, Self.blend(.white.opacity(0.85), Color(.secondaryLabel), progress))
+            .tint(ink)
+            .backgroundStyle(Self.blend(.black, Color(.systemBackground), progress))
+    }
+    
+    /// The wallpaper's color at 0, the page's at 1, and a mix in between
+    private static func blend(_ onWallpaper: Color, _ onPage: Color, _ progress: CGFloat) -> Color {
+        if progress <= 0 {
+            return onWallpaper
+        }
+        if progress >= 1 {
+            return onPage
+        }
+        return onWallpaper.mix(with: onPage, by: progress)
     }
 }
 
 // MARK: - View Modifiers to reduce type-checking complexity
 
 private struct ProfileNavigationModifiers: ViewModifier {
-    let isOwnProfile: Bool
     let isSheetFullyExpanded: Bool
-    @Binding var showEditProfile: Bool
     let dismissAction: () -> Void
     
     func body(content: Content) -> some View {
@@ -1501,14 +1308,6 @@ private struct ProfileNavigationModifiers: ViewModifier {
                         }
                     }
                 }
-                
-                ToolbarItem(placement: .topBarTrailing) {
-                    if isOwnProfile && isSheetFullyExpanded {
-                        Button("Edit") {
-                            showEditProfile = true
-                        }
-                    }
-                }
             }
             .navigationBarBackButtonHidden(true)
             .navigationDestination(for: ChatsRoute.self) { route in
@@ -1517,28 +1316,6 @@ private struct ProfileNavigationModifiers: ViewModifier {
                     ConversationView(chat: chat)
                 }
             }
-    }
-}
-
-// MARK: - Avatar Ring
-
-/// A rectangle with the avatar's ring cut out of it, filled even-odd, so the page shows around the avatar: the
-/// avatar's shape grown by the ring's width all round, its corners grown by the same amount so the ring stays even
-private struct AvatarRingCutout: Shape {
-    let center: CGPoint
-    let avatarSize: CGFloat
-    let ringWidth: CGFloat
-    
-    func path(in rect: CGRect) -> Path {
-        var path = Path(rect)
-        let side = avatarSize + ringWidth * 2
-        let radius = avatarSize * AvatarShape.cornerRatio + ringWidth
-        path.addRoundedRect(
-            in: CGRect(x: center.x - side / 2, y: center.y - side / 2, width: side, height: side),
-            cornerSize: CGSize(width: radius, height: radius),
-            style: .continuous
-        )
-        return path
     }
 }
 

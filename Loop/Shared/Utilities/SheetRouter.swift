@@ -1,4 +1,5 @@
 import SwiftUI
+import FirebaseAuth
 
 /// Presents profiles and threads from the root of the app, outside the tab view.
 ///
@@ -32,11 +33,13 @@ final class SheetRouter {
     /// How profile sheets will be laid out, kept current by the root view
     var profileLayout: ProfileLayoutContext?
 
-    /// Shows a profile. If it is already cached (feed authors and chat participants are), its collapsed card
-    /// height is worked out now, so the sheet opens at that height rather than moving after it appears.
+    /// Shows a profile. If it is already cached (feed authors and chat participants are, and your own once it has
+    /// been shown), its collapsed card height is worked out now, so the sheet opens at that height rather than
+    /// moving after it appears.
     func showProfile(userId: String?) {
         var preview: ProfilePreview?
-        if let userId, let profileLayout, let user = FirebaseService.shared.cachedUser(withId: userId) {
+        let shownUserId = userId ?? Auth.auth().currentUser?.uid
+        if let shownUserId, let profileLayout, let user = FirebaseService.shared.cachedUser(withId: shownUserId) {
             preview = ProfilePreview(user: user, collapsedHeight: ProfileView.collapsedCardHeight(for: user, in: profileLayout))
         }
         sheet = .profile(userId: userId, preview: preview)

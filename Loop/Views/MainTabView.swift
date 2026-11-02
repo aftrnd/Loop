@@ -23,9 +23,10 @@ struct MainTabView: View {
         }
     }
     
-    /// The root view's width and bottom safe area
+    /// The root view's size and bottom safe area
     private nonisolated struct RootMetrics: Equatable {
         var width: CGFloat = 0
+        var height: CGFloat = 0
         var bottomInset: CGFloat = 0
     }
     
@@ -33,6 +34,7 @@ struct MainTabView: View {
         guard rootMetrics.width > 0 else { return nil }
         return ProfileLayoutContext(
             width: rootMetrics.width,
+            height: rootMetrics.height,
             bottomInset: rootMetrics.bottomInset,
             dynamicTypeSize: dynamicTypeSize,
             legibilityWeight: legibilityWeight,
@@ -147,9 +149,9 @@ struct MainTabView: View {
             }
             #endif
         }
-        // Profile sheets are as wide as this view and share its bottom safe area
+        // Profile sheets are as wide as this view, as tall at full height, and share its bottom safe area
         .onGeometryChange(for: RootMetrics.self) { proxy in
-            RootMetrics(width: proxy.size.width, bottomInset: proxy.safeAreaInsets.bottom)
+            RootMetrics(width: proxy.size.width, height: proxy.size.height, bottomInset: proxy.safeAreaInsets.bottom)
         } action: { metrics in
             rootMetrics = metrics
         }

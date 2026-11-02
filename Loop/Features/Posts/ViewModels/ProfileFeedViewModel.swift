@@ -6,6 +6,8 @@ import os
 /// The feeds under a profile's header.
 enum ProfileFeedTab: String, CaseIterable {
     case posts = "Posts"
+    /// The posts that have photos
+    case media = "Media"
     case likes = "Likes"
 }
 
@@ -17,6 +19,11 @@ final class ProfileFeedViewModel {
     private(set) var isLoadingPosts = false
     private(set) var isLoadingLikes = false
     var errorMessage: String?
+    
+    /// The Media tab: the posts with photos, in the posts' order
+    var mediaPosts: [Loop] {
+        posts.filter { !$0.media.isEmpty }
+    }
     
     let userId: String
     
@@ -34,6 +41,8 @@ final class ProfileFeedViewModel {
     
     /// Loads `tab` unless it is already loaded or loading. Pass `force` to reload a loaded tab.
     func load(_ tab: ProfileFeedTab, force: Bool = false) async {
+        // Media is drawn from the posts, so it loads them
+        let tab = tab == .media ? ProfileFeedTab.posts : tab
         guard force || !loadedTabs.contains(tab), !isLoading(tab) else { return }
         
         setLoading(true, for: tab)
@@ -41,7 +50,7 @@ final class ProfileFeedViewModel {
         
         do {
             switch tab {
-            case .posts:
+            case .posts, .media:
                 posts = try await FirebaseService.shared.getUserLoops(userId: userId)
             case .likes:
                 likedPosts = try await FirebaseService.shared.getUserLikedLoops(userId: userId)
@@ -55,14 +64,14 @@ final class ProfileFeedViewModel {
     
     private func isLoading(_ tab: ProfileFeedTab) -> Bool {
         switch tab {
-        case .posts: isLoadingPosts
+        case .posts, .media: isLoadingPosts
         case .likes: isLoadingLikes
         }
     }
     
     private func setLoading(_ isLoading: Bool, for tab: ProfileFeedTab) {
         switch tab {
-        case .posts: isLoadingPosts = isLoading
+        case .posts, .media: isLoadingPosts = isLoading
         case .likes: isLoadingLikes = isLoading
         }
     }
