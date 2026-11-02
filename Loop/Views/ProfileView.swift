@@ -22,6 +22,7 @@ struct ProfileView: View {
     @Environment(\.dismiss) private var dismiss
     /// The sheet's glass, which makes secondary text vibrant on the card
     @Environment(\.backgroundMaterial) private var sheetMaterial
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     /// Present when the app's root presented this profile, or a sheet it presented did
     @Environment(SheetRouter.self) private var sheetRouter: SheetRouter?
     
@@ -90,12 +91,14 @@ struct ProfileView: View {
     
     // Layout constants
     private static let bannerHeight: CGFloat = 180
-    private static let avatarImageSize: CGFloat = 100
-    private static let avatarSpacing: CGFloat = 6 // Spacing around avatar for mask (reduced from 8pt for tighter mask)
-    private static let avatarMaskSize: CGFloat = avatarImageSize + (avatarSpacing * 2) // 112pt: avatar + 6pt spacing on each side
+    private static let avatarImageSize: CGFloat = 116
     // Match post card padding: 10pt list inset + 10pt card padding = 20pt total
     private static let profileContentPadding: CGFloat = CardLayoutConstants.horizontalPadding + 10 // 20pt total (matches posts)
-    private static let avatarOverlapOffset: CGFloat = -(avatarMaskSize / 2) // -56pt: half of mask size to center overlap
+    /// How far the avatar's row is pulled up over the wallpaper: its center sits 6pt above the wallpaper's edge, so
+    /// its top 64pt overlap the photo
+    private static let avatarOverlapOffset: CGFloat = -(avatarImageSize / 2 + 6)
+    /// The ring cut out of the wallpaper around the avatar, so the page shows between them
+    private static let avatarRingWidth: CGFloat = 4
     /// Someone else's card ends with Follow and Message, which sit as far from the sheet's bottom edge as from
     /// its sides, so their capsules stay concentric with the sheet's corners
     private var profileCardBottomPadding: CGFloat {
@@ -117,8 +120,30 @@ struct ProfileView: View {
         }
         return CardLayoutConstants.topPadding + profileCardBottomPadding + 24
     }
+    /// Someone else's card already ends 20pt below Follow and Message, the profile's spacing between parts. At full
+    /// height that is the gap to the tabs, measured to the labels' capitals like the gap above the buttons, so the
+    /// tabs start higher by the space over their capitals
     private var tabTopPadding: CGFloat {
-        !isOwnProfile ? CardLayoutConstants.headerBottomSpacing : 0
+        isOwnProfile ? 0 : -tabLabelCapInset
+    }
+    
+    /// The name's capitals sit 20pt below the avatar, the profile's spacing between parts, so its line starts that
+    /// much less the space above its capitals
+    private var nameTopPadding: CGFloat {
+        Self.nameTopPadding(for: dynamicTypeSize)
+    }
+    
+    private static func nameTopPadding(for dynamicTypeSize: DynamicTypeSize) -> CGFloat {
+        let traits = UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(dynamicTypeSize))
+        let font = UIFont.preferredFont(forTextStyle: .title2, compatibleWith: traits)
+        return profileContentPadding - (font.ascender - font.capHeight)
+    }
+    
+    /// The space between the top of the tab labels' line and their capitals
+    private var tabLabelCapInset: CGFloat {
+        let traits = UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(dynamicTypeSize))
+        let font = UIFont.preferredFont(forTextStyle: .body, compatibleWith: traits)
+        return font.ascender - font.capHeight
     }
     
     private var tabBottomPadding: CGFloat {
@@ -138,7 +163,11 @@ struct ProfileView: View {
     // Calculate baseline minimum height needed for profile content
     private var baseProfileHeight: CGFloat {
         let bannerHeight: CGFloat = 180
-        let avatarSection: CGFloat = 30 // Avatar overlap area (reduced)
+        // The avatar overlap area, fitted when the avatar showed 44pt below the wallpaper with 8pt above the name,
+        // plus what the larger avatar and the name's spacing add since
+        let avatarSection: CGFloat = 30
+            + (Self.avatarImageSize + Self.avatarOverlapOffset - 44)
+            + (nameTopPadding - CardLayoutConstants.topPadding)
         let nameHeight: CGFloat = 28 // Display name
         let usernameHeight: CGFloat = 18 // Username/location line
         let followersHeight: CGFloat = 18 // Followers/following line
@@ -411,61 +440,43 @@ struct ProfileView: View {
     
     // MARK: - Banner
     
+    /// The wallpaper, ending in a straight edge that the avatar overlaps, with a ring cut out around the avatar
     private var bannerContent: some View {
         GeometryReader { bannerGeometry in
-            // Calculate avatar image center position based on actual layout
-            // Avatar image is left-aligned within its frame, with left edge at content padding (20pt)
-            // Avatar image left edge = profileContentPadding (20pt) from screen left
-            // Avatar image center X = profileContentPadding + (avatarImageSize / 2) = 20pt + 50pt = 70pt
-            // Avatar overlaps banner, mask must be centered on avatar (not aligned at top)
-            // If mask top = avatar top, mask center is 6pt too low (mask is 112pt, avatar is 100pt, difference is 12pt/2 = 6pt)
-            // Banner GeometryReader coordinate space matches screen width, so we can use the same calculation
-            let avatarCenterX = Self.profileContentPadding + (Self.avatarImageSize / 2)
-            let avatarCenterY = bannerGeometry.size.height - 6
-            
-            ZStack(alignment: .bottomTrailing) {
-                Group {
-                    if let bannerURL = currentUser?.bannerURL, let url = URL(string: bannerURL) {
-                        // Load from Firebase Storage URL with caching
-                        CachedAsyncImage(url: url) { image in
-                            image
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                                .frame(width: bannerGeometry.size.width, height: bannerGeometry.size.height)
-                                .clipped()
-                        } placeholder: {
-                            ZStack {
-                                Color(.systemGray5)
-                                    .frame(width: bannerGeometry.size.width, height: bannerGeometry.size.height)
-                                
-                                ProgressView()
-                            }
-                        }
-                    } else {
-                        // Default gray background
+            if let bannerURL = currentUser?.bannerURL, let url = URL(string: bannerURL) {
+                // Load from Firebase Storage URL with caching
+                CachedAsyncImage(url: url) { image in
+                    image
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: bannerGeometry.size.width, height: bannerGeometry.size.height)
+                        .clipped()
+                } placeholder: {
+                    ZStack {
                         Color(.systemGray5)
                             .frame(width: bannerGeometry.size.width, height: bannerGeometry.size.height)
+                        
+                        ProgressView()
                     }
                 }
-                .mask {
-                    ZStack {
-                        Rectangle()
-                        // Position mask circle center at exact avatar image center using bannerGeometry coordinates
-                        // Avatar image left edge: profileContentPadding (20pt) - aligns with content padding
-                        // Avatar image center X: profileContentPadding + (avatarImageSize / 2) = 20pt + 50pt = 70pt
-                        // Avatar center Y: adjusted to center mask on avatar (mask is 112pt, avatar is 100pt)
-                        // The mask circle is avatarMaskSize (112pt) to create even spacing around the 100pt avatar image
-                        Circle()
-                            .frame(width: Self.avatarMaskSize, height: Self.avatarMaskSize)
-                            .position(
-                                x: avatarCenterX, // Avatar image center X: profileContentPadding + avatarImageSize/2 = 70pt
-                                y: avatarCenterY // Avatar center Y: at bottom of banner
-                            )
-                            .blendMode(.destinationOut)
-                    }
-                }
+            } else {
+                // Default gray background
+                Color(.systemGray5)
+                    .frame(width: bannerGeometry.size.width, height: bannerGeometry.size.height)
             }
         }
+        .mask {
+            AvatarRingCutout(center: avatarCenter, avatarSize: Self.avatarImageSize, ringWidth: Self.avatarRingWidth)
+                .fill(style: FillStyle(eoFill: true))
+        }
+    }
+    
+    /// The avatar's center from the header's top leading corner, where the avatar row lands once pulled up
+    private var avatarCenter: CGPoint {
+        CGPoint(
+            x: Self.profileContentPadding + Self.avatarImageSize / 2,
+            y: Self.bannerHeight + Self.avatarOverlapOffset + Self.avatarImageSize / 2
+        )
     }
     
     // MARK: - Avatar
@@ -479,10 +490,10 @@ struct ProfileView: View {
                         .resizable()
                         .aspectRatio(contentMode: .fill)
                         .frame(width: Self.avatarImageSize, height: Self.avatarImageSize)
-                        .clipShape(Circle())
+                        .clipShape(AvatarShape())
                 } placeholder: {
                     ZStack {
-                        Circle()
+                        AvatarShape()
                             .fill(Color(.systemGray5))
                             .frame(width: Self.avatarImageSize, height: Self.avatarImageSize)
                         
@@ -491,13 +502,13 @@ struct ProfileView: View {
                 }
             } else {
                 // Default initials view
-                Circle()
+                AvatarShape()
                     .fill(Color(.systemGray5))
                     .frame(width: Self.avatarImageSize, height: Self.avatarImageSize)
                 
                 Color.clear
                     .frame(width: Self.avatarImageSize, height: Self.avatarImageSize)
-                    .glassEffect(.regular, in: Circle())
+                    .glassEffect(.regular, in: AvatarShape())
                 
                 Text(userInitials)
                     .font(.system(size: 48, weight: .semibold))
@@ -749,7 +760,7 @@ struct ProfileView: View {
             .padding(.horizontal, Self.profileContentPadding)
             .background(showLayoutDebugOverlays ? Color.yellow.opacity(0.05) : Color.clear)
             .overlay(debugPaddingLine())
-            .padding(.top, CardLayoutConstants.topPadding)
+            .padding(.top, nameTopPadding)
             .background(showLayoutDebugOverlays ? Color.pink.opacity(0.05) : Color.clear)
             .padding(.bottom, profileCardBottomPadding)
             .background(showLayoutDebugOverlays ? Color.cyan.opacity(0.05) : Color.clear)
@@ -951,13 +962,6 @@ struct ProfileView: View {
     
     private var profileTabs: some View {
         VStack(spacing: 0) {
-            // Top padding - only for other users' profiles
-            if tabTopPadding > 0 {
-                Color.clear
-                    .frame(height: tabTopPadding)
-                    .background(showLayoutDebugOverlays ? Color.purple.opacity(0.3) : Color.clear)
-            }
-            
             tabButtonsContainer
             tabIndicatorArea
             
@@ -971,6 +975,7 @@ struct ProfileView: View {
         .allowsHitTesting(true)
         .background(Color(.systemBackground).opacity(0.01)) // Minimal background for hit testing
         .overlay(tabDebugOverlay)
+        .padding(.top, tabTopPadding)
     }
     
     private var tabButtonsContainer: some View {
@@ -981,7 +986,7 @@ struct ProfileView: View {
                 } label: {
                     VStack(spacing: 8) {
                         Text(tab.rawValue)
-                            .font(.system(.body, design: .default))
+                            .font(.body)
                             .fontWeight(.semibold)
                             .foregroundColor(selectedTab == tab ? .primary : .secondary)
                         
@@ -1289,10 +1294,10 @@ extension ProfileView {
             .sizeThatFits(in: CGSize(width: contentWidth, height: .greatestFiniteMagnitude))
             .height
         
-        // Banner, the avatar row pulled up by half its mask, the card's top padding, text and buttons, and the
-        // bottom padding that matches the side inset
-        let headerHeight = bannerHeight + avatarImageSize + avatarOverlapOffset + CardLayoutConstants.topPadding
-            + textAndButtonsHeight + profileContentPadding
+        // Banner, the avatar row pulled up over it, the space above the name, text and buttons, and the bottom
+        // padding that matches the side inset
+        let headerHeight = bannerHeight + avatarImageSize + avatarOverlapOffset
+            + nameTopPadding(for: context.dynamicTypeSize) + textAndButtonsHeight + profileContentPadding
         return headerHeight - context.bottomInset
     }
 }
@@ -1375,6 +1380,8 @@ private struct ProfileFeedSection: View {
                                 PostDivider()
                             }
                         }
+                        // Like bursts fly out of the post and land on its divider
+                        .likeBurstLayer()
                     }
                 }
             }
@@ -1510,6 +1517,28 @@ private struct ProfileNavigationModifiers: ViewModifier {
                     ConversationView(chat: chat)
                 }
             }
+    }
+}
+
+// MARK: - Avatar Ring
+
+/// A rectangle with the avatar's ring cut out of it, filled even-odd, so the page shows around the avatar: the
+/// avatar's shape grown by the ring's width all round, its corners grown by the same amount so the ring stays even
+private struct AvatarRingCutout: Shape {
+    let center: CGPoint
+    let avatarSize: CGFloat
+    let ringWidth: CGFloat
+    
+    func path(in rect: CGRect) -> Path {
+        var path = Path(rect)
+        let side = avatarSize + ringWidth * 2
+        let radius = avatarSize * AvatarShape.cornerRatio + ringWidth
+        path.addRoundedRect(
+            in: CGRect(x: center.x - side / 2, y: center.y - side / 2, width: side, height: side),
+            cornerSize: CGSize(width: radius, height: radius),
+            style: .continuous
+        )
+        return path
     }
 }
 

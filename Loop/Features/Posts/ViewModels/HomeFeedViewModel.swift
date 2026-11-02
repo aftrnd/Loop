@@ -17,8 +17,6 @@ final class HomeFeedViewModel {
     private(set) var replyPreviews: [String: [Loop]] = [:] // loopId -> reply previews
 
     // Compose state
-    var showingCompose = false
-    var composeDraft = LoopDraft()
     private(set) var isPosting = false
 
     private let currentUserId = Auth.auth().currentUser?.uid
@@ -268,44 +266,25 @@ final class HomeFeedViewModel {
 
     // MARK: - Compose Actions
 
-    func showCompose() {
-        composeDraft = LoopDraft()
-        showingCompose = true
-    }
-
-    func hideCompose() {
-        showingCompose = false
-        composeDraft = LoopDraft()
-    }
-
-    func postLoop() async {
-        guard composeDraft.isValid, composeDraft.isWithinCharacterLimit else { return }
+    /// Creates a loop or a reply from the composer. It throws, so a failed post keeps the composer open with the draft.
+    func postLoop(_ draft: LoopDraft) async throws {
+        guard draft.isValid, draft.isWithinCharacterLimit else { return }
 
         isPosting = true
-        let isReply = composeDraft.isReply
-        let parentLoopId = composeDraft.parentLoopId
+        defer { isPosting = false }
 
-        do {
-            try await FirebaseService.shared.createLoop(
-                content: composeDraft.content,
-                media: composeDraft.media,
-                isReply: composeDraft.isReply,
-                parentLoopId: composeDraft.parentLoopId,
-                replyToReplyId: composeDraft.replyToReplyId
-            )
+        try await FirebaseService.shared.createLoop(
+            content: draft.content,
+            media: draft.media,
+            isReply: draft.isReply,
+            parentLoopId: draft.parentLoopId,
+            replyToReplyId: draft.replyToReplyId
+        )
 
-            // Success - clear the compose state
-            hideCompose()
-
-            // If this was a reply, refresh the reply preview for that loop
-            if isReply, let parentId = parentLoopId {
-                await refreshReplyPreviewForLoop(parentId)
-            }
-        } catch {
-            errorMessage = error.localizedDescription
+        // If this was a reply, refresh the reply preview for that loop
+        if draft.isReply, let parentId = draft.parentLoopId {
+            await refreshReplyPreviewForLoop(parentId)
         }
-
-        isPosting = false
     }
 
     // MARK: - Loop Actions
@@ -346,19 +325,18 @@ final class HomeFeedViewModel {
         }
     }
 
-    func replyToLoop(_ loop: Loop) {
-        composeDraft = LoopDraft()
-        composeDraft.isReply = true
-        composeDraft.parentLoopId = loop.id
-        showingCompose = true
-    }
-
     func canDeleteLoop(_ loop: Loop) -> Bool {
         loop.authorId == currentUserId
     }
 
     func deleteLoop(_ loop: Loop) async {
         guard canDeleteLoop(loop) else { return }
+
+        // A reply shows in the feed only as its post's preview
+        if let parentId = loop.parentLoopId {
+            await deleteReply(loop, parentId: parentId)
+            return
+        }
 
         // OPTIMISTIC UPDATE: Remove from UI immediately
         guard let index = loops.firstIndex(where: { $0.id == loop.id }) else { return }
@@ -391,6 +369,34 @@ final class HomeFeedViewModel {
 
             // Show error message
             errorMessage = "Couldn't delete post. Please try again."
+        }
+    }
+
+    /// Removes a reply from its post's preview right away, then deletes it. The post's reply count comes with the
+    /// listener's next snapshot, and its next preview, if another reply qualifies, is fetched once the delete lands.
+    private func deleteReply(_ reply: Loop, parentId: String) async {
+        guard let preview = replyPreviews[parentId], preview.contains(where: { $0.id == reply.id }) else { return }
+        let remaining = preview.filter { $0.id != reply.id }
+
+        // previewSources stays as it is: until the delete lands the post's replies are unchanged, so a snapshot in
+        // the meantime doesn't refetch the preview with the reply still in it
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            replyPreviews[parentId] = remaining.isEmpty ? nil : remaining
+        }
+
+        do {
+            try await FirebaseService.shared.deleteLoop(reply.id)
+            await refreshReplyPreviewForLoop(parentId)
+        } catch {
+            // Put the reply back, unless a newer preview has replaced it meanwhile
+            if (replyPreviews[parentId] ?? []) == remaining {
+                withTransaction(transaction) {
+                    replyPreviews[parentId] = preview
+                }
+            }
+            errorMessage = "Couldn't delete comment. Please try again."
         }
     }
 

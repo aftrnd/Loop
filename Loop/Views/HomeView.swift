@@ -4,6 +4,8 @@ import SwiftUI
 /// Built with atomic components (PostHeader, PostContent, PostActions) + composite (PostCard)
 struct HomeView: View {
     @State private var viewModel = HomeFeedViewModel()
+    /// Pulls to refresh so far; each one rolls the glass across the wordmark
+    @State private var refreshes = 0
     @Environment(SheetRouter.self) private var sheetRouter
     
     // Debug settings
@@ -21,7 +23,7 @@ struct HomeView: View {
                         Button(action: {
                             let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
                             impactFeedback.impactOccurred()
-                            viewModel.showCompose()
+                            sheetRouter.showCompose { try await viewModel.postLoop($0) }
                         }) {
                             Image(systemName: "plus")
                                 .font(.body)
@@ -31,7 +33,7 @@ struct HomeView: View {
                     }
                     
                     ToolbarItem(placement: .principal) {
-                        LoopWordmark()
+                        LoopWordmark(glassSweeps: refreshes)
                     }
                     
                     if showDebugOverlayButton {
@@ -53,19 +55,6 @@ struct HomeView: View {
         }
         .task {
             viewModel.start()
-        }
-        .sheet(isPresented: $viewModel.showingCompose) {
-            ComposeLoopView(
-                draft: $viewModel.composeDraft,
-                isPresented: $viewModel.showingCompose,
-                onPost: {
-                    await viewModel.postLoop()
-                }
-            )
-            .presentationDetents([.fraction(0.40), .large])
-            .presentationDragIndicator(.visible)
-            .presentationBackgroundInteraction(.enabled(upThrough: .fraction(0.35)))
-            .presentationContentInteraction(.scrolls)
         }
         .alert("Error", isPresented: errorAlertBinding) {
             Button("OK") {
@@ -94,6 +83,7 @@ struct HomeView: View {
     private var feedContent: some View {
         FeedListView(
             onRefresh: {
+                refreshes += 1
                 await viewModel.refreshFeed()
             }
         ) {
@@ -134,7 +124,7 @@ struct HomeView: View {
                         if loop.replyCount > 0 {
                             showThread(loop)
                         } else {
-                            viewModel.replyToLoop(loop)
+                            sheetRouter.showCompose(LoopDraft(replyingTo: loop.id)) { try await viewModel.postLoop($0) }
                         }
                     },
                     onShare: {
@@ -153,11 +143,12 @@ struct HomeView: View {
                         showThread(loop)
                     },
                     onReplyDelete: { reply in
-                        if viewModel.canDeleteLoop(reply) {
-                            Task {
-                                await viewModel.deleteLoop(reply)
-                            }
+                        Task {
+                            await viewModel.deleteLoop(reply)
                         }
+                    },
+                    canDeleteReply: { reply in
+                        viewModel.canDeleteLoop(reply)
                     },
                     isReplyLiked: { reply in
                         viewModel.isLikedByCurrentUser(reply)
@@ -171,6 +162,8 @@ struct HomeView: View {
                     PostDivider()
                 }
             }
+            // Like bursts fly out of the post and land on its divider
+            .likeBurstLayer()
             .listRowSeparator(.hidden)
             .listRowBackground(Color.clear)
             .listRowInsets(EdgeInsets(top: 0, leading: 10, bottom: 0, trailing: 10))

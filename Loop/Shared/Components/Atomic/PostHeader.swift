@@ -8,6 +8,10 @@ struct PostHeader: View {
     let displayName: String
     let username: String?
     let badgeType: BadgeType?
+    /// A topic account's look, drawn in place of a photo
+    let topic: LoopTopic?
+    /// Where a topic post's story comes from, shown with the AI mark in place of the handle
+    let source: String?
     let timestamp: String?
     let trailingIcon: String? // Optional trailing icon (e.g., "chevron.right")
     let showUsernamePrefix: Bool // Whether to show "@" before username
@@ -23,6 +27,8 @@ struct PostHeader: View {
         displayName: String,
         username: String?,
         badgeType: BadgeType?,
+        topic: LoopTopic? = nil,
+        source: String? = nil,
         timestamp: String? = nil,
         trailingIcon: String? = nil,
         showUsernamePrefix: Bool = true,
@@ -33,6 +39,8 @@ struct PostHeader: View {
         self.displayName = displayName
         self.username = username
         self.badgeType = badgeType
+        self.topic = topic
+        self.source = source
         self.timestamp = timestamp
         self.trailingIcon = trailingIcon
         self.showUsernamePrefix = showUsernamePrefix
@@ -67,15 +75,17 @@ struct PostHeader: View {
     
     private var avatar: some View {
         Group {
-            if let avatarURLString = avatarURL, let avatarURL = URL(string: avatarURLString) {
+            if let topic {
+                TopicAvatar(topic: topic, size: avatarSize)
+            } else if let avatarURLString = avatarURL, let avatarURL = URL(string: avatarURLString) {
                 CachedAsyncImage(url: avatarURL, targetSize: CGSize(width: avatarSize, height: avatarSize)) { image in
                     image
                         .resizable()
                         .aspectRatio(contentMode: .fill)
                         .frame(width: avatarSize, height: avatarSize)
-                        .clipShape(Circle())
+                        .clipShape(AvatarShape())
                 } placeholder: {
-                    Circle()
+                    AvatarShape()
                         .fill(Color(.systemGray5))
                         .frame(width: avatarSize, height: avatarSize)
                         .overlay {
@@ -86,13 +96,13 @@ struct PostHeader: View {
             } else {
                 // Default avatar with initials
                 ZStack {
-                    Circle()
+                    AvatarShape()
                         .fill(Color(.systemGray5))
                         .frame(width: avatarSize, height: avatarSize)
                     
                     Color.clear
                         .frame(width: avatarSize, height: avatarSize)
-                        .glassEffect(.regular, in: Circle())
+                        .glassEffect(.regular, in: AvatarShape())
                     
                     Text(String(displayName.prefix(1)).uppercased())
                         .font(.headline)
@@ -163,14 +173,16 @@ struct PostHeader: View {
     
     private var bottomHalf: some View {
         HStack(spacing: 0) {
-            if let username = username, !username.isEmpty {
+            if topic != nil, let source, !source.isEmpty {
+                topicSourceLine(source)
+            } else if let username = username, !username.isEmpty {
                 HStack(spacing: 4) {
                     if let badgeType = badgeType {
                         Image(systemName: badgeType.iconName)
                             .font(.system(size: 14))
                             .foregroundColor(badgeType.color)
                     }
-                    
+
                     Text(showUsernamePrefix ? "@\(username)" : username)
                         .font(.callout)
                         .fontWeight(.regular)
@@ -178,7 +190,7 @@ struct PostHeader: View {
                         .lineLimit(1)
                 }
             }
-            
+
             Spacer()
         }
         .frame(maxWidth: .infinity)
@@ -190,6 +202,50 @@ struct PostHeader: View {
                 }
             }
         )
+    }
+
+    /// A topic post's second line: the AI mark, then the source of the story Loop wrote the post from
+    private func topicSourceLine(_ source: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 5) {
+            AIMark()
+
+            Text(source)
+                .font(.callout)
+                .fontWeight(.regular)
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Written by AI from \(source)")
+    }
+}
+
+// MARK: - AI Mark
+
+/// Marks what Loop wrote with AI: sparkles.2 cut out of a small plate with the avatar's corners, in the secondary color
+/// of the callout text beside it. The plate is 1.3 times the callout's cap height and centered on its capitals, so it
+/// overshoots them by 0.15 cap heights above and below; the symbol fills its middle four sevenths
+private struct AIMark: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    var body: some View {
+        let traits = UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(dynamicTypeSize))
+        let capHeight = UIFont.preferredFont(forTextStyle: .callout, compatibleWith: traits).capHeight
+        let side = capHeight * 1.3
+        AvatarShape()
+            .fill(Color.secondary)
+            .overlay {
+                Image(systemName: "sparkles.2")
+                    .resizable()
+                    .scaledToFit()
+                    .padding(side * 3 / 14)
+                    .blendMode(.destinationOut)
+            }
+            // The symbol shows the page through the plate
+            .compositingGroup()
+            .frame(width: side, height: side)
+            // Its middle sits half a cap height above the baseline
+            .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + capHeight / 2 }
     }
 }
 
@@ -228,6 +284,20 @@ struct PostHeader: View {
             username: "mikej",
             badgeType: nil,
             timestamp: "3d",
+            onAvatarTap: nil
+        )
+        .padding()
+        .background(Color(.systemBackground))
+
+        // Topic account
+        PostHeader(
+            avatarURL: nil,
+            displayName: "Steelers",
+            username: "steelers",
+            badgeType: nil,
+            topic: LoopTopic(id: "steelers", symbol: "football.fill", color: "#101820", ink: "#FFB612", style: "team"),
+            source: "Yahoo Sports",
+            timestamp: "12m",
             onAvatarTap: nil
         )
         .padding()

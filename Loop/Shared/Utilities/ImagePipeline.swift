@@ -10,12 +10,17 @@ nonisolated struct ImageRequest: Hashable, Sendable {
     /// Target size in pixels. Zero means full resolution.
     let pixelWidth: Int
     let pixelHeight: Int
+    /// Whether the bitmap drops its outermost pixel on every side.
+    let trimsEdges: Bool
 
     /// - Parameters:
     ///   - pointSize: The frame the image fills, or nil to keep full resolution.
     ///   - scale: The display scale the frame is rendered at.
-    init(url: URL, pointSize: CGSize?, scale: CGFloat) {
+    ///   - trimsEdges: Drops the outermost pixel on every side, where some publishers' images carry a light or
+    ///     dark line.
+    init(url: URL, pointSize: CGSize?, scale: CGFloat, trimsEdges: Bool = false) {
         self.url = url
+        self.trimsEdges = trimsEdges
         if let pointSize, pointSize.width > 0, pointSize.height > 0 {
             pixelWidth = Int((pointSize.width * scale).rounded(.up))
             pixelHeight = Int((pointSize.height * scale).rounded(.up))
@@ -26,7 +31,7 @@ nonisolated struct ImageRequest: Hashable, Sendable {
     }
 
     fileprivate var cacheKey: NSString {
-        "\(url.absoluteString)#\(pixelWidth)x\(pixelHeight)" as NSString
+        "\(url.absoluteString)#\(pixelWidth)x\(pixelHeight)\(trimsEdges ? "#trimmed" : "")" as NSString
     }
 }
 
@@ -123,7 +128,21 @@ actor ImagePipeline {
         guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbnailOptions) else {
             return nil
         }
-        return UIImage(cgImage: cgImage)
+        return request.trimsEdges ? trimmingEdges(of: cgImage) : UIImage(cgImage: cgImage)
+    }
+
+    /// The image less its outermost pixel on every side. Some publishers' preview images come from their image
+    /// services with a light or dark line one pixel wide down their edges (measured 2026-11-01 on BBC News and The
+    /// Verge images; the BBC's unbranded version of the same photo has none). A downsampled pixel covers at least one
+    /// of the original's, so one pixel is enough at any size.
+    private nonisolated static func trimmingEdges(of image: CGImage) -> UIImage {
+        let inner = CGRect(x: 0, y: 0, width: image.width, height: image.height).insetBy(dx: 1, dy: 1)
+        guard !inner.isEmpty, let trimmed = image.cropping(to: inner) else {
+            return UIImage(cgImage: image)
+        }
+        // The crop shares the decoded bitmap; prepare it here, off the main actor, so it is ready to draw
+        let image = UIImage(cgImage: trimmed)
+        return image.preparingForDisplay() ?? image
     }
 }
 

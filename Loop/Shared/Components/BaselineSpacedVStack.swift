@@ -28,6 +28,12 @@ extension View {
     func visibleTopAtCapHeight(of textStyle: UIFont.TextStyle) -> some View {
         modifier(CapHeightVisibleTop(textStyle: textStyle))
     }
+
+    /// Marks the cap height of this text's first line as where it visibly starts, for text set in a font no text
+    /// style describes, such as a sized serif.
+    func visibleTopAtCapHeight(of font: UIFont) -> some View {
+        alignmentGuide(.visibleTop) { $0[.firstTextBaseline] - font.capHeight }
+    }
 }
 
 private struct CapHeightVisibleTop: ViewModifier {

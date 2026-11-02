@@ -8,6 +8,9 @@ const admin = require('firebase-admin');
 
 admin.initializeApp();
 
+// Topic accounts: hourly posts written from the news
+exports.postTopicStories = require('./topics').postTopicStories;
+
 /**
  * Send push notification when a new message is received
  * @param {Object} data - Contains fcmToken, title, body, chatId

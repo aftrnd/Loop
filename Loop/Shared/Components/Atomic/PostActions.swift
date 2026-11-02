@@ -29,8 +29,11 @@ struct PostActions: View {
     // Animation state
     @State private var heartScale: CGFloat = 1.0
     @State private var heartRotation: Double = 0
-    @State private var particleTriggerID = UUID()
     @State private var heartAnimation: Task<Void, Never>?
+    /// Hearts flying out of the like button. The feed row draws them (`likeBurstLayer()`), so they can land on the
+    /// divider below the post
+    @State private var bursts: [LikeBurst] = []
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     
     init(
         isLiked: Bool,
@@ -89,19 +92,6 @@ struct PostActions: View {
                 }
             }
         )
-        .overlay {
-            // Heart particle animation overlay
-            HeartParticleAnimationView(
-                iconSize: CardLayoutConstants.actionButtonIconSize,
-                triggerID: particleTriggerID
-            )
-            .frame(width: 200, height: 200)
-            .position(
-                x: CardLayoutConstants.actionButtonWidth / 2,
-                y: CardLayoutConstants.actionButtonHeight / 2
-            )
-            .allowsHitTesting(false)
-        }
     }
     
     // MARK: - Subviews
@@ -125,6 +115,8 @@ struct PostActions: View {
                     .contentTransition(.symbolEffect(.replace))
                     .scaleEffect(heartScale)
                     .rotationEffect(.degrees(heartRotation))
+                    // The bursts start from the heart's own frame, outside its pop
+                    .likeBurstSource(bursts)
                 
                 if likeCount > 0 {
                     Text(likeCount > 99 ? "99+" : "\(likeCount)")
@@ -215,7 +207,15 @@ struct PostActions: View {
             heartRotation = 12
         }
         
-        particleTriggerID = UUID()
+        // Hearts fly only for a like (isLiked is still the state before this tap), and not with Reduce Motion on
+        if !isLiked && !reduceMotion {
+            let burst = LikeBurst.make()
+            bursts.append(burst)
+            Task {
+                try? await Task.sleep(for: .seconds(LikeBurst.duration))
+                bursts.removeAll { $0.id == burst.id }
+            }
+        }
         
         // Settle back after a beat
         heartAnimation = Task {
@@ -271,6 +271,7 @@ struct PostActions: View {
         .padding()
         .background(Color(.systemBackground))
     }
+    .likeBurstLayer()
     .background(Color(.systemGroupedBackground))
 }
 

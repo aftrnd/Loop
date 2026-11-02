@@ -133,6 +133,8 @@ struct MainTabView: View {
                     ProfileView(userId: userId, preview: preview)
                 case .thread(let loop, let onRepliesChanged):
                     LoopDetailView(loop: loop, onRepliesChanged: onRepliesChanged)
+                case .compose(let draft, let onPost):
+                    ComposeLoopView(draft: draft, onPost: onPost)
                 }
             }
             .environment(chatsViewModel)
