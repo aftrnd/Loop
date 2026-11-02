@@ -200,13 +200,23 @@ struct ProfileView: View {
             VStack(spacing: 0) {
                 profileHeader(for: user)
                 
-                // Tabs and feed - always rendered, fade in during swipe
-                feedPicker
-                    .modifier(expansionFade)
-                
-                // Tab content - fade in as sheet expands. Its own view, so feed updates don't re-render the header
-                ProfileFeedSection(viewModel: feedViewModel, selectedTab: selectedTab)
-                    .modifier(expansionFade)
+                // Tabs and feed, always rendered, fading in as the sheet opens, on the page that rises over the
+                // wallpaper's foot with rounded corners
+                VStack(spacing: 0) {
+                    feedPicker
+                    
+                    // Its own view, so feed updates don't re-render the header
+                    ProfileFeedSection(viewModel: feedViewModel, selectedTab: selectedTab)
+                }
+                .background {
+                    UnevenRoundedRectangle(
+                        topLeadingRadius: ProfileGeometry.pageCornerRadius,
+                        topTrailingRadius: ProfileGeometry.pageCornerRadius,
+                        style: .continuous
+                    )
+                    .fill(Color(.systemBackground))
+                }
+                .modifier(expansionFade)
             }
         }
         .scrollIndicators(.hidden)
@@ -373,6 +383,8 @@ struct ProfileView: View {
                 cardHeight: cardHeaderHeight,
                 heroHeight: heroHeight
             )
+            // On under the page's rounded corners
+            .padding(.bottom, -ProfileGeometry.pageCornerRadius)
         }
         // Nothing in the header sits on the sheet's glass, so nothing in it is vibrant
         .environment(\.backgroundMaterial, nil)
@@ -753,6 +765,9 @@ private enum ProfileGeometry {
     static let cardActionHeight: CGFloat = 68
     /// At full height, twice the 32pt track of the segmented control below them (measured on iOS 27.2)
     static let fullHeightActionHeight: CGFloat = 64
+    /// The page under the wallpaper rounds its top corners concentric with the segmented control's ends: their 16pt
+    /// radius (half its 32pt track) and the part spacing it sits from the page's top and sides
+    static let pageCornerRadius: CGFloat = 32 / 2 + part
 }
 
 /// The avatar's edge lit like a macOS 27 app icon's, so it reads on any wallpaper: a highlight inside the top edge
@@ -1070,8 +1085,8 @@ private struct ProfileDetails: View {
 // MARK: - Wallpaper
 
 /// The wallpaper behind the header, darkened a little toward its foot so white type stays legible. It is laid out at
-/// the card's height in every detent and clipped to the header, so it never re-crops as the sheet opens; at full
-/// height the shorter buttons end it 4pt sooner. With no wallpaper, the dark gray it shows while loading stands in. At full height only the hero keeps it: the rest fades out with the sheet's expansion.
+/// the card's height, plus the page's corner radius that it reaches on under, in every detent, so it never re-crops as
+/// the sheet opens. With no wallpaper, the dark gray it shows while loading stands in.
 private struct ProfileBackdrop: View {
     let bannerURL: String?
     /// The card's header height, or 0 before it is measured, when the wallpaper fills the header
@@ -1082,7 +1097,7 @@ private struct ProfileBackdrop: View {
         Color.clear
             .overlay(alignment: .top) {
                 wallpaper
-                    .frame(height: cardHeight > 0 ? cardHeight : nil)
+                    .frame(height: cardHeight > 0 ? cardHeight + ProfileGeometry.pageCornerRadius : nil)
             }
             .clipped()
             // The wallpaper always renders dark, like a contact poster
