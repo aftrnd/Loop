@@ -421,10 +421,11 @@ struct ProfileView: View {
         .environment(\.colorScheme, .dark)
     }
     
-    /// The bio, the counts and the buttons: on the wallpaper on the card, on the plain page at full height.
+    /// The bio, the counts, the highlights and the buttons: on the wallpaper on the card, on the plain page at full
+    /// height.
     private func profilePage(for user: User) -> some View {
         BaselineSpacedVStack(spacing: ProfileGeometry.part) {
-            ProfileDetails(user: user)
+            ProfileDetails(user: user, canAddHighlights: isOwnProfile)
             
             profileActions
                 .modifier(SheetExpansionHeight(
@@ -992,10 +993,12 @@ private struct ProfileYearPlate: View {
     }
 }
 
-/// The bio and the counts. A view of its own so the card's height can be worked out with the same layout before
-/// the sheet opens. Their colors come from `SheetExpansionInk`.
+/// The bio, the counts and the highlights. A view of its own so the card's height can be worked out with the same
+/// layout before the sheet opens. Their colors come from `SheetExpansionInk`.
 private struct ProfileDetails: View {
     let user: User
+    /// Your own profile shows the tile that adds a highlight
+    let canAddHighlights: Bool
     
     @Environment(\.profileSecondaryInk) private var secondaryInk
     
@@ -1020,6 +1023,10 @@ private struct ProfileDetails: View {
             .font(.subheadline)
             .frame(maxWidth: .infinity, alignment: .leading)
             .visibleTopAtCapHeight(of: .subheadline)
+            
+            if canAddHighlights {
+                ProfileHighlights()
+            }
         }
     }
     
@@ -1036,6 +1043,47 @@ private struct ProfileDetails: View {
             Text(label)
                 .foregroundStyle(secondaryInk)
         }
+    }
+}
+
+/// The highlights row: squircles with the avatar's corners and a label under each, five of them across the text
+/// column. Highlights don't exist yet, so it holds only the empty tile your own profile shows to add one, in a gray
+/// from the ink so it reads on the wallpaper and on the page.
+private struct ProfileHighlights: View {
+    @Environment(\.profileSecondaryInk) private var secondaryInk
+    
+    /// Five tiles 13pt apart fill the 362pt column on iPhone 18 Pro
+    private static let tile: CGFloat = 62
+    
+    var body: some View {
+        HStack(alignment: .top, spacing: 13) {
+            Button {
+                // Adding highlights waits for the feature behind them
+            } label: {
+                VStack(spacing: 8) {
+                    AvatarShape()
+                        .fill(.quaternary)
+                        .frame(width: Self.tile, height: Self.tile)
+                        .overlay {
+                            Image(systemName: "plus")
+                                .font(.title2.weight(.medium))
+                                .foregroundStyle(secondaryInk)
+                        }
+                    
+                    Text("New")
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundStyle(secondaryInk)
+                }
+                .frame(width: Self.tile)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("New highlight")
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        // Starts at the tiles' top and ends at the labels' baseline
+        .alignmentGuide(.visibleTop) { $0[.top] }
+        .alignmentGuide(.visibleBottom) { $0[.lastTextBaseline] }
     }
 }
 
@@ -1166,14 +1214,14 @@ extension ProfileView {
     /// same name block and details the card shows; the avatar and the buttons stand in as fixed sizes. Must match
     /// `profileHeader`: the live header measurement corrects any difference, but only after the sheet has opened,
     /// as a visible jump.
-    static func collapsedCardHeight(for user: User, in context: ProfileLayoutContext) -> CGFloat {
+    static func collapsedCardHeight(for user: User, isOwnProfile: Bool, in context: ProfileLayoutContext) -> CGFloat {
         let contentWidth = context.width - ProfileGeometry.margin * 2
         let header = BaselineSpacedVStack(spacing: ProfileGeometry.avatarToName(for: context.dynamicTypeSize)) {
             Color.clear
                 .frame(height: ProfileGeometry.avatarFrame)
             BaselineSpacedVStack(spacing: ProfileGeometry.part) {
                 ProfileNameBlock(user: user)
-                ProfileDetails(user: user)
+                ProfileDetails(user: user, canAddHighlights: isOwnProfile)
                 Color.clear
                     .frame(height: ProfileGeometry.cardActionHeight)
             }

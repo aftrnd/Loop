@@ -38,9 +38,15 @@ final class SheetRouter {
     /// moving after it appears.
     func showProfile(userId: String?) {
         var preview: ProfilePreview?
-        let shownUserId = userId ?? Auth.auth().currentUser?.uid
+        let currentUserId = Auth.auth().currentUser?.uid
+        let shownUserId = userId ?? currentUserId
         if let shownUserId, let profileLayout, let user = FirebaseService.shared.cachedUser(withId: shownUserId) {
-            preview = ProfilePreview(user: user, collapsedHeight: ProfileView.collapsedCardHeight(for: user, in: profileLayout))
+            let height = ProfileView.collapsedCardHeight(
+                for: user,
+                isOwnProfile: shownUserId == currentUserId,
+                in: profileLayout
+            )
+            preview = ProfilePreview(user: user, collapsedHeight: height)
         }
         sheet = .profile(userId: userId, preview: preview)
     }
