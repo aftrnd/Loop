@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// The story a topic post links to, set in ink: the story's photo inside an ink frame, with the headline in a tab of
-/// the frame cut from the photo's bottom leading corner. A big story's photo is 4:3 and any other's 5:2; a story
-/// without a photo is all ink. The whole card opens the story.
+/// The story a topic post links to, set in ink: the story's photo inside an ink frame, with the headline and the
+/// story's domain in a tab of the frame cut from the photo's bottom leading corner. A big story's photo is 4:3 and any
+/// other's 5:2; a story without a photo is all ink. The whole card opens the story.
 struct NewsLinkCard: View {
     let link: LoopLink
 
@@ -10,6 +10,12 @@ struct NewsLinkCard: View {
 
     private var imageURL: URL? {
         link.imageURL.flatMap { URL(string: $0) }
+    }
+
+    /// The story's site, as the line under the headline shows it: the link's host without a leading "www."
+    private var domain: String? {
+        guard let host = URL(string: link.url)?.host(), !host.isEmpty else { return nil }
+        return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
     }
 
     /// A big story without a photo is set like any other story without one
@@ -31,6 +37,9 @@ struct NewsLinkCard: View {
                         .fill(Color.primary)
                 }
                 headline
+                if let domain {
+                    domainLine(domain)
+                }
             }
             .background(Color.primary)
             .clipShape(RoundedRectangle(cornerRadius: NewsCardMetrics.cornerRadius, style: .continuous))
@@ -41,7 +50,7 @@ struct NewsLinkCard: View {
         .alignmentGuide(.visibleTop) { $0[.top] }
         .alignmentGuide(.visibleBottom) { $0[.bottom] }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(link.title), \(link.source)")
+        .accessibilityLabel("\(link.title), \(domain ?? link.source)")
         .accessibilityAddTraits(.isLink)
     }
 
@@ -57,6 +66,17 @@ struct NewsLinkCard: View {
             .lineLimit(3)
             .fixedSize(horizontal: false, vertical: true)
             .visibleTopAtCapHeight(of: isLead ? .title3 : .headline)
+    }
+
+    /// The story's site under the headline, quieter than it, with an arrow for a link that leaves the app. A long domain
+    /// gives up its middle, so the site's name and the arrow stay
+    private func domainLine(_ domain: String) -> some View {
+        Text("\(domain)  \(Image(systemName: "arrow.up.right"))")
+            .font(.footnote.weight(.medium))
+            .foregroundStyle(Color(.systemBackground).opacity(0.6))
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .visibleTopAtCapHeight(of: .footnote)
     }
 
     /// The story's photo filling its place in the frame, its corners concentric with the card's
@@ -84,27 +104,35 @@ private enum NewsCardMetrics {
     /// How far the photo sits inside the card
     static let frame: CGFloat = 8
     static let photoRadius: CGFloat = cornerRadius - frame
-    /// The tab's room above the headline's capitals and past its longest line. It is also the tab's corner, so the
-    /// corner's arc is centered on the corner of the headline's block
+    /// The tab's room around its text on every side: from the photo's leading and bottom edges, above the headline's
+    /// capitals and past the longest line. It is also the tab's corner, so the corner's arc is centered on the corner of
+    /// the text's block
     static let tabPadding: CGFloat = photoRadius
+    /// In both cards the text's leading edge and its last baseline sit this far in from the card's leading and bottom
+    /// edges: the frame plus the tab's padding, the card's corner, so the text's block has its corners on the centers of
+    /// the card's. A card without a photo pads the headline's capitals and its trailing side by the same
+    static let textInset: CGFloat = frame + tabPadding
+    /// The domain's capitals sit the frame's width under the headline's last baseline
+    static let domainGap: CGFloat = frame
     /// How far a continuous corner runs along each edge, in radii (measured on the simulator: 30.33pt for 20)
     static let cornerRun: CGFloat = 1.52
     /// The tab is never shorter than the two corners on its trailing side, its own and the photo's past it: 37pt
     static let minTabHeight: CGFloat = (cornerRun * (tabPadding + photoRadius)).rounded(.up)
+    /// The photo's bottom edge past the tab is never shorter than its two corners, the one where it meets the tab and its
+    /// own: 37pt. It sets how far the text can run
+    static let minPhotoEdge: CGFloat = (cornerRun * 2 * photoRadius).rounded(.up)
     /// How far the tab's ink runs past its top and trailing edges, room for the photo's corners where it meets them
     static let tabReach: CGFloat = 2 * photoRadius
-    /// A card without a photo pads its headline by the card's corner, from its capitals and its last baseline, so the
-    /// headline's block has its corners on the centers of the card's. The frame plus the tab's padding comes to the same
-    static let plainPadding: CGFloat = cornerRadius
 }
 
 // MARK: - Layout
 
-/// Places a news card's parts in one pass, so the tab is drawn where the headline lands. With a photo the subviews are
-/// [photo, tab, headline]: the photo sits in the frame at its style's shape, the headline's leading edge sits on the
-/// photo's and its last baseline on the photo's bottom edge, and the tab runs from the card's leading and bottom edges
-/// to its padding above the headline's capitals and past its longest line. Without a photo the one subview is the
-/// headline, padded from every edge.
+/// Places a news card's parts in one pass, so the tab is drawn where the text lands. The text is the headline and, when
+/// the story has one, the domain under it. With a photo the subviews are [photo, tab, headline, domain]: the photo sits
+/// in the frame at its style's shape, the text's leading edge and last baseline sit the tab's padding inside the photo's
+/// leading and bottom edges, and the tab runs from the card's leading and bottom edges to its padding above the
+/// headline's capitals and past the longest line. Without a photo the subviews are [headline, domain], padded from
+/// every edge.
 private struct NewsCardLayout: Layout {
     enum Style {
         /// A big story: the photo at 4:3, the headline in title 3
@@ -121,6 +149,14 @@ private struct NewsCardLayout: Layout {
     private struct Placement {
         var height: CGFloat
         var subviews: [(origin: CGPoint, proposal: ProposedViewSize)]
+    }
+
+    /// The text's lines stacked from the headline's capitals at 0: each one's top, the last baseline and the longest
+    /// line's width
+    private struct TextStack {
+        var tops: [CGFloat] = []
+        var lastBaseline: CGFloat = 0
+        var width: CGFloat = 0
     }
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
@@ -145,42 +181,68 @@ private struct NewsCardLayout: Layout {
         case .compact: photoHeightRatio = 2.0 / 5.0
         case .plain: return plainPlacement(width: width, subviews: subviews)
         }
-        guard subviews.count == 3 else { return Placement(height: 0, subviews: []) }
+        guard subviews.count > 2 else { return Placement(height: 0, subviews: []) }
 
         let frame = NewsCardMetrics.frame
+        let padding = NewsCardMetrics.tabPadding
         let photoWidth = max(0, width - 2 * frame)
         // Whole points, so the card ends on a pixel
         let photo = CGRect(x: frame, y: frame, width: photoWidth, height: (photoWidth * photoHeightRatio).rounded())
-        // The header's text column: the card's width less the avatar's
-        let measure = ProposedViewSize(width: max(0, width - CardLayoutConstants.contentShift), height: nil)
-        let headline = subviews[2].dimensions(in: measure)
-        let headlineTop = photo.maxY - headline[.lastTextBaseline]
-        let tabTop = min(headlineTop + headline[.visibleTop] - NewsCardMetrics.tabPadding, photo.maxY - NewsCardMetrics.minTabHeight)
-        let tabTrailing = photo.minX + headline.width + NewsCardMetrics.tabPadding
+        let textLeading = NewsCardMetrics.textInset
+        // The text runs as far as the tab can reach and still leave the photo's bottom edge its two corners
+        let measure = ProposedViewSize(
+            width: max(0, photo.maxX - NewsCardMetrics.minPhotoEdge - padding - textLeading),
+            height: nil
+        )
+        // Copied out, as slicing the subviews by a range traps in SwiftUI (iOS 27.2 simulator)
+        let text = stack(Array(subviews).dropFirst(2), measure: measure)
+        let capTop = photo.maxY - padding - text.lastBaseline
+        let tabTop = min(capTop - padding, photo.maxY - NewsCardMetrics.minTabHeight)
+        let tabTrailing = textLeading + text.width + padding
         let height = photo.height + 2 * frame
         let reach = NewsCardMetrics.tabReach
-        return Placement(height: height, subviews: [
-            (photo.origin, ProposedViewSize(photo.size)),
-            (CGPoint(x: 0, y: tabTop - reach), ProposedViewSize(width: tabTrailing + reach, height: height - tabTop + reach)),
-            (CGPoint(x: photo.minX, y: headlineTop), measure)
-        ])
+        return Placement(
+            height: height,
+            subviews: [
+                (photo.origin, ProposedViewSize(photo.size)),
+                (CGPoint(x: 0, y: tabTop - reach), ProposedViewSize(width: tabTrailing + reach, height: height - tabTop + reach))
+            ] + text.tops.map { (CGPoint(x: textLeading, y: capTop + $0), measure) }
+        )
     }
 
     private func plainPlacement(width: CGFloat, subviews: Subviews) -> Placement {
-        guard let headline = subviews.first else { return Placement(height: 0, subviews: []) }
-        let padding = NewsCardMetrics.plainPadding
-        let measure = ProposedViewSize(width: max(0, width - 2 * padding), height: nil)
-        let dimensions = headline.dimensions(in: measure)
+        guard !subviews.isEmpty else { return Placement(height: 0, subviews: []) }
+        let inset = NewsCardMetrics.textInset
+        let measure = ProposedViewSize(width: max(0, width - 2 * inset), height: nil)
+        let text = stack(subviews, measure: measure)
+        // Whole points, so the card ends on a pixel and its last baseline lands where a photo card's does. The
+        // rounding goes above the capitals
+        let block = text.lastBaseline.rounded(.up)
         return Placement(
-            height: padding + dimensions[.visibleBottom] - dimensions[.visibleTop] + padding,
-            subviews: [(CGPoint(x: padding, y: padding - dimensions[.visibleTop]), measure)]
+            height: inset + block + inset,
+            subviews: text.tops.map { (CGPoint(x: inset, y: inset + block - text.lastBaseline + $0), measure) }
         )
+    }
+
+    /// Stacks the text from where each line visibly starts and ends: the domain's capitals `domainGap` under the
+    /// headline's last baseline
+    private func stack(_ text: some Sequence<LayoutSubview>, measure: ProposedViewSize) -> TextStack {
+        var stack = TextStack()
+        for (index, subview) in text.enumerated() {
+            let dimensions = subview.dimensions(in: measure)
+            let capTop = index == 0 ? 0 : stack.lastBaseline + NewsCardMetrics.domainGap
+            let top = capTop - dimensions[.visibleTop]
+            stack.tops.append(top)
+            stack.lastBaseline = top + dimensions[.lastTextBaseline]
+            stack.width = max(stack.width, dimensions.width)
+        }
+        return stack
     }
 }
 
 // MARK: - Tab
 
-/// The ink the headline sits on, drawn over the photo in a rect from the card's leading and bottom edges to
+/// The ink the text sits on, drawn over the photo in a rect from the card's leading and bottom edges to
 /// `NewsCardMetrics.tabReach` past the tab's top and trailing edges. The tab is square where it meets the frame and
 /// rounded where it turns into the photo, and the ink fills in outside the photo's own corners where the photo meets
 /// the tab. Every curve is a continuous corner
@@ -221,21 +283,21 @@ private struct CutoutTab: Shape {
 #Preview {
     VStack(spacing: 20) {
         NewsLinkCard(link: LoopLink(
-            url: "https://example.com/lead",
+            url: "https://sports.yahoo.com/nfl/article/steelers-ravens",
             title: "Steelers hold off the Ravens behind a late defensive stand",
             source: "Yahoo Sports",
             imageURL: "https://picsum.photos/seed/harbor/1200/800",
             isLead: true
         ))
         NewsLinkCard(link: LoopLink(
-            url: "https://example.com/compact",
+            url: "https://www.theverge.com/cameras/pocket-camera",
             title: "This little camera wants to be the one you take on every trip",
             source: "The Verge",
             imageURL: "https://picsum.photos/seed/geneva/1200/800",
             isLead: false
         ))
         NewsLinkCard(link: LoopLink(
-            url: "https://example.com/plain",
+            url: "https://profootballtalk.nbcsports.com/trade-deadline",
             title: "Five teams that should be buyers before the trade deadline",
             source: "ProFootballTalk",
             imageURL: nil,
