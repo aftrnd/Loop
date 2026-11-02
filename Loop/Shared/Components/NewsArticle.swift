@@ -1,9 +1,10 @@
 import SwiftUI
+import UIKit
 
-/// A news topic's post as a newspaper article: a rule, the topic and source as a kicker, the publisher's headline in
-/// serif, the post's text as the standfirst, the story's photo and a credit. The whole article opens the story.
+/// A news topic's post as a newspaper article: the publisher's headline in serif, the post's text as the standfirst,
+/// the story's photo and a credit. The header above it names the topic and the source. The whole article opens the
+/// story.
 struct NewsArticle: View {
-    let topicName: String
     /// The post's text, written by Loop from the story
     let standfirst: String
     let link: LoopLink
@@ -27,44 +28,39 @@ struct NewsArticle: View {
                 openURL(url)
             }
         } label: {
-            VStack(alignment: .leading, spacing: 10) {
-                Rectangle()
-                    .fill(Color.primary)
-                    .frame(height: 1)
-                Text("\(topicName.uppercased())  ·  \(link.source.uppercased())")
-                    .font(.caption.weight(.semibold))
-                    .tracking(1.2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+            // The post's part spacing between every part, from where one visibly ends to where the next starts. The
+            // article visibly starts at the headline's capitals and ends at the credit's baseline
+            BaselineSpacedVStack(spacing: CardLayoutConstants.partSpacing) {
                 Text(link.title)
                     .font(.system(size: headlineSize, weight: .bold))
                     .fontDesign(.serif)
                     .foregroundStyle(.primary)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .visibleTopAtCapHeight(of: Self.serif(size: headlineSize, weight: .bold))
                 Text(standfirst)
                     .font(.system(size: standfirstSize))
                     .fontDesign(.serif)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .visibleTopAtCapHeight(of: Self.serif(size: standfirstSize, weight: .regular))
                 if imageURL != nil {
                     photo
-                        .padding(.top, 4)
                 }
-                Text("Summarized by Loop from \(link.source) reporting")
+                Text("Summarized by Loop")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+                    .visibleTopAtCapHeight(of: .footnote)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
         }
         .buttonStyle(PressableButtonStyle(pressedScale: 0.98))
-        // The article visibly starts at its rule and ends with its credit's line
-        .alignmentGuide(.visibleTop) { $0[.top] }
-        .alignmentGuide(.visibleBottom) { $0[.bottom] }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(link.title). \(standfirst) Summarized by Loop from \(link.source) reporting")
+        .accessibilityLabel("\(link.title). \(standfirst) Summarized by Loop")
         .accessibilityAddTraits(.isLink)
     }
 
@@ -83,11 +79,17 @@ struct NewsArticle: View {
             }
             .clipShape(RoundedRectangle(cornerRadius: CardLayoutConstants.mediaCornerRadius, style: .continuous))
     }
+
+    /// New York at a size and weight, the face `.fontDesign(.serif)` sets a sized system font in, for its cap height
+    private static func serif(size: CGFloat, weight: UIFont.Weight) -> UIFont {
+        let font = UIFont.systemFont(ofSize: size, weight: weight)
+        guard let descriptor = font.fontDescriptor.withDesign(.serif) else { return font }
+        return UIFont(descriptor: descriptor, size: size)
+    }
 }
 
 #Preview {
     NewsArticle(
-        topicName: "Politics",
         standfirst: "The transit bill cleared the Senate with votes from both parties. It now goes to the House.",
         link: LoopLink(
             url: "https://example.com/story",

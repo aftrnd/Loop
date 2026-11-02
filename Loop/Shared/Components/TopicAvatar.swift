@@ -1,37 +1,33 @@
 import SwiftUI
 
-/// A topic account's avatar: the avatar squircle in the topic's color with its symbol, and a small star in the
-/// corner that marks its posts as written by AI.
+/// A topic account's avatar: the avatar squircle with the topic's symbol. A team wears its own colors, swapped in dark
+/// mode so its light color is the tile there; every other topic is drawn in ink.
 struct TopicAvatar: View {
     let topic: LoopTopic
     let size: CGFloat
 
-    /// The star's disc, sized for the feed's 56pt avatar and scaled with it
-    private var badgeSize: CGFloat {
-        size * 20 / 56
-    }
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
+        let colors = colors
         AvatarShape()
-            .fill(Color(hex: topic.color) ?? Color(.systemGray3))
+            .fill(colors.tile)
             .frame(width: size, height: size)
             .overlay {
                 Image(systemName: topic.symbol)
                     .font(.system(size: size * 3 / 7, weight: .semibold))
-                    .foregroundStyle(Color(hex: topic.ink) ?? .white)
-            }
-            .overlay(alignment: .bottomTrailing) {
-                Image(systemName: "sparkle")
-                    .font(.system(size: badgeSize / 2, weight: .bold))
-                    .foregroundStyle(Color(.systemBackground))
-                    .frame(width: badgeSize, height: badgeSize)
-                    .background(Circle().fill(Color.primary))
-                    // A ring of the page around the star, so it reads as its own mark over the squircle's corner
-                    .overlay(Circle().stroke(Color(.systemBackground), lineWidth: 2))
-                    .offset(x: badgeSize / 5, y: badgeSize / 5)
+                    .foregroundStyle(colors.symbol)
             }
             .accessibilityElement()
-            .accessibilityLabel("Topic account, written by AI")
+            .accessibilityLabel("Topic account")
+    }
+
+    /// The squircle's fill and the symbol's color
+    private var colors: (tile: Color, symbol: Color) {
+        if topic.isTeam, let color = Color(hex: topic.color), let ink = Color(hex: topic.ink) {
+            return colorScheme == .dark ? (ink, color) : (color, ink)
+        }
+        return (.primary, Color(.systemBackground))
     }
 }
 
@@ -50,8 +46,9 @@ private extension Color {
 
 #Preview {
     HStack(spacing: 20) {
-        TopicAvatar(topic: LoopTopic(id: "steelers", symbol: "football.fill", color: "#101820", ink: "#FFB612"), size: 56)
-        TopicAvatar(topic: LoopTopic(id: "politics", symbol: "building.columns.fill", color: "#283F85", ink: "#FFFFFF"), size: 56)
+        TopicAvatar(topic: LoopTopic(id: "steelers", symbol: "football.fill", color: "#101820", ink: "#FFB612", style: "team"), size: 56)
+        TopicAvatar(topic: LoopTopic(id: "nfl", symbol: "trophy.fill", color: "#013369", ink: "#FFFFFF", style: "team"), size: 56)
+        TopicAvatar(topic: LoopTopic(id: "politics", symbol: "building.columns.fill", color: "#283F85", ink: "#FFFFFF", layout: "article"), size: 56)
     }
     .padding()
 }

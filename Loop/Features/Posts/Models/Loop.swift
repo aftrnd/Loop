@@ -37,19 +37,25 @@ struct LoopMedia: Identifiable, Codable, Hashable {
 }
 
 /// The topic account a post comes from. Loop writes these posts from the news, so the account has no profile: its
-/// posts carry its name and look, a squircle in the topic's color with its symbol.
+/// posts carry its name and look, a squircle with its symbol, in a team's own colors and in ink for everything else.
 struct LoopTopic: Codable, Hashable {
     let id: String
     /// An SF Symbol name
     let symbol: String
-    /// The squircle's color and the symbol's, as `#RRGGBB`
+    /// A team's squircle color and its symbol's, as `#RRGGBB`
     let color: String
     let ink: String
     /// "article" for news topics, whose posts read as a newspaper article; nil for the photo cards
     var layout: String? = nil
-    
+    /// "team" for a team, whose squircle wears its colors; nil for every other topic, drawn in ink
+    var style: String? = nil
+
     var isArticle: Bool {
         layout == "article"
+    }
+
+    var isTeam: Bool {
+        style == "team"
     }
 }
 
@@ -62,7 +68,7 @@ struct LoopLink: Codable, Hashable {
     let source: String
     /// The story's own preview image, as link previews show it
     let imageURL: String?
-    /// A big story, shown large with the headline over its photo
+    /// A big story, shown with a taller photo
     let isLead: Bool
 }
 

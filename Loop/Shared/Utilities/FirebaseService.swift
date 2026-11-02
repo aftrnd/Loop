@@ -1092,7 +1092,14 @@ class FirebaseService {
               let ink = data["ink"] as? String else {
             return nil
         }
-        return LoopTopic(id: id, symbol: symbol, color: color, ink: ink, layout: data["layout"] as? String)
+        return LoopTopic(
+            id: id,
+            symbol: symbol,
+            color: color,
+            ink: ink,
+            layout: data["layout"] as? String,
+            style: data["style"] as? String
+        )
     }
     
     private static func parseLink(_ data: [String: Any]?) -> LoopLink? {

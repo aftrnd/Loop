@@ -140,6 +140,7 @@ struct PostCard: View {
                 username: loop.authorUsername,
                 badgeType: loop.authorBadgeType,
                 topic: loop.topic,
+                source: loop.link?.source,
                 timestamp: loop.timeAgoString,
                 // Topic accounts have no profile to open
                 onAvatarTap: loop.isTopicPost ? nil : onAvatarTap,
@@ -151,7 +152,7 @@ struct PostCard: View {
             Group {
                 if let link = loop.link, loop.topic?.isArticle == true {
                     // News topics read as a newspaper article, the post's text as its standfirst
-                    NewsArticle(topicName: loop.displayAuthorName, standfirst: loop.content, link: link)
+                    NewsArticle(standfirst: loop.content, link: link)
                 } else {
                     PostContent(
                         text: loop.content,
