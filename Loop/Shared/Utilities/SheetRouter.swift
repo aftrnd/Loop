@@ -35,12 +35,13 @@ final class SheetRouter {
 
     /// Shows a profile. If it is already cached (feed authors and chat participants are, and your own once it has
     /// been shown), its collapsed card height is worked out now, so the sheet opens at that height rather than
-    /// moving after it appears.
+    /// moving after it appears, and its wallpaper and avatar start loading while the sheet slides in.
     func showProfile(userId: String?) {
         var preview: ProfilePreview?
         let shownUserId = userId ?? Auth.auth().currentUser?.uid
         if let shownUserId, let profileLayout, let user = FirebaseService.shared.cachedUser(withId: shownUserId) {
             preview = ProfilePreview(user: user, collapsedHeight: ProfileView.collapsedCardHeight(for: user, in: profileLayout))
+            ProfileView.prefetchImages(for: user, displayScale: profileLayout.displayScale)
         }
         sheet = .profile(userId: userId, preview: preview)
     }

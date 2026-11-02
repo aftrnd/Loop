@@ -91,6 +91,8 @@ struct ProfileView: View {
     private static let headerCoordinateSpace = "profileHeader"
     /// How the profile follows the sheet's height as it opens and closes
     private static let expansionAnimation = Animation.easeInOut(duration: 0.2)
+    /// How an avatar or wallpaper that has to load fades in, as quickly as the profile follows the sheet
+    fileprivate static let imageFadeIn = Animation.easeOut(duration: 0.2)
     /// The card's height while the profile loads: about a card with a two-line bio (362.33pt on iPhone 18 Pro), so
     /// a typical profile barely moves once it appears
     private static let loadingCardHeight: CGFloat = 362
@@ -449,20 +451,16 @@ struct ProfileView: View {
     private var avatarView: some View {
         ZStack {
             if let avatarURL = currentUser?.avatarURL, let url = URL(string: avatarURL) {
-                // Load from Firebase Storage URL with caching
-                CachedAsyncImage(url: url) { image in
-                    image
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(width: ProfileGeometry.avatarSize, height: ProfileGeometry.avatarSize)
-                        .clipShape(AvatarShape())
+                CachedAsyncImage(url: url, targetSize: ProfileGeometry.avatarFrame, fadeIn: Self.imageFadeIn) { image in
+                    avatarImage(image)
                 } placeholder: {
-                    ZStack {
+                    // The feed's smaller copy stands in while this size loads, so the sheet doesn't slide in empty
+                    if let standIn = ImagePipeline.shared.memoryCache.anyImage(for: url) {
+                        avatarImage(Image(uiImage: standIn))
+                    } else {
                         AvatarShape()
                             .fill(Color(.systemGray5))
                             .frame(width: ProfileGeometry.avatarSize, height: ProfileGeometry.avatarSize)
-                        
-                        ProgressView()
                     }
                 }
             } else {
@@ -482,6 +480,14 @@ struct ProfileView: View {
         }
         .frame(width: ProfileGeometry.avatarSize, height: ProfileGeometry.avatarSize)
         .accessibilityHidden(true)
+    }
+    
+    private func avatarImage(_ image: Image) -> some View {
+        image
+            .resizable()
+            .aspectRatio(contentMode: .fill)
+            .frame(width: ProfileGeometry.avatarSize, height: ProfileGeometry.avatarSize)
+            .clipShape(AvatarShape())
     }
     
     // MARK: - Helper Properties
@@ -750,6 +756,7 @@ private enum ProfileGeometry {
     static let nameToHandle: CGFloat = 12
     /// Twice the feed's 56pt avatar, as the name beside it is twice the feed's 17pt
     static let avatarSize: CGFloat = 2 * CardLayoutConstants.avatarSize
+    static let avatarFrame = CGSize(width: avatarSize, height: avatarSize)
     /// At full height the close button is 44pt tall and 16pt below the sheet's top edge (iOS 27.2), and the avatar
     /// below it on the left starts a part spacing lower. The card keeps the same top, so the avatar, name and handle
     /// don't move as the sheet expands
@@ -1131,12 +1138,17 @@ private struct ProfileBackdrop: View {
         Color(.systemGray5)
             .overlay {
                 if let bannerURL, let url = URL(string: bannerURL) {
-                    CachedAsyncImage(url: url) { image in
+                    CachedAsyncImage(url: url, fadeIn: ProfileView.imageFadeIn) { image in
                         image
                             .resizable()
                             .aspectRatio(contentMode: .fill)
                     } placeholder: {
-                        Color.clear
+                        // Any size already loaded stands in while this one loads
+                        if let standIn = ImagePipeline.shared.memoryCache.anyImage(for: url) {
+                            Image(uiImage: standIn)
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                        }
                     }
                 }
             }
@@ -1221,6 +1233,25 @@ extension ProfileView {
         
         // The avatar's distance from the top, and the bottom padding that matches the side inset
         return ProfileGeometry.avatarTop + headerHeight + ProfileGeometry.part - context.bottomInset
+    }
+}
+
+extension ProfileView {
+    /// Starts loading a profile's wallpaper and avatar at the sizes the sheet draws them, so they are likely in memory
+    /// by the time it has slid in rather than popping in after. The sheet's own loads join these.
+    static func prefetchImages(for user: User, displayScale: CGFloat) {
+        var requests: [ImageRequest] = []
+        if let bannerURL = user.bannerURL, let url = URL(string: bannerURL) {
+            requests.append(ImageRequest(url: url, pointSize: nil, scale: displayScale))
+        }
+        if let avatarURL = user.avatarURL, let url = URL(string: avatarURL) {
+            requests.append(ImageRequest(url: url, pointSize: ProfileGeometry.avatarFrame, scale: displayScale))
+        }
+        for request in requests {
+            Task {
+                _ = await ImagePipeline.shared.image(for: request)
+            }
+        }
     }
 }
 
