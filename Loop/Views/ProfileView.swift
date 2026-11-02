@@ -889,16 +889,27 @@ private struct ProfileIdentityRow<Avatar: View>: View {
 }
 
 /// The name, and the handle line under it, beside the avatar: a post header's two lines. White, on the wallpaper.
+/// Both start their ink, not their frames, a part spacing from the avatar: at 34pt the name's first letter sits
+/// visibly inside its frame (2.67pt for an M), which set it further from the avatar than the handle under it.
 private struct ProfileNameBlock: View {
     let user: User
     
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    
+    private var name: String {
+        user.displayName ?? "Display Name"
+    }
+    
     var body: some View {
+        let traits = UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(dynamicTypeSize))
+        let nameFont = UIFont.roundedSystemFont(.largeTitle, weight: .bold, compatibleWith: traits)
         BaselineSpacedVStack(spacing: ProfileGeometry.nameToHandle) {
-            Text(user.displayName ?? "Display Name")
+            Text(name)
                 .font(.largeTitle)
                 .fontWeight(.bold)
                 .lineLimit(2)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .offset(x: -nameFont.leadingSideBearing(of: name))
                 .visibleTopAtCapHeight(of: .largeTitle)
                 .accessibilityAddTraits(.isHeader)
             
@@ -913,6 +924,8 @@ private struct ProfileNameBlock: View {
 private struct ProfileHandleLine: View {
     let user: User
     
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    
     private var handleAndLocation: String {
         let handle = "@\(user.username ?? "username")"
         guard let location = user.location, !location.isEmpty else { return handle }
@@ -920,12 +933,37 @@ private struct ProfileHandleLine: View {
     }
     
     var body: some View {
+        let traits = UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(dynamicTypeSize))
+        let font = UIFont.roundedSystemFont(.callout, weight: .regular, compatibleWith: traits)
         Text(handleAndLocation)
             .font(.callout)
             .foregroundStyle(.white.opacity(0.85))
             .lineLimit(1)
+            // Its ink starts where the name's does
+            .offset(x: -font.leadingSideBearing(of: handleAndLocation))
             .visibleTopAtCapHeight(of: .callout)
             .accessibilityLabel(handleAndLocation.replacingOccurrences(of: " \u{00B7} ", with: ", "))
+    }
+}
+
+private extension UIFont {
+    /// The app's rounded system face at a text style's size, as SwiftUI draws that style under the root's
+    /// `.fontDesign(.rounded)`
+    static func roundedSystemFont(
+        _ style: UIFont.TextStyle,
+        weight: UIFont.Weight,
+        compatibleWith traits: UITraitCollection
+    ) -> UIFont {
+        let size = UIFont.preferredFont(forTextStyle: style, compatibleWith: traits).pointSize
+        let font = UIFont.systemFont(ofSize: size, weight: weight)
+        return font.fontDescriptor.withDesign(.rounded).map { UIFont(descriptor: $0, size: size) } ?? font
+    }
+    
+    /// How far a line of `text` starts its ink inside its leading edge: its first letter's side bearing
+    func leadingSideBearing(of text: String) -> CGFloat {
+        guard let first = text.first else { return 0 }
+        let line = CTLineCreateWithAttributedString(NSAttributedString(string: String(first), attributes: [.font: self]))
+        return CTLineGetBoundsWithOptions(line, .useGlyphPathBounds).minX
     }
 }
 
