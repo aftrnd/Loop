@@ -769,9 +769,8 @@ private enum ProfileGeometry {
     /// Follow and Message on the card: 20pt in from the sheet's sides and bottom, capsules this tall are concentric
     /// with its 54pt corners (iPhone 18 Pro)
     static let cardActionHeight: CGFloat = 68
-    /// At full height they no longer sit in the sheet's corners, so they take the height of the toolbar's buttons
-    /// above them, which is also the minimum touch target
-    static let fullHeightActionHeight: CGFloat = 44
+    /// At full height, twice the 32pt track of the segmented control below them (measured on iOS 27.2)
+    static let fullHeightActionHeight: CGFloat = 64
     
     /// The hero's height when the name fits on one line: the name's capitals, the handle's capitals below them, and
     /// a part spacing below the handle
