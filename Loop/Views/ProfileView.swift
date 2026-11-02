@@ -1100,9 +1100,8 @@ extension EnvironmentValues {
 
 // MARK: - Wallpaper
 
-/// The wallpaper behind the header. It is laid out at the card's height in every detent, so it never re-crops as
-/// the sheet opens, and darkened toward its foot so white type reads. With no wallpaper, the dark gray it shows
-/// while loading stands in. At full height only the hero keeps it: the rest fades out with the sheet's expansion.
+/// The wallpaper behind the header, as it is, without darkening. It is laid out at the card's height in every detent,
+/// so it never re-crops as the sheet opens. With no wallpaper, the dark gray it shows while loading stands in. At full height only the hero keeps it: the rest fades out with the sheet's expansion.
 private struct ProfileBackdrop: View {
     let bannerURL: String?
     /// The card's header height, or 0 before it is measured, when the wallpaper fills the header
@@ -1125,9 +1124,6 @@ private struct ProfileBackdrop: View {
                     }
                 }
             }
-            .overlay {
-                ProfileWallpaperShade(heroHeight: heroHeight)
-            }
             .frame(height: cardHeight > 0 ? cardHeight : nil)
             .clipped()
             .mask(alignment: .top) {
@@ -1142,36 +1138,6 @@ private struct ProfileBackdrop: View {
             .environment(\.colorScheme, .dark)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
-    }
-}
-
-/// The poster layout's darkening, its stops pinned to the parts they sat behind there, so the name and handle get
-/// what they had: 0.06 down to the avatar's top, 0.41 at the name's capitals and 0.53 at the handle's baseline. The
-/// bio, counts and labels are smaller type than the poster had on the photo, so two parts below the handle it
-/// reaches the poster's darkest, 0.66, and holds to the foot.
-private struct ProfileWallpaperShade: View {
-    let heroHeight: CGFloat
-    
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    
-    var body: some View {
-        GeometryReader { proxy in
-            let height = max(proxy.size.height, 1)
-            let handleBaseline = heroHeight - ProfileGeometry.part
-            let stops: [(y: CGFloat, opacity: Double)] = [
-                (0, 0.06),
-                (ProfileGeometry.avatarGap, 0.06),
-                (ProfileGeometry.nameTop(for: dynamicTypeSize), 0.41),
-                (handleBaseline, 0.53),
-                (handleBaseline + ProfileGeometry.part * 2, 0.66),
-                (height, 0.66)
-            ]
-            LinearGradient(
-                stops: stops.map { .init(color: .black.opacity($0.opacity), location: min($0.y / height, 1)) },
-                startPoint: .top,
-                endPoint: .bottom
-            )
-        }
     }
 }
 
