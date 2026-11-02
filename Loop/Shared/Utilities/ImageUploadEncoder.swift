@@ -100,7 +100,9 @@ nonisolated enum ImageUploadEncoder {
         let scale = min(maxSize.width / image.size.width, maxSize.height / image.size.height)
         guard scale < 1 else { return image }
 
-        let newSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+        // Whole pixels: at a fractional size the bitmap rounded up and its last column and row were left part
+        // transparent, which the JPEG filled with white, a light line down the image's right edge and along its foot
+        let newSize = CGSize(width: (image.size.width * scale).rounded(), height: (image.size.height * scale).rounded())
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
         format.opaque = false
