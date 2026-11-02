@@ -14,7 +14,7 @@ struct CachedAsyncImage<Content: View, Placeholder: View>: View {
 
     /// - Parameters:
     ///   - targetSize: The frame the image fills, in points. Pass nil to keep full resolution.
-    ///   - trimsEdges: Drops the image's outermost pixel on every side, where publishers' images often carry a
+    ///   - trimsEdges: Drops the image's outermost pixel on every side, where some publishers' images carry a
     ///     light or dark line.
     init(
         url: URL?,

@@ -16,7 +16,7 @@ nonisolated struct ImageRequest: Hashable, Sendable {
     /// - Parameters:
     ///   - pointSize: The frame the image fills, or nil to keep full resolution.
     ///   - scale: The display scale the frame is rendered at.
-    ///   - trimsEdges: Drops the outermost pixel on every side, where publishers' images often carry a light or
+    ///   - trimsEdges: Drops the outermost pixel on every side, where some publishers' images carry a light or
     ///     dark line.
     init(url: URL, pointSize: CGSize?, scale: CGFloat, trimsEdges: Bool = false) {
         self.url = url
@@ -131,7 +131,7 @@ actor ImagePipeline {
         return request.trimsEdges ? trimmingEdges(of: cgImage) : UIImage(cgImage: cgImage)
     }
 
-    /// The image less its outermost pixel on every side. Publishers' preview images often come from their image
+    /// The image less its outermost pixel on every side. Some publishers' preview images come from their image
     /// services with a light or dark line one pixel wide down their edges (measured 2026-11-01 on BBC News and The
     /// Verge images; the BBC's unbranded version of the same photo has none). A downsampled pixel covers at least one
     /// of the original's, so one pixel is enough at any size.
