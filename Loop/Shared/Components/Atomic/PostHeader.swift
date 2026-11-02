@@ -222,8 +222,9 @@ struct PostHeader: View {
 
 // MARK: - AI Mark
 
-/// Marks what Loop wrote with AI: sparkles.2 in a square 1.3 times the callout's cap height, centered on the capitals
-/// of the callout text beside it
+/// Marks what Loop wrote with AI: sparkles.2 cut out of a small plate with the avatar's corners, in the secondary color
+/// of the callout text beside it. The plate is 1.3 times the callout's cap height and centered on its capitals, so it
+/// overshoots them by 0.15 cap heights above and below; the symbol fills its middle four sevenths
 private struct AIMark: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
@@ -231,11 +232,18 @@ private struct AIMark: View {
         let traits = UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(dynamicTypeSize))
         let capHeight = UIFont.preferredFont(forTextStyle: .callout, compatibleWith: traits).capHeight
         let side = capHeight * 1.3
-        Image(systemName: "sparkles.2")
-            .resizable()
-            .scaledToFit()
+        AvatarShape()
+            .fill(Color.secondary)
+            .overlay {
+                Image(systemName: "sparkles.2")
+                    .resizable()
+                    .scaledToFit()
+                    .padding(side * 3 / 14)
+                    .blendMode(.destinationOut)
+            }
+            // The symbol shows the page through the plate
+            .compositingGroup()
             .frame(width: side, height: side)
-            .foregroundStyle(.secondary)
             // Its middle sits half a cap height above the baseline
             .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + capHeight / 2 }
     }
