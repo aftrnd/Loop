@@ -55,7 +55,6 @@ enum CardLayoutConstants {
     static let partSpacing: CGFloat = 16
 
     // MARK: - Action Buttons
-    static let actionButtonHeight: CGFloat = 31 // Standard hit target height
     static let actionButtonIconSize: CGFloat = 18
     static let actionButtonSpacing: CGFloat = 0 // No spacing between button frames (they have internal spacing)
     static let actionButtonWidth: CGFloat = 50 // Standard width for each action button (with counts)

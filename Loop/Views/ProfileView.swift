@@ -1380,6 +1380,8 @@ private struct ProfileFeedSection: View {
                                 PostDivider()
                             }
                         }
+                        // Like bursts fly out of the post and land on its divider
+                        .likeBurstLayer()
                     }
                 }
             }

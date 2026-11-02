@@ -158,6 +158,8 @@ struct HomeView: View {
                     PostDivider()
                 }
             }
+            // Like bursts fly out of the post and land on its divider
+            .likeBurstLayer()
             .listRowSeparator(.hidden)
             .listRowBackground(Color.clear)
             .listRowInsets(EdgeInsets(top: 0, leading: 10, bottom: 0, trailing: 10))

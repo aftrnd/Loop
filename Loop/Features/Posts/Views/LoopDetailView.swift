@@ -118,12 +118,16 @@ struct LoopDetailView: View {
             // Replies list - threaded structure with collapsible nested replies
             LazyVStack(spacing: 0) {
                 ForEach(Array(viewModel.threadedReplies.enumerated()), id: \.element.id) { index, threadedReply in
-                    threadView(threadedReply, index: index)
+                    VStack(spacing: 0) {
+                        threadView(threadedReply, index: index)
 
-                    // Divider after each top-level reply
-                    if index < viewModel.threadedReplies.count - 1 {
-                        PostDivider()
+                        // Divider after each top-level reply
+                        if index < viewModel.threadedReplies.count - 1 {
+                            PostDivider()
+                        }
                     }
+                    // Like bursts land on the divider under the thread
+                    .likeBurstLayer()
                 }
             }
             .padding(.bottom, 20)
@@ -301,11 +305,15 @@ struct LoopDetailView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 0) {
-                    mainPostView
-                    
-                    // Divider above replies section
-                    PostDivider()
-                        .padding(.top, 5)
+                    VStack(spacing: 0) {
+                        mainPostView
+
+                        // Divider above replies section
+                        PostDivider()
+                            .padding(.top, 5)
+                    }
+                    // Like bursts land on the divider under the post
+                    .likeBurstLayer()
                     
                     repliesContentView
                 }

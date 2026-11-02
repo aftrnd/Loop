@@ -7,6 +7,8 @@ struct PostDivider: View {
         Rectangle()
             .fill(CardLayoutConstants.dividerColor)
             .frame(height: CardLayoutConstants.dividerHeight)
+            // The hearts of a like burst land on it
+            .likeBurstShelf()
             .padding(.leading, CardLayoutConstants.horizontalPadding)
             .padding(.trailing, CardLayoutConstants.horizontalPadding)
     }
