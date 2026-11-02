@@ -71,7 +71,7 @@ struct NewsArticle: View {
             .frame(height: Self.photoHeight)
             .frame(maxWidth: .infinity)
             .overlay {
-                CachedAsyncImage(url: imageURL) { image in
+                CachedAsyncImage(url: imageURL, trimsEdges: true) { image in
                     image
                         .resizable()
                         .aspectRatio(contentMode: .fill)

@@ -98,7 +98,7 @@ struct NewsLinkCard: View {
     private func photo(_ url: URL) -> some View {
         Color.clear
             .overlay {
-                CachedAsyncImage(url: url) { image in
+                CachedAsyncImage(url: url, trimsEdges: true) { image in
                     image
                         .resizable()
                         .aspectRatio(contentMode: .fill)

@@ -5,21 +5,27 @@ import SwiftUI
 struct CachedAsyncImage<Content: View, Placeholder: View>: View {
     private let url: URL?
     private let targetSize: CGSize?
+    private let trimsEdges: Bool
     private let content: (Image) -> Content
     private let placeholder: () -> Placeholder
 
     @Environment(\.displayScale) private var displayScale
     @State private var loaded: (request: ImageRequest, image: UIImage)?
 
-    /// - Parameter targetSize: The frame the image fills, in points. Pass nil to keep full resolution.
+    /// - Parameters:
+    ///   - targetSize: The frame the image fills, in points. Pass nil to keep full resolution.
+    ///   - trimsEdges: Drops the image's outermost pixel on every side, where publishers' images often carry a
+    ///     light or dark line.
     init(
         url: URL?,
         targetSize: CGSize? = nil,
+        trimsEdges: Bool = false,
         @ViewBuilder content: @escaping (Image) -> Content,
         @ViewBuilder placeholder: @escaping () -> Placeholder
     ) {
         self.url = url
         self.targetSize = targetSize
+        self.trimsEdges = trimsEdges
         self.content = content
         self.placeholder = placeholder
     }
@@ -28,7 +34,7 @@ struct CachedAsyncImage<Content: View, Placeholder: View>: View {
         guard let url else { return nil }
         // A zero-sized frame hasn't been laid out yet; wait for the real size rather than loading full resolution.
         if let targetSize, targetSize.width <= 0 || targetSize.height <= 0 { return nil }
-        return ImageRequest(url: url, pointSize: targetSize, scale: displayScale)
+        return ImageRequest(url: url, pointSize: targetSize, scale: displayScale, trimsEdges: trimsEdges)
     }
 
     var body: some View {
