@@ -735,7 +735,8 @@ private enum ProfileGeometry {
     static let margin: CGFloat = CardLayoutConstants.horizontalPadding * 2
     /// The space between the profile's parts, measured where they visibly end and start
     static let part: CGFloat = 20
-    /// The name and the handle belong together: 12pt from the name's baseline to the handle's capitals
+    /// The name, the handle and the year belong together: 12pt from the name's baseline to the handle's capitals, and
+    /// from the handle's baseline to the year plate
     static let nameToHandle: CGFloat = 12
     /// Twice the feed's 56pt avatar, as the name beside it is twice the feed's 17pt
     static let avatarSize: CGFloat = 2 * CardLayoutConstants.avatarSize
@@ -842,8 +843,8 @@ private struct ProfileActionLabel: View {
 
 // MARK: - Profile Text
 
-/// The avatar on the left and the name and handle beside it, centered on the avatar by where they visibly start and
-/// end (the name's capitals and the handle's baseline). A view of its own so the card's height can be worked out
+/// The avatar on the left and the name, handle and year beside it, centered on the avatar by where they visibly start
+/// and end (the name's capitals and the year plate's foot). A view of its own so the card's height can be worked out
 /// with the same layout before the sheet opens.
 private struct ProfileIdentityRow<Avatar: View>: View {
     let user: User
@@ -857,14 +858,14 @@ private struct ProfileIdentityRow<Avatar: View>: View {
             ProfileNameBlock(user: user)
                 .alignmentGuide(VerticalAlignment.center) { ($0[.visibleTop] + $0[.visibleBottom]) / 2 }
         }
-        // It visibly spans the avatar, which is taller than the name and handle; the text inside doesn't change that
+        // It visibly spans the avatar, which is taller than the lines beside it; the text inside doesn't change that
         .alignmentGuide(.visibleTop) { $0[.top] }
         .alignmentGuide(.visibleBottom) { $0[.bottom] }
     }
 }
 
-/// The name with the year someone joined at the end of its line, and the handle line under it, beside the avatar:
-/// a post header's two lines, where the post's time sits at the end of the name's line. White, on the wallpaper.
+/// The name, the handle line under it, and the year someone joined under that, beside the avatar: a post header's two
+/// lines, and a third for the year. White, on the wallpaper.
 private struct ProfileNameBlock: View {
     let user: User
     
@@ -878,24 +879,24 @@ private struct ProfileNameBlock: View {
         let traits = UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(dynamicTypeSize))
         let nameCapHeight = UIFont.preferredFont(forTextStyle: .largeTitle, compatibleWith: traits).capHeight
         BaselineSpacedVStack(spacing: ProfileGeometry.nameToHandle) {
-            HStack(alignment: .firstTextBaseline, spacing: ProfileGeometry.nameToHandle) {
-                Text(user.displayName ?? "Display Name")
-                    .font(.largeTitle)
-                    .fontWeight(.bold)
-                    .lineLimit(2)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .accessibilityAddTraits(.isHeader)
-                
-                // As tall as the name's capitals, from their top to its baseline
-                ProfileYearPlate(year: joinedYear, side: nameCapHeight)
-                    .alignmentGuide(.firstTextBaseline) { $0[.bottom] }
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("Joined \(joinedYear)")
-            }
-            .visibleTopAtCapHeight(of: .largeTitle)
+            Text(user.displayName ?? "Display Name")
+                .font(.largeTitle)
+                .fontWeight(.bold)
+                .lineLimit(2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .visibleTopAtCapHeight(of: .largeTitle)
+                .accessibilityAddTraits(.isHeader)
             
             ProfileHandleLine(user: user)
                 .frame(maxWidth: .infinity, alignment: .leading)
+            
+            // As tall as the name's capitals; it visibly starts and ends at its edges, not at its digits
+            ProfileYearPlate(year: joinedYear, side: nameCapHeight)
+                .alignmentGuide(.visibleTop) { $0[.top] }
+                .alignmentGuide(.visibleBottom) { $0[.bottom] }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Joined \(joinedYear)")
         }
         .foregroundStyle(.white)
     }
