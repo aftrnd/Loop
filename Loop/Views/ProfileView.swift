@@ -91,9 +91,9 @@ struct ProfileView: View {
     private static let headerCoordinateSpace = "profileHeader"
     /// How the profile follows the sheet's height as it opens and closes
     private static let expansionAnimation = Animation.easeInOut(duration: 0.2)
-    /// The card's height while the profile loads: about a card with a two-line bio (479.67pt on iPhone 18 Pro), so
-    /// a typical profile barely moves once it appears
-    private static let loadingCardHeight: CGFloat = 480
+    /// The card's height while the profile loads: about a card with a two-line bio (401pt on iPhone 18 Pro), so a
+    /// typical profile barely moves once it appears
+    private static let loadingCardHeight: CGFloat = 401
     /// Measured on iOS 27.2 at 3x, light and dark: the segmented control lays out 31pt tall and draws its 32pt
     /// track from its top, so the track visibly ends 1pt below its frame
     private static let segmentedTrackOverhang: CGFloat = 1
@@ -389,14 +389,18 @@ struct ProfileView: View {
         .coordinateSpace(.named(Self.headerCoordinateSpace))
     }
     
-    /// The avatar centered under the close button's row, and the name and handle as far below it as it is below the
-    /// sheet's top edge. On the wallpaper in every detent.
+    /// The avatar in its outline, centered between the sheet's top edge and the name, and the handle under the
+    /// name. On the wallpaper in every detent.
     private func profileHero(for user: User) -> some View {
         BaselineSpacedVStack(spacing: ProfileGeometry.part) {
-            BaselineSpacedVStack(spacing: ProfileGeometry.avatarTop) {
+            BaselineSpacedVStack(spacing: ProfileGeometry.avatarToName(for: dynamicTypeSize)) {
                 avatarView
+                    .padding(ProfileGeometry.avatarOutline)
+                    .background {
+                        ProfileAvatarOutline()
+                    }
                     .frame(maxWidth: .infinity)
-                    // The initials are text, but the avatar visibly ends at its edge
+                    // The initials are text, but the avatar visibly ends at its outline's edge
                     .alignmentGuide(.visibleBottom) { $0[.bottom] }
                 
                 ProfileNameBlock(user: user)
@@ -412,7 +416,7 @@ struct ProfileView: View {
                     heroLayout = layout
                 }
         }
-        .padding(.top, ProfileGeometry.avatarTop)
+        .padding(.top, ProfileGeometry.avatarGap)
         // The wallpaper always renders dark, like a contact poster
         .environment(\.colorScheme, .dark)
     }
@@ -760,12 +764,32 @@ private enum ProfileGeometry {
     /// The name and the handle belong together: 12pt from the name's baseline to the handle's capitals
     static let nameToHandle: CGFloat = 12
     static let avatarSize: CGFloat = 116
-    /// At full height the close button is 44pt tall and 16pt below the sheet's top edge (iOS 27.2), so the avatar
-    /// starts a part spacing below it. The card keeps the same top, so the avatar, name and handle don't move as
-    /// the sheet expands, and the name's capitals start as far below the avatar
-    static let avatarTop: CGFloat = 16 + 44 + part
+    /// The outline's width around the avatar
+    static let avatarOutline: CGFloat = 4
+    /// The avatar with its outline, which is where the space around it is measured from
+    static let avatarFrame: CGFloat = avatarSize + avatarOutline * 2
+    /// The outline's corners, concentric with the avatar's
+    static var avatarOutlineShape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: avatarSize * AvatarShape.cornerRatio + avatarOutline, style: .continuous)
+    }
+    /// The avatar is centered between the sheet's top edge and the name, this far from each. Below it the space runs
+    /// to the name's x-height, not its capitals: most of a name is lowercase, and measured to the capitals the space
+    /// below looked about 7pt larger than the space above. It clears the full-height close button to its side, so it
+    /// can start above the button's bottom edge. The card keeps the same top, so the avatar, name and handle don't
+    /// move as the sheet expands
+    static let avatarGap: CGFloat = 40
+    
+    /// From the avatar's outline to the name's capitals: the avatar gap less the capitals' rise above the x-height
+    static func avatarToName(for dynamicTypeSize: DynamicTypeSize) -> CGFloat {
+        let traits = UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(dynamicTypeSize))
+        let name = UIFont.preferredFont(forTextStyle: .largeTitle, compatibleWith: traits)
+        return avatarGap - (name.capHeight - name.xHeight)
+    }
+    
     /// Where the name's capitals start, from the header's top
-    static let nameTop: CGFloat = avatarTop + avatarSize + avatarTop
+    static func nameTop(for dynamicTypeSize: DynamicTypeSize) -> CGFloat {
+        avatarGap + avatarFrame + avatarToName(for: dynamicTypeSize)
+    }
     /// Follow and Message on the card: 20pt in from the sheet's sides and bottom, capsules this tall are concentric
     /// with its 54pt corners (iPhone 18 Pro)
     static let cardActionHeight: CGFloat = 68
@@ -778,7 +802,15 @@ private enum ProfileGeometry {
         let traits = UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(dynamicTypeSize))
         let name = UIFont.preferredFont(forTextStyle: .largeTitle, compatibleWith: traits).capHeight
         let handle = UIFont.preferredFont(forTextStyle: .subheadline, compatibleWith: traits).capHeight
-        return nameTop + name + nameToHandle + handle + part
+        return nameTop(for: dynamicTypeSize) + name + nameToHandle + handle + part
+    }
+}
+
+/// The outline around the avatar, in the name's white, so the avatar's edge reads on any wallpaper.
+private struct ProfileAvatarOutline: View {
+    var body: some View {
+        ProfileGeometry.avatarOutlineShape
+            .fill(.white)
     }
 }
 
@@ -1066,14 +1098,16 @@ private struct ProfileBackdrop: View {
 private struct ProfileWallpaperShade: View {
     let heroHeight: CGFloat
     
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    
     var body: some View {
         GeometryReader { proxy in
             let height = max(proxy.size.height, 1)
             let handleBaseline = heroHeight - ProfileGeometry.part
             let stops: [(y: CGFloat, opacity: Double)] = [
                 (0, 0.06),
-                (ProfileGeometry.avatarTop, 0.06),
-                (ProfileGeometry.nameTop, 0.41),
+                (ProfileGeometry.avatarGap, 0.06),
+                (ProfileGeometry.nameTop(for: dynamicTypeSize), 0.41),
                 (handleBaseline, 0.53),
                 (handleBaseline + ProfileGeometry.part * 2, 0.66),
                 (height, 0.66)
@@ -1134,9 +1168,9 @@ extension ProfileView {
     /// as a visible jump.
     static func collapsedCardHeight(for user: User, in context: ProfileLayoutContext) -> CGFloat {
         let contentWidth = context.width - ProfileGeometry.margin * 2
-        let header = BaselineSpacedVStack(spacing: ProfileGeometry.avatarTop) {
+        let header = BaselineSpacedVStack(spacing: ProfileGeometry.avatarToName(for: context.dynamicTypeSize)) {
             Color.clear
-                .frame(height: ProfileGeometry.avatarSize)
+                .frame(height: ProfileGeometry.avatarFrame)
             BaselineSpacedVStack(spacing: ProfileGeometry.part) {
                 ProfileNameBlock(user: user)
                 ProfileDetails(user: user)
@@ -1154,7 +1188,7 @@ extension ProfileView {
             .height
         
         // The avatar's distance from the top, and the bottom padding that matches the side inset
-        return ProfileGeometry.avatarTop + headerHeight + ProfileGeometry.part - context.bottomInset
+        return ProfileGeometry.avatarGap + headerHeight + ProfileGeometry.part - context.bottomInset
     }
 }
 
