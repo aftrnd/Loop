@@ -4,6 +4,8 @@ import SwiftUI
 /// Built with atomic components (PostHeader, PostContent, PostActions) + composite (PostCard)
 struct HomeView: View {
     @State private var viewModel = HomeFeedViewModel()
+    /// Pulls to refresh so far; each one rolls the glass across the wordmark
+    @State private var refreshes = 0
     @Environment(SheetRouter.self) private var sheetRouter
     
     // Debug settings
@@ -31,7 +33,7 @@ struct HomeView: View {
                     }
                     
                     ToolbarItem(placement: .principal) {
-                        LoopWordmark()
+                        LoopWordmark(glassSweeps: refreshes)
                     }
                     
                     if showDebugOverlayButton {
@@ -81,6 +83,7 @@ struct HomeView: View {
     private var feedContent: some View {
         FeedListView(
             onRefresh: {
+                refreshes += 1
                 await viewModel.refreshFeed()
             }
         ) {
