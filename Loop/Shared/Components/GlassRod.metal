@@ -22,6 +22,10 @@ static float rodShift(float u, float index) {
 /// A round glass rod, upright, rolled once across a layer of single-color ink on a plain background. It draws only
 /// the band the rod covers, opaque, and nothing elsewhere, so it goes over the ink it bends.
 ///
+/// The rod shows only through what it does to the ink, so it reads the same in light and dark. It draws no
+/// highlight: light added on top shows only where the layer is dark, which is the letters in light mode but the
+/// empty background in dark mode.
+///
 /// - `bounds`: the layer's rectangle. The rod's axis travels from one radius before its leading edge to one
 ///   radius past its trailing edge, so the pass starts and ends with the rod off the layer.
 /// - `progress`: 0 to 1 along that path.
@@ -30,8 +34,7 @@ static float rodShift(float u, float index) {
 /// - `background`: the color under the layer.
 [[ stitchable ]] half4 glassRod(float2 position, SwiftUI::Layer layer, float4 bounds, float progress, float radius, float dispersion, half4 background) {
     float axis = mix(bounds.x - radius, bounds.x + bounds.z + radius, progress);
-    float across = position.x - axis;
-    float u = across / radius;
+    float u = (position.x - axis) / radius;
     if (abs(u) >= 1) {
         return half4(0);
     }
@@ -47,14 +50,5 @@ static float rodShift(float u, float index) {
     half3 coverage = half3(red.a, green.a, blue.a);
     half total = red.a + green.a + blue.a;
     half3 ink = total > 0 ? (red.rgb + green.rgb + blue.rgb) / total : half3(0);
-    half3 color = mix(background.rgb, ink, coverage);
-
-    // A fine highlight down the axis, where the rod's surface faces the light: a spread of a third of a point (a
-    // pixel at 3x), strongest halfway up and gone at the ends. At most 40 percent of the way to white (gray 102 on
-    // black), so it reads as light on the glass, not as another stroke. It fades in and out over one radius as the
-    // axis comes onto the layer and leaves it, so it never appears at an edge
-    float along = 2 * (position.y - bounds.y) / bounds.w - 1;
-    float onLayer = smoothstep(0.0, radius, axis - bounds.x) * smoothstep(0.0, radius, bounds.x + bounds.z - axis);
-    half glint = half(0.4 * exp(-across * across / (2 * 0.33 * 0.33)) * (1 - along * along) * onLayer);
-    return half4(mix(color, half3(1), glint), 1);
+    return half4(mix(background.rgb, ink, coverage), 1);
 }
