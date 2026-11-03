@@ -14,6 +14,8 @@ final class SheetRouter {
         /// A profile; nil is the signed-in user's own. The preview, when there is one, lets it open at its
         /// final height.
         case profile(userId: String?, preview: ProfilePreview?)
+        /// A topic account's page. Its card's detent is worked out before it opens, when the layout is known
+        case topic(TopicPage, collapsedHeight: CGFloat?)
         /// A post and its replies; `onRepliesChanged` lets the feed refresh its reply preview
         case thread(Loop, onRepliesChanged: (() -> Void)?)
         /// A new loop or a reply. The composer changes its height as you type and holds a photo picker and a
@@ -23,6 +25,7 @@ final class SheetRouter {
         var id: String {
             switch self {
             case .profile(let userId, _): "profile-\(userId ?? "me")"
+            case .topic(let page, _): "topic-\(page.topic.id)"
             case .thread(let loop, _): "thread-\(loop.id)"
             case .compose: "compose"
             }
@@ -44,6 +47,19 @@ final class SheetRouter {
             ProfileView.prefetchImages(for: user, displayScale: profileLayout.displayScale)
         }
         sheet = .profile(userId: userId, preview: preview)
+    }
+
+    /// Shows the page of the account that wrote `loop`: its topic's page for a topic post, a profile for anyone else's.
+    func showAuthor(of loop: Loop) {
+        if let page = TopicPage(loop: loop) {
+            showTopic(page)
+        } else {
+            showProfile(userId: loop.authorId)
+        }
+    }
+    
+    func showTopic(_ page: TopicPage) {
+        sheet = .topic(page, collapsedHeight: profileLayout.map { TopicView.collapsedHeight(for: page, in: $0) })
     }
 
     func showThread(_ loop: Loop, onRepliesChanged: (() -> Void)? = nil) {

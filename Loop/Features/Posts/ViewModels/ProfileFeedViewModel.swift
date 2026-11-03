@@ -26,6 +26,9 @@ final class ProfileFeedViewModel {
     }
     
     let userId: String
+    /// How many of the latest posts to load, or nil for all of them. A topic posts every hour, so its page shows the
+    /// latest
+    let postLimit: Int?
     
     private let currentUserId = Auth.auth().currentUser?.uid
     private let logger = Logger(subsystem: "com.nejack.Loop", category: "ProfileFeedViewModel")
@@ -33,8 +36,9 @@ final class ProfileFeedViewModel {
     /// Tabs whose results are loaded. Each tab is fetched once, so switching back to it doesn't refetch.
     @ObservationIgnored private var loadedTabs: Set<ProfileFeedTab> = []
     
-    init(userId: String) {
+    init(userId: String, postLimit: Int? = nil) {
         self.userId = userId
+        self.postLimit = postLimit
     }
     
     // MARK: - Load Data
@@ -51,7 +55,7 @@ final class ProfileFeedViewModel {
         do {
             switch tab {
             case .posts, .media:
-                posts = try await FirebaseService.shared.getUserLoops(userId: userId)
+                posts = try await FirebaseService.shared.getUserLoops(userId: userId, limit: postLimit)
             case .likes:
                 likedPosts = try await FirebaseService.shared.getUserLikedLoops(userId: userId)
             }

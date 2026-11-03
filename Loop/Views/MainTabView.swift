@@ -133,6 +133,8 @@ struct MainTabView: View {
                 switch sheet {
                 case .profile(let userId, let preview):
                     ProfileView(userId: userId, preview: preview)
+                case .topic(let page, let collapsedHeight):
+                    TopicView(page: page, collapsedHeight: collapsedHeight)
                 case .thread(let loop, let onRepliesChanged):
                     LoopDetailView(loop: loop, onRepliesChanged: onRepliesChanged)
                 case .compose(let draft, let onPost):

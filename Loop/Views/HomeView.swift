@@ -136,7 +136,7 @@ struct HomeView: View {
                         }
                     } : nil,
                     onAvatarTap: {
-                        sheetRouter.showProfile(userId: loop.authorId)
+                        sheetRouter.showAuthor(of: loop)
                     },
                     replyPreviews: replies,
                     onReplyPreviewTap: {

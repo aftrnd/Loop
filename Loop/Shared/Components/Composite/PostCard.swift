@@ -145,8 +145,7 @@ struct PostCard: View {
                 topic: loop.topic,
                 source: loop.link?.source,
                 timestamp: loop.timeAgoString,
-                // Topic accounts have no profile to open
-                onAvatarTap: loop.isTopicPost ? nil : onAvatarTap,
+                onAvatarTap: onAvatarTap,
                 showDebugOverlay: showDebugOverlays
             )
             .background(showDebugOverlays ? Color.purple.opacity(0.05) : Color.clear)

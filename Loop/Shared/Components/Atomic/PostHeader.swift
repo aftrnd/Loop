@@ -222,10 +222,12 @@ struct PostHeader: View {
 
 // MARK: - AI Mark
 
-/// Marks what Loop wrote with AI: sparkles.2 cut out of a small plate with the avatar's corners, in the secondary color
-/// of the callout text beside it. The plate is 1.3 times the callout's cap height and centered on its capitals, so it
-/// overshoots them by 0.15 cap heights above and below; the symbol fills its middle four sevenths
-private struct AIMark: View {
+/// Marks what Loop wrote with AI: sparkles.2 cut out of a small plate with the avatar's corners, in the color of the
+/// callout text beside it (secondary in posts). The plate is 1.3 times the callout's cap height and centered on its
+/// capitals, so it overshoots them by 0.15 cap heights above and below; the symbol fills its middle four sevenths
+struct AIMark: View {
+    var fill: Color = .secondary
+
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
@@ -233,7 +235,7 @@ private struct AIMark: View {
         let capHeight = UIFont.preferredFont(forTextStyle: .callout, compatibleWith: traits).capHeight
         let side = capHeight * 1.3
         AvatarShape()
-            .fill(Color.secondary)
+            .fill(fill)
             .overlay {
                 Image(systemName: "sparkles.2")
                     .resizable()
