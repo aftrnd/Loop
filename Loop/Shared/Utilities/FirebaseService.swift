@@ -1114,7 +1114,8 @@ class FirebaseService {
             authorDisplayName: topic == nil ? nil : data["authorDisplayName"] as? String,
             authorUsername: topic == nil ? nil : data["authorUsername"] as? String,
             topic: topic,
-            link: parseLink(data["link"] as? [String: Any])
+            link: parseLink(data["link"] as? [String: Any]),
+            significance: data["significance"] as? Int
         )
     }
     

@@ -95,6 +95,8 @@ struct Loop: Identifiable, Codable, Hashable {
     var topic: LoopTopic?
     /// The story a topic post links to
     var link: LoopLink?
+    /// Claude's 1 to 5 rating of how big a topic post's story is for the topic's followers; the feed ranks by it
+    var significance: Int?
     
     init(
         id: String = UUID().uuidString,
@@ -113,7 +115,8 @@ struct Loop: Identifiable, Codable, Hashable {
         authorAvatarURL: String? = nil,
         authorBadgeType: BadgeType? = nil,
         topic: LoopTopic? = nil,
-        link: LoopLink? = nil
+        link: LoopLink? = nil,
+        significance: Int? = nil
     ) {
         self.id = id
         self.authorId = authorId
@@ -132,6 +135,7 @@ struct Loop: Identifiable, Codable, Hashable {
         self.authorBadgeType = authorBadgeType
         self.topic = topic
         self.link = link
+        self.significance = significance
     }
     
     // MARK: - Computed Properties
