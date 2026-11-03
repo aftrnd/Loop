@@ -14,8 +14,6 @@ class FirebaseService {
 
     /// Author profiles fetched this session, keyed by user ID. Shared by every feed so a profile is read once.
     private var userCache: [String: User] = [:]
-    /// The topics the signed-in user follows, read once a session and kept current as they follow and unfollow
-    private var followedTopicsCache: (userId: String, topicIds: Set<String>)?
 
     private init() {}
 
@@ -884,36 +882,35 @@ class FirebaseService {
         print("✅ Successfully unfollowed user: \(targetUserId)")
     }
     
-    /// The ids of the topics the signed-in user follows, kept in `followedTopics` on their own profile. Topic accounts
-    /// have no profile of their own, so following one writes only yours.
-    func followedTopics() async throws -> Set<String> {
+    /// The ids of the topics the signed-in user follows, kept in `followedTopics` on their own profile, or nil when
+    /// they have never chosen. Topic accounts have no profile of their own, so following one writes only yours.
+    func followedTopics() async throws -> Set<String>? {
         guard let currentUserId = Auth.auth().currentUser?.uid else {
             throw NSError(domain: "FirebaseService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
         }
-        if let cache = followedTopicsCache, cache.userId == currentUserId {
-            return cache.topicIds
-        }
         let doc = try await db.collection("users").document(currentUserId).getDocument()
-        let topicIds = Set(doc.data()?["followedTopics"] as? [String] ?? [])
-        followedTopicsCache = (currentUserId, topicIds)
-        return topicIds
+        return (doc.data()?["followedTopics"] as? [String]).map(Set.init)
     }
     
-    func setFollowing(_ following: Bool, topicId: String) async throws {
+    /// Saves the whole list rather than adding or removing one id, so the first choice, made while following every
+    /// topic, writes them all, and quick changes in a row land as the last one left them.
+    func setFollowedTopics(_ topicIds: Set<String>) async throws {
         guard let currentUserId = Auth.auth().currentUser?.uid else {
             throw NSError(domain: "FirebaseService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
         }
         try await db.collection("users").document(currentUserId).updateData([
-            "followedTopics": following ? FieldValue.arrayUnion([topicId]) : FieldValue.arrayRemove([topicId])
+            "followedTopics": topicIds.sorted()
         ])
-        if var cache = followedTopicsCache, cache.userId == currentUserId {
-            if following {
-                cache.topicIds.insert(topicId)
-            } else {
-                cache.topicIds.remove(topicId)
-            }
-            followedTopicsCache = cache
-        }
+    }
+    
+    // MARK: - Topic Directory
+    
+    /// Every topic, in the directory's order, from `topics/{id}`, which the topic function writes as it posts.
+    func topicDirectory() async throws -> [TopicEntry] {
+        let snapshot = try await db.collection("topics").getDocuments()
+        return snapshot.documents
+            .compactMap { Self.parseTopicEntry(id: $0.documentID, data: $0.data()) }
+            .sorted { $0.order < $1.order }
     }
     
     // MARK: - Loop Operations
@@ -1133,7 +1130,33 @@ class FirebaseService {
             color: color,
             ink: ink,
             layout: data["layout"] as? String,
-            style: data["style"] as? String
+            style: data["style"] as? String,
+            monogram: data["monogram"] as? String
+        )
+    }
+    
+    private static func parseTopicEntry(id: String, data: [String: Any]) -> TopicEntry? {
+        guard let name = data["name"] as? String,
+              let symbol = data["symbol"] as? String,
+              let color = data["color"] as? String,
+              let ink = data["ink"] as? String else {
+            return nil
+        }
+        return TopicEntry(
+            topic: LoopTopic(
+                id: id,
+                symbol: symbol,
+                color: color,
+                ink: ink,
+                layout: data["layout"] as? String,
+                style: data["style"] as? String,
+                monogram: data["monogram"] as? String
+            ),
+            name: name,
+            about: data["about"] as? String,
+            brief: data["brief"] as? String,
+            sources: data["sources"] as? [String] ?? [],
+            order: data["order"] as? Int ?? .max
         )
     }
     

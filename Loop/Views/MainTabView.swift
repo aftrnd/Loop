@@ -49,7 +49,12 @@ struct MainTabView: View {
                 Tab("Home", systemImage: "house", value: "Home") {
                     HomeView()
                 }
-                
+
+                // Discover Tab: every topic, to follow for Home
+                Tab("Discover", systemImage: "square.grid.2x2", value: "Discover") {
+                    DiscoverView()
+                }
+
                 // Messages Tab
                 Tab("Messages", systemImage: "message", value: "Messages") {
                     ChatsListView()

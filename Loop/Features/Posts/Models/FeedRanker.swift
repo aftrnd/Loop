@@ -8,7 +8,7 @@ import Foundation
 ///   outranks a seen one posted a minute ago, unless engagement or follows lift the seen one
 /// - its recency, halving every 8 hours
 /// - its engagement, 1 + 0.3 ln(1 + likes + 2 replies)
-/// - 1.5 if you follow its author, and 1.5 if you follow its topic (when you follow any topics)
+/// - 1.5 if you follow its author (topics need no lift: Home shows only the ones you follow)
 /// - a topic post's significance over 3, Claude's 1 to 5 rating of the story, so a routine story sits below a
 ///   friend's post and major news above it
 /// - a jitter of up to 10% either way, fixed for the session, so posts that score alike don't always come in the
@@ -35,8 +35,6 @@ nonisolated enum FeedRanker {
         let currentUserId: String?
         let seenIds: Set<String>
         let followedAuthorIds: Set<String>
-        /// Empty when you follow no topics, which ranks every topic alike
-        let followedTopicIds: Set<String>
         /// Differs every session
         let seed: UInt64
     }
@@ -90,13 +88,7 @@ nonisolated enum FeedRanker {
         let recency = pow(0.5, ageHours / halfLifeHours)
         let engagement = 1 + engagementWeight * log(1 + Double(candidate.likeCount + 2 * candidate.replyCount))
 
-        var affinity = 1.0
-        if context.followedAuthorIds.contains(candidate.authorId) {
-            affinity *= followedWeight
-        }
-        if let topicId = candidate.topicId, context.followedTopicIds.contains(topicId) {
-            affinity *= followedWeight
-        }
+        let affinity = context.followedAuthorIds.contains(candidate.authorId) ? followedWeight : 1
         let significance = candidate.significance.map { Double($0) / typicalSignificance } ?? 1
 
         let unit = unitInterval(for: candidate.id, seed: context.seed)

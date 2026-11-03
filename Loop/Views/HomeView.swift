@@ -8,6 +8,7 @@ struct HomeView: View {
     @State private var refreshes = 0
     @Environment(SheetRouter.self) private var sheetRouter
     @Environment(\.scenePhase) private var scenePhase
+    private let topicDirectory = TopicDirectory.shared
     
     // Debug settings
     @AppStorage("showLayoutDebugOverlays") private var showLayoutDebugOverlays = false
@@ -56,6 +57,15 @@ struct HomeView: View {
         }
         .task {
             viewModel.start()
+        }
+        // Following topics, on their pages or in Discover, changes which posts Home shows
+        .onChange(of: topicDirectory.followedIds) { _, followed in
+            viewModel.topicFollowsChanged(to: followed)
+        }
+        .onAppear {
+            Task {
+                await viewModel.feedDidAppear()
+            }
         }
         // Coming back after a while ranks the feed again for the new visit
         .onChange(of: scenePhase) { _, phase in

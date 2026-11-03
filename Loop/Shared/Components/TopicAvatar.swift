@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// A topic account's avatar: the avatar squircle with the topic's symbol. A team wears its own colors, swapped in dark
-/// mode so its light color is the tile there; every other topic is drawn in ink.
+/// A topic account's avatar: the avatar squircle with the topic's symbol, or a person account's initials. A team wears
+/// its own colors, swapped in dark mode so its light color is the tile there; every other account is drawn in ink.
+/// Initials rather than a person's photo, since the account is Loop's, not theirs.
 struct TopicAvatar: View {
     let topic: LoopTopic
     let size: CGFloat
@@ -14,9 +15,16 @@ struct TopicAvatar: View {
             .fill(colors.tile)
             .frame(width: size, height: size)
             .overlay {
-                Image(systemName: topic.symbol)
-                    .font(.system(size: size * 3 / 7, weight: .semibold))
-                    .foregroundStyle(colors.symbol)
+                Group {
+                    if let monogram = topic.monogram {
+                        Text(monogram)
+                            .font(.system(size: size * 2 / 5, weight: .semibold))
+                    } else {
+                        Image(systemName: topic.symbol)
+                            .font(.system(size: size * 3 / 7, weight: .semibold))
+                    }
+                }
+                .foregroundStyle(colors.symbol)
             }
             .accessibilityElement()
             .accessibilityLabel("Topic account")

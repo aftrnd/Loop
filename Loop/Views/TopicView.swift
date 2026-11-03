@@ -1,15 +1,18 @@
 import SwiftUI
 import os
 
-/// A topic account's page, opened from one of its posts. Topic accounts have no profile document, so the post carries
-/// everything the card shows until the topic's posts load: the topic's look, its name, a source and a time.
+/// A topic account's page, opened from one of its posts or from Discover. Topic accounts have no profile document, so
+/// the post or the directory's entry carries everything the card shows until the topic's posts load: the topic's look,
+/// its name and its sources, and a post's photo and time.
 struct TopicPage: Hashable {
     let topic: LoopTopic
     let name: String
     /// The author id the topic's posts are written under
     let authorId: String
-    /// The post the page was opened from
-    let post: Loop
+    /// The post the page was opened from, nil from Discover
+    let post: Loop?
+    /// The publishers the line under the name names until the topic's posts load
+    let sources: [String]
 
     init?(loop: Loop) {
         guard let topic = loop.topic else { return nil }
@@ -17,6 +20,15 @@ struct TopicPage: Hashable {
         self.name = loop.displayAuthorName
         self.authorId = loop.authorId
         self.post = loop
+        self.sources = loop.link.map { [$0.source] } ?? []
+    }
+
+    init(entry: TopicEntry) {
+        self.topic = entry.topic
+        self.name = entry.name
+        self.authorId = entry.authorId
+        self.post = nil
+        self.sources = entry.sources
     }
 }
 
@@ -42,8 +54,6 @@ struct TopicView: View {
     /// The wallpaper's photo showing, nil for the first
     @State private var shownPhoto: TopicPhoto?
 
-    /// Whether the signed-in user follows the topic, nil until it has been read
-    @State private var isFollowing: Bool?
     @State private var isFollowLoading = false
     /// Set to a new value to play the follow sparkle once.
     @State private var sparkleBurstID: UUID?
@@ -54,6 +64,12 @@ struct TopicView: View {
     /// The sheet's glass, which makes secondary text vibrant on the card
     @Environment(\.backgroundMaterial) private var sheetMaterial
     @Environment(SheetRouter.self) private var sheetRouter: SheetRouter?
+    private let topicDirectory = TopicDirectory.shared
+
+    /// Whether the signed-in user follows the topic, nil until it has been read
+    private var isFollowing: Bool? {
+        topicDirectory.followsState == .unread ? nil : topicDirectory.isFollowing(page.topic.id)
+    }
 
     private var isSheetFullyExpanded: Bool {
         currentDetent == .large
@@ -242,31 +258,28 @@ struct TopicView: View {
     }
 
     private func loadFollowing() async {
-        do {
-            isFollowing = try await FirebaseService.shared.followedTopics().contains(page.topic.id)
-        } catch {
-            Self.logger.error("Followed topics read failed: \(error.localizedDescription, privacy: .public)")
-            isFollowing = false
+        _ = await topicDirectory.follows()
+        // Unfollowing while you follow every topic saves the rest of the directory, so it is read ahead
+        if topicDirectory.followedIds == nil {
+            await topicDirectory.loadDirectory()
         }
     }
 
-    /// Follows or unfollows optimistically, and reverts if the write fails. Taps wait until the state is known and
-    /// the last change has saved.
+    /// Follows or unfollows at once (the directory changes back if the save fails). Taps wait until the state is
+    /// known and the last change has saved.
     private func toggleFollow() async {
         guard let wasFollowing = isFollowing, !isFollowLoading else { return }
 
         isFollowLoading = true
         defer { isFollowLoading = false }
-        isFollowing = !wasFollowing
         if !wasFollowing {
             sparkleBurstID = UUID()
         }
 
         do {
-            try await FirebaseService.shared.setFollowing(!wasFollowing, topicId: page.topic.id)
+            try await topicDirectory.setFollowing(!wasFollowing, topicId: page.topic.id)
         } catch {
             Self.logger.error("Topic follow change failed: \(error.localizedDescription, privacy: .public)")
-            isFollowing = wasFollowing
             actionError = wasFollowing ? "Couldn't unfollow. Please try again." : "Couldn't follow. Please try again."
         }
     }
@@ -354,12 +367,14 @@ private struct TopicLines: View {
     let page: TopicPage
     let feed: ProfileFeedViewModel?
 
-    /// The publishers its posts summarize, the most summarized first, ties in order of their latest post
+    /// The publishers its posts summarize, the most summarized first, ties in order of their latest post; the page's
+    /// own until they load
     private var sources: [String] {
         let loaded = feed?.posts ?? []
+        guard !loaded.isEmpty else { return page.sources }
         var counts: [String: Int] = [:]
         var order: [String] = []
-        for post in loaded.isEmpty ? [page.post] : loaded {
+        for post in loaded {
             guard let source = post.link?.source, !source.isEmpty else { continue }
             if counts[source] == nil {
                 order.append(source)
@@ -373,27 +388,7 @@ private struct TopicLines: View {
 
     var body: some View {
         let sources = sources
-        TopicSourcesLine(variants: Self.variants(sources), spokenText: Self.spokenText(sources))
-    }
-
-    /// The sources, longest first: up to two by name and how many more, then one by name, then only how many
-    private static func variants(_ sources: [String]) -> [String] {
-        switch sources.count {
-        case 0: return ["News summaries"]
-        case 1: return [sources[0]]
-        case 2: return ["\(sources[0]) and \(sources[1])", "\(sources[0]) and 1 more", "2 sources"]
-        default:
-            return [
-                "\(sources[0]), \(sources[1]) and \(sources.count - 2) more",
-                "\(sources[0]) and \(sources.count - 1) more",
-                "\(sources.count) sources"
-            ]
-        }
-    }
-
-    private static func spokenText(_ sources: [String]) -> String {
-        guard !sources.isEmpty else { return "News summaries written by AI" }
-        return "Summaries written by AI, from " + ListFormatter.localizedString(byJoining: sources)
+        TopicSourcesLine(variants: TopicSources.variants(sources), spokenText: TopicSources.spokenText(sources))
     }
 }
 
@@ -559,7 +554,7 @@ private nonisolated struct TopicPhoto: Hashable, Sendable {
     static func latest(for page: TopicPage, feed: ProfileFeedViewModel?) -> [TopicPhoto] {
         let loaded = feed?.posts ?? []
         var urls: Set<URL> = []
-        return (loaded.isEmpty ? [page.post] : loaded)
+        return (loaded.isEmpty ? [page.post].compactMap { $0 } : loaded)
             .compactMap { post -> TopicPhoto? in
                 guard let link = post.link,
                       let url = link.imageURL.flatMap(URL.init(string:)),
