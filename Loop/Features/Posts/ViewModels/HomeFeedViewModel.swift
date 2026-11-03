@@ -27,6 +27,8 @@ final class HomeFeedViewModel {
     private let windowSize = 80
     /// Older posts, below the ranked window, load in time order this many at a time
     private let pageSize = 20
+    /// How many pages one load reads at most looking for a post to show, when the topics you follow are few
+    private let pagesPerLoad = 5
     private let logger = Logger(subsystem: "com.nejack.Loop", category: "HomeFeedViewModel")
     /// Away this long, the feed ranks again when the app comes back, as if it had just been opened
     private static let rerankAfterAway: TimeInterval = 30 * 60
@@ -54,6 +56,10 @@ final class HomeFeedViewModel {
     @ObservationIgnored private let rankingSeed = UInt64.random(in: 0...UInt64.max)
     /// People the current user follows, read once per load.
     @ObservationIgnored private var followingIds: Set<String>?
+    /// The topics whose posts the feed shows, nil for every topic: as of the last ranking or follow change
+    @ObservationIgnored private var followedTopicIds: Set<String>?
+    /// Set when you start following a topic after the feed was ranked; its posts show when Home next appears
+    @ObservationIgnored private var needsRanking = false
     /// Reply IDs each preview was built from, so a post's preview is only refetched when its replies change.
     @ObservationIgnored private var previewSources: [String: [String]] = [:]
 
@@ -122,34 +128,43 @@ final class HomeFeedViewModel {
         start()
     }
 
+    /// Loads the next page below the feed, and the ones after it while a page has nothing to show (posts from topics
+    /// you don't follow), up to `pagesPerLoad`.
     func loadMoreContent() async {
-        guard !isLoading, !isLoadingMore, hasMoreContent, let cursor = lastDocument else { return }
+        guard !isLoading, !isLoadingMore, hasMoreContent, var cursor = lastDocument else { return }
 
         isLoadingMore = true
         defer { isLoadingMore = false }
 
         do {
-            let snapshot = try await feedQuery
-                .start(afterDocument: cursor)
-                .limit(to: pageSize)
-                .getDocuments()
+            for _ in 0..<pagesPerLoad {
+                let snapshot = try await feedQuery
+                    .start(afterDocument: cursor)
+                    .limit(to: pageSize)
+                    .getDocuments()
 
-            let page = await FirebaseService.shared.loops(from: snapshot.documents)
-            let previewUpdates = await previewUpdates(for: page)
-            let loadedIds = Set(loops.map(\.id))
+                let page = await FirebaseService.shared.loops(from: snapshot.documents).filter(isShown)
+                let previewUpdates = await previewUpdates(for: page)
+                let loadedIds = Set(loops.map(\.id))
+                let added = page.filter { !loadedIds.contains($0.id) }
 
-            // No animation needed for loading more
-            var transaction = Transaction()
-            transaction.disablesAnimations = true
-            withTransaction(transaction) {
-                applyPreviewUpdates(previewUpdates, from: page)
-                loops.append(contentsOf: page.filter { !loadedIds.contains($0.id) })
+                // No animation needed for loading more
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
+                    applyPreviewUpdates(previewUpdates, from: page)
+                    loops.append(contentsOf: added)
+                }
+
+                if let last = snapshot.documents.last {
+                    cursor = last
+                    lastDocument = last
+                }
+                hasMoreContent = snapshot.documents.count == pageSize
+                if !added.isEmpty || !hasMoreContent {
+                    break
+                }
             }
-
-            if let last = snapshot.documents.last {
-                lastDocument = last
-            }
-            hasMoreContent = snapshot.documents.count == pageSize
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -179,7 +194,8 @@ final class HomeFeedViewModel {
         rankGeneration += 1
         let generation = rankGeneration
 
-        let window = await FirebaseService.shared.loops(from: documents)
+        followedTopicIds = await TopicDirectory.shared.follows()
+        let window = await FirebaseService.shared.loops(from: documents).filter(isShown)
         let context = await rankingContext()
         // Previews load before the feed is shown so cards don't shift once they appear
         let previewUpdates = await previewUpdates(for: window)
@@ -213,6 +229,7 @@ final class HomeFeedViewModel {
         }
 
         isRanked = true
+        needsRanking = false
         firstCachedSnapshotAt = nil
         heldPostIds = []
         lastDocument = documents.last
@@ -224,14 +241,15 @@ final class HomeFeedViewModel {
     /// already showing update in place (likes, replies), posts deleted from the window disappear, and new posts from
     /// others wait for the next ranking. Your own new posts show at the top straight away.
     private func applyLiveUpdate(_ documents: [QueryDocumentSnapshot]) async {
-        let window = await FirebaseService.shared.loops(from: documents)
-        let previewUpdates = await previewUpdates(for: window)
+        let fetched = await FirebaseService.shared.loops(from: documents)
+        let previewUpdates = await previewUpdates(for: fetched.filter(isShown))
         guard !Task.isCancelled else { return }
 
-        // Read after the last await, so a ranking that landed meanwhile is what gets updated
+        // Read after the last await, so a ranking or follow change that landed meanwhile is what gets updated
+        let window = fetched.filter(isShown)
         let windowById = Dictionary(window.map { ($0.id, $0) }) { first, _ in first }
         let shownIds = Set(loops.map(\.id))
-        let oldestInWindow = window.last?.createdAt
+        let oldestInWindow = fetched.last?.createdAt
         let ownNewPosts = window.filter { !shownIds.contains($0.id) && $0.authorId == currentUserId }
         heldPostIds.formUnion(window.filter { !shownIds.contains($0.id) && $0.authorId != currentUserId }.map(\.id))
 
@@ -257,17 +275,11 @@ final class HomeFeedViewModel {
         }
     }
 
-    /// What the ranking needs to know about you: the posts you've seen, and the people and topics you follow.
+    /// What the ranking needs to know about you: the posts you've seen, and the people you follow.
     private func rankingContext() async -> FeedRanker.Context {
         var seen: Set<String> = []
-        var followedTopics: Set<String> = []
         if let currentUserId {
             seen = await SeenPostsStore.shared.seenIds(userId: currentUserId)
-            do {
-                followedTopics = try await FirebaseService.shared.followedTopics()
-            } catch {
-                logger.error("Followed topics read failed: \(error.localizedDescription, privacy: .public)")
-            }
         }
         seenIds = seen
         return FeedRanker.Context(
@@ -275,9 +287,55 @@ final class HomeFeedViewModel {
             currentUserId: currentUserId,
             seenIds: seen,
             followedAuthorIds: await loadFollowingIds(),
-            followedTopicIds: followedTopics,
             seed: rankingSeed
         )
+    }
+
+    // MARK: - Topic Follows
+
+    /// Whether the feed shows a post: everyone's, and a topic's when you follow it.
+    private func isShown(_ loop: Loop) -> Bool {
+        guard let topicId = loop.topic?.id, let followedTopicIds else { return true }
+        return followedTopicIds.contains(topicId)
+    }
+
+    /// Keeps the feed to the topics you follow: a topic you stop following leaves it at once, without the rest moving,
+    /// and one you start following shows when Home next appears, ranked in.
+    func topicFollowsChanged(to followed: Set<String>?) {
+        guard isRanked, followed != followedTopicIds else { return }
+        let previous = followedTopicIds
+        followedTopicIds = followed
+
+        let gained = switch (previous, followed) {
+        case (nil, _): false
+        case (_, nil): true
+        case let (previous?, followed?): !followed.isSubset(of: previous)
+        }
+        if gained {
+            needsRanking = true
+        }
+
+        let kept = loops.filter(isShown)
+        if kept != loops {
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                loops = kept
+            }
+        }
+    }
+
+    /// Ranks the feed again from the top if you started following a topic while Home was away.
+    func feedDidAppear() async {
+        guard needsRanking else { return }
+        needsRanking = false
+
+        do {
+            let snapshot = try await feedQuery.limit(to: windowSize).getDocuments()
+            await rank(snapshot.documents, resettingScroll: true)
+        } catch {
+            logger.error("Ranking for new topics failed: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     // MARK: - Seen Posts

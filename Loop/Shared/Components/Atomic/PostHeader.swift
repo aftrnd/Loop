@@ -21,6 +21,8 @@ struct PostHeader: View {
     let topic: LoopTopic?
     /// Where a topic post's story comes from, shown with the AI mark in place of the handle
     let source: String?
+    /// Shorter ways to say `source`, shortest last; the first that fits shows when `source` doesn't
+    let shorterSources: [String]
     let timestamp: String?
     let trailingIcon: String? // Optional trailing icon (e.g., "chevron.right")
     let showUsernamePrefix: Bool // Whether to show "@" before username
@@ -39,6 +41,7 @@ struct PostHeader: View {
         badgePlacement: BadgePlacement = .handle,
         topic: LoopTopic? = nil,
         source: String? = nil,
+        shorterSources: [String] = [],
         timestamp: String? = nil,
         trailingIcon: String? = nil,
         showUsernamePrefix: Bool = true,
@@ -52,6 +55,7 @@ struct PostHeader: View {
         self.badgePlacement = badgePlacement
         self.topic = topic
         self.source = source
+        self.shorterSources = shorterSources
         self.timestamp = timestamp
         self.trailingIcon = trailingIcon
         self.showUsernamePrefix = showUsernamePrefix
@@ -219,6 +223,14 @@ struct PostHeader: View {
         )
     }
 
+    private func sourceText(_ text: String) -> some View {
+        Text(text)
+            .font(.callout)
+            .fontWeight(.regular)
+            .foregroundColor(.secondary)
+            .lineLimit(1)
+    }
+
     private func badge(_ badgeType: BadgeType) -> some View {
         Image(systemName: badgeType.iconName)
             .font(.system(size: 14))
@@ -230,11 +242,15 @@ struct PostHeader: View {
         HStack(alignment: .firstTextBaseline, spacing: 5) {
             AIMark()
 
-            Text(source)
-                .font(.callout)
-                .fontWeight(.regular)
-                .foregroundColor(.secondary)
-                .lineLimit(1)
+            if shorterSources.isEmpty {
+                sourceText(source)
+            } else {
+                ViewThatFits(in: .horizontal) {
+                    ForEach([source] + shorterSources, id: \.self) { text in
+                        sourceText(text)
+                    }
+                }
+            }
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Written by AI from \(source)")
