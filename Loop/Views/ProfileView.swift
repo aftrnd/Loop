@@ -782,6 +782,9 @@ enum ProfileGeometry {
     /// radius, so the wallpaper reaching only the radius ended in a flat cut inside the curve; twice the radius covers
     /// it
     static let wallpaperReach: CGFloat = pageCornerRadius * 2
+    /// How far the wallpaper holds back as the page scrolls down at full height: half of it, so it moves at half the
+    /// page's speed. Read while rendering, off the main actor
+    nonisolated static let wallpaperParallax: CGFloat = 0.5
 }
 
 /// The avatar's edge lit like a macOS 27 app icon's, so it reads on any wallpaper: a highlight inside the top edge
@@ -1209,7 +1212,8 @@ struct ProfilePageBackground: View {
 
 /// The wallpaper behind the header, darkened a little toward its foot so white type stays legible. It is laid out at
 /// the card's height, plus the reach it runs on under the page, in every detent, so it never re-crops as the sheet
-/// opens. A profile's wallpaper is its banner; a topic's is its latest story photos.
+/// opens. Scrolled down at full height, it moves up at half the page's speed, so the page slides up over it. A
+/// profile's wallpaper is its banner; a topic's is its latest story photos.
 struct ProfileBackdrop<Wallpaper: View>: View {
     /// The card's header height, or 0 before it is measured, when the wallpaper fills the header
     let cardHeight: CGFloat
@@ -1224,6 +1228,14 @@ struct ProfileBackdrop<Wallpaper: View>: View {
         Color.clear
             .overlay(alignment: .top) {
                 wallpaper
+                    // Only scrolling down moves it; at rest, on the card and pulled down, it sits where it is laid
+                    // out. A transform rather than an offset, which lands on whole pixels and would step
+                    .visualEffect { content, proxy in
+                        let scrolled = max(0, -proxy.frame(in: .scrollView(axis: .vertical)).minY)
+                        let holdBack = scrolled * ProfileGeometry.wallpaperParallax
+                        return content.transformEffect(CGAffineTransform(translationX: 0, y: holdBack))
+                    }
+                    // The shade stays with the type it is under
                     .overlay {
                         ProfileWallpaperShade(heroHeight: heroHeight, color: shade)
                             .allowsHitTesting(false)
