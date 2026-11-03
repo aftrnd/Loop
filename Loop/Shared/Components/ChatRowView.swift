@@ -34,6 +34,8 @@ struct ChatRowView: View {
                     displayName: chat.displayTitle,
                     username: chat.lastMessagePreview, // Message preview goes in username position
                     badgeType: chat.isGroupChat ? nil : chat.otherParticipantBadgeType,
+                    // The second line is the last message, not a handle
+                    badgePlacement: .name,
                     timestamp: formatTime(chat.lastMessageTime),
                     trailingIcon: "chevron.right",
                     showUsernamePrefix: false, // Don't show "@" for message preview
