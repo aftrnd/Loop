@@ -1209,13 +1209,15 @@ struct ProfilePageBackground: View {
 
 /// The wallpaper behind the header, darkened a little toward its foot so white type stays legible. It is laid out at
 /// the card's height, plus the reach it runs on under the page, in every detent, so it never re-crops as the sheet
-/// opens. A profile's wallpaper is its banner; a topic's is drawn from its look.
+/// opens. A profile's wallpaper is its banner; a topic's is its latest story photos.
 struct ProfileBackdrop<Wallpaper: View>: View {
     /// The card's header height, or 0 before it is measured, when the wallpaper fills the header
     let cardHeight: CGFloat
     let heroHeight: CGFloat
     /// What the wallpaper darkens toward under the type: black, or a topic's own color
     var shade = Color.black
+    /// Whether the wallpaper takes touches, as a topic's photos do to be swiped. The shade never does
+    var isInteractive = false
     @ViewBuilder let wallpaper: Wallpaper
     
     var body: some View {
@@ -1224,13 +1226,14 @@ struct ProfileBackdrop<Wallpaper: View>: View {
                 wallpaper
                     .overlay {
                         ProfileWallpaperShade(heroHeight: heroHeight, color: shade)
+                            .allowsHitTesting(false)
                     }
                     .frame(height: cardHeight > 0 ? cardHeight + ProfileGeometry.wallpaperReach : nil)
             }
             .clipped()
             // The wallpaper always renders dark, like a contact poster
             .environment(\.colorScheme, .dark)
-            .allowsHitTesting(false)
+            .allowsHitTesting(isInteractive)
             .accessibilityHidden(true)
     }
 }
