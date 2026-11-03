@@ -870,11 +870,11 @@ struct ProfileActionLabel: View {
 
 /// The avatar on the left and the name and the lines under it beside it, centered on the avatar by where they visibly
 /// start and end (the name's capitals and the last line's baseline). A view of its own so the card's height can be
-/// worked out with the same layout before the sheet opens; topic pages lay out their header with it too.
+/// worked out with the same layout before the sheet opens.
 struct ProfileIdentityRow<Avatar: View, Lines: View>: View {
     let name: String
     @ViewBuilder let avatar: Avatar
-    /// A profile's location and handle, a topic's AI line
+    /// The location and the handle
     @ViewBuilder let lines: Lines
     
     var body: some View {
@@ -891,31 +891,42 @@ struct ProfileIdentityRow<Avatar: View, Lines: View>: View {
     }
 }
 
-/// The name, then the lines under it, beside the avatar. White, on the wallpaper. Every line starts its ink, not its
-/// frame, a part spacing from the avatar: at 34pt the name's first letter sits visibly inside its frame (2pt for an M),
-/// which set it further from the avatar than the lines under it.
-private struct ProfileNameBlock<Lines: View>: View {
+/// The name, then the lines under it, beside a profile's avatar or alone on a topic's page. White, on the wallpaper.
+/// Every line starts its ink, not its frame, where the text starts: at 34pt the name's first letter sits visibly inside
+/// its frame (2pt for an M), which set it further in than the lines under it.
+struct ProfileNameBlock<Lines: View>: View {
     let name: String
+    /// Sets the name in New York, as a news topic's headlines are, rather than the app's rounded face
+    var isSerif = false
     let lines: Lines
     
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    // The serif is set as a fixed size, as in NewsArticle, so it scales with Dynamic Type itself
+    @ScaledMetric(relativeTo: .largeTitle) private var serifSize: CGFloat = 34
     
     var body: some View {
         let traits = UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(dynamicTypeSize))
-        let nameFont = UIFont.roundedSystemFont(.largeTitle, weight: .bold, compatibleWith: traits)
+        let nameFont = isSerif
+            ? UIFont.serifSystemFont(ofSize: serifSize, weight: .bold)
+            : UIFont.roundedSystemFont(.largeTitle, weight: .bold, compatibleWith: traits)
         BaselineSpacedVStack(spacing: ProfileGeometry.nameToHandle) {
-            Text(name)
-                .font(.largeTitle)
-                .fontWeight(.bold)
+            nameText
                 .lineLimit(2)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .offset(x: -nameFont.leadingSideBearing(of: name))
-                .visibleTopAtCapHeight(of: .largeTitle)
+                // The rounded bold's cap height is the large title's to the bit (23.956pt at 34pt, iOS 27.2)
+                .visibleTopAtCapHeight(of: nameFont)
                 .accessibilityAddTraits(.isHeader)
             
             lines
         }
         .foregroundStyle(.white)
+    }
+    
+    private var nameText: Text {
+        isSerif
+            ? Text(name).font(.system(size: serifSize, weight: .bold)).fontDesign(.serif)
+            : Text(name).font(.largeTitle).fontWeight(.bold)
     }
 }
 
@@ -989,6 +1000,12 @@ extension UIFont {
         let size = UIFont.preferredFont(forTextStyle: style, compatibleWith: traits).pointSize
         let font = UIFont.systemFont(ofSize: size, weight: weight)
         return font.fontDescriptor.withDesign(.rounded).map { UIFont(descriptor: $0, size: size) } ?? font
+    }
+    
+    /// New York at a size and weight, the face `.fontDesign(.serif)` sets a sized system font in
+    static func serifSystemFont(ofSize size: CGFloat, weight: UIFont.Weight) -> UIFont {
+        let font = UIFont.systemFont(ofSize: size, weight: weight)
+        return font.fontDescriptor.withDesign(.serif).map { UIFont(descriptor: $0, size: size) } ?? font
     }
     
     /// How far a line of `text` ends its ink inside its trailing edge: its last letter's side bearing

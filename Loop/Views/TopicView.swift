@@ -20,8 +20,9 @@ struct TopicPage: Hashable {
     }
 }
 
-/// A topic's page, laid out like a profile: the topic post's header at twice the scale on a wallpaper in the topic's
-/// look, Follow at the card's foot, and the topic's latest posts on the page at full height.
+/// A topic's page, laid out like a profile without the avatar: the topic's name and the line under it on a wallpaper of
+/// its latest story photos, Follow in Liquid Glass at the card's foot, and the topic's latest posts on the page at full
+/// height.
 struct TopicView: View {
     let page: TopicPage
 
@@ -61,7 +62,7 @@ struct TopicView: View {
     }
 
     /// - Parameter collapsedHeight: The card's detent from `collapsedHeight(for:in:)`, or nil when the layout isn't
-    ///   known, which leaves out the bottom safe area
+    ///   known, which opens it at a profile card's height and leaves out the bottom safe area
     init(page: TopicPage, collapsedHeight: CGFloat?) {
         self.page = page
         let height = collapsedHeight ?? ProfileGeometry.heroHeight + ProfileGeometry.cardActionHeight + ProfileGeometry.part
@@ -156,13 +157,9 @@ struct TopicView: View {
 
     // MARK: - Header
 
-    /// The wallpaper with the topic's avatar, name and AI line, and Follow under them, a part spacing apart.
+    /// The wallpaper with the topic's name and line, and Follow under them, a part spacing apart.
     private var header: some View {
-        BaselineSpacedVStack(spacing: ProfileGeometry.part) {
-            TopicIdentityRow(page: page, feed: feedViewModel)
-                // The wallpaper always renders dark, like a contact poster
-                .environment(\.colorScheme, .dark)
-
+        TopicHeaderLayout(page: page, feed: feedViewModel) {
             followButton
                 .modifier(SheetExpansionHeight(
                     metrics: sheetMetrics,
@@ -172,17 +169,18 @@ struct TopicView: View {
                     expanded: ProfileGeometry.fullHeightActionHeight
                 ))
         }
-        .padding(.top, ProfileGeometry.avatarTop)
+        // The wallpaper always renders dark, like a contact poster, and so do the type and the glass on it
+        .environment(\.colorScheme, .dark)
         .padding(.horizontal, ProfileGeometry.margin)
         // The wallpaper ends as far below Follow as it sits from the sides, so on the card it stays concentric with
         // the sheet's corners
         .padding(.bottom, ProfileGeometry.part)
         .foregroundStyle(.white)
-        // White glass, with its label in black
-        .tint(.white)
-        .backgroundStyle(.black)
         .background {
-            ProfileBackdrop(cardHeight: cardHeight, heroHeight: ProfileGeometry.heroHeight, shade: page.topic.pageColor) {
+            // Darkest from Follow's top down, a part spacing below the text, as a profile's is from a part spacing
+            // below its avatar
+            let heroHeight = cardHeight - ProfileGeometry.part - ProfileGeometry.cardActionHeight
+            ProfileBackdrop(cardHeight: cardHeight, heroHeight: heroHeight, shade: page.topic.pageColor) {
                 TopicWallpaper(page: page, feed: feedViewModel)
             }
             // On under the page's rounded corners
@@ -194,8 +192,9 @@ struct TopicView: View {
 
     // MARK: - Follow
 
-    /// Follow in the profile's white glass, plain glass once you follow the topic. Its label shows once whether you
-    /// follow it is known, so it never flips from Follow to Following as the page opens.
+    /// Follow in clear Liquid Glass with a white label, the glass made for controls on photos, which the wallpaper's
+    /// shade keeps legible. Following stays on the same glass with its own symbol and title. Its label shows once
+    /// whether you follow it is known, so it never flips from Follow to Following as the page opens.
     private var followButton: some View {
         let isFollowing = isFollowing ?? false
         return GlassEffectContainer {
@@ -210,11 +209,11 @@ struct TopicView: View {
                     title: isFollowing ? "Following" : "Follow",
                     isLoading: isFollowLoading
                 )
-                .foregroundStyle(isFollowing ? AnyShapeStyle(.primary) : AnyShapeStyle(.background))
+                .foregroundStyle(.white)
                 .opacity(self.isFollowing == nil ? 0 : 1)
             }
             .frame(maxWidth: .infinity)
-            .modifier(ProfileActionGlass(isProminent: !isFollowing))
+            .buttonStyle(.glass(.clear))
             .overlay {
                 // A fresh SparkleAnimation plays once when it appears, so each follow inserts a new one
                 if let sparkleBurstID {
@@ -280,42 +279,47 @@ struct TopicView: View {
 // MARK: - Collapsed Height
 
 extension TopicView {
-    /// The card's detent, worked out before the sheet is presented with the same identity row the card shows, so the
-    /// sheet opens at its final height.
+    /// The card's detent, worked out before the sheet is presented with the same header layout the card shows, Follow
+    /// standing in at its card height, so the sheet opens at its final height.
     static func collapsedHeight(for page: TopicPage, in context: ProfileLayoutContext) -> CGFloat {
         let contentWidth = context.width - ProfileGeometry.margin * 2
-        let row = TopicIdentityRow(page: page, feed: nil)
-            // The app's type, which the sheet inherits from the root
-            .fontDesign(.rounded)
-            .environment(\.dynamicTypeSize, context.dynamicTypeSize)
-            .environment(\.legibilityWeight, context.legibilityWeight)
-            .environment(\.displayScale, context.displayScale)
-        let rowHeight = UIHostingController(rootView: row)
+        let header = TopicHeaderLayout(page: page, feed: nil) {
+            Color.clear
+                .frame(height: ProfileGeometry.cardActionHeight)
+        }
+        // The app's type, which the sheet inherits from the root
+        .fontDesign(.rounded)
+        .environment(\.dynamicTypeSize, context.dynamicTypeSize)
+        .environment(\.legibilityWeight, context.legibilityWeight)
+        .environment(\.displayScale, context.displayScale)
+        let headerHeight = UIHostingController(rootView: header)
             .sizeThatFits(in: CGSize(width: contentWidth, height: .greatestFiniteMagnitude))
             .height
-        let follow = ProfileGeometry.part + ProfileGeometry.cardActionHeight
-        return ProfileGeometry.avatarTop + rowHeight + follow + ProfileGeometry.part - context.bottomInset
+        return headerHeight + ProfileGeometry.part - context.bottomInset
     }
 }
 
 // MARK: - Topic Text
 
-/// The topic's avatar on the left, lit and shadowed like a profile's, with its name and two lines beside it.
-private struct TopicIdentityRow: View {
+/// The topic's name a part spacing below the close button, as a profile's avatar is, the line under it, and Follow a
+/// part spacing below that. News topics set the name in New York, as their posts' headlines are. A view of its own so
+/// the card's height can be worked out with the same layout before the sheet opens.
+private struct TopicHeaderLayout<Follow: View>: View {
     let page: TopicPage
-    /// The topic's posts, once they load; until then the lines come from the post the page was opened from
+    /// The topic's posts, once they load; until then the line comes from the post the page was opened from
     let feed: ProfileFeedViewModel?
+    @ViewBuilder let follow: Follow
 
     var body: some View {
-        ProfileIdentityRow(name: page.name) {
-            TopicAvatar(topic: page.topic, size: ProfileGeometry.avatarSize)
-                .overlay {
-                    ProfileAvatarRim()
-                }
-                .modifier(ProfileAvatarShadow())
-                .accessibilityHidden(true)
-        } lines: {
-            TopicLines(page: page, feed: feed)
+        BaselineSpacedVStack(spacing: ProfileGeometry.part) {
+            // Stands in for the close button at full height, which the card keeps room for so the text doesn't move
+            // as the sheet expands
+            Color.clear
+                .frame(height: ProfileGeometry.closeButtonTop + ProfileGeometry.closeButtonSize)
+
+            ProfileNameBlock(name: page.name, isSerif: page.topic.isArticle, lines: TopicLines(page: page, feed: feed))
+
+            follow
         }
     }
 }
