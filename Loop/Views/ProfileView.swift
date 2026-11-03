@@ -814,16 +814,13 @@ private struct ProfileAvatarRim: View {
     }
 }
 
-/// The soft shadow a macOS 27 app icon casts, scaled from the 824px tile measured at 1024px to the avatar: it reaches
-/// about 3% of the side above, 4% to the sides and 5% below, 10% dark at the sides.
+/// A soft shadow spread evenly around the avatar, a photo resting on the wallpaper rather than an icon on a desk: no
+/// offset, so it reaches as far on every side, and gone 14pt out, before the name 20pt away (measured on a photo
+/// wallpaper at 3x).
 private struct ProfileAvatarShadow: ViewModifier {
     func body(content: Content) -> some View {
         content
-            .shadow(
-                color: .black.opacity(0.25),
-                radius: ProfileGeometry.avatarSize * 0.02,
-                y: ProfileGeometry.avatarSize * 0.011
-            )
+            .shadow(color: .black.opacity(0.3), radius: 12)
     }
 }
 
@@ -915,32 +912,58 @@ private struct ProfileNameBlock: View {
                 .accessibilityAddTraits(.isHeader)
             
             if let location = user.location, !location.isEmpty {
-                ProfileSubtitleLine(text: location)
+                ProfileSubtitleLine(symbol: ProfileSubtitleLine.locationSymbol, text: location, spokenText: location)
             }
             
-            ProfileSubtitleLine(text: "@\(user.username ?? "username")")
+            let username = user.username ?? "username"
+            ProfileSubtitleLine(symbol: ProfileSubtitleLine.handleSymbol, text: username, spokenText: "@\(username)")
         }
         .foregroundStyle(.white)
     }
 }
 
-/// A line under the name, the location or the handle, in callout like a post's second line.
+/// A line under the name, the location or the handle, in callout like a post's second line: its symbol, then the text,
+/// as the feed's AI mark comes before a topic post's source. The symbols are drawn small, about as tall as the capitals.
 private struct ProfileSubtitleLine: View {
+    static let locationSymbol = "location"
+    static let handleSymbol = "at"
+    
+    let symbol: String
     let text: String
+    /// What VoiceOver reads, since the symbol is hidden from it
+    let spokenText: String
     
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     
     var body: some View {
         let traits = UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(dynamicTypeSize))
         let font = UIFont.roundedSystemFont(.callout, weight: .regular, compatibleWith: traits)
-        Text(text)
-            .font(.callout)
-            .foregroundStyle(.white.opacity(0.85))
-            .lineLimit(1)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            // Its ink starts where the name's does
-            .offset(x: -font.leadingSideBearing(of: text))
-            .visibleTopAtCapHeight(of: .callout)
+        HStack(alignment: .firstTextBaseline, spacing: 5) {
+            // A column as wide as the widest symbol, so the location and the handle start their text together
+            ZStack(alignment: Alignment(horizontal: .leading, vertical: .firstTextBaseline)) {
+                ForEach([Self.locationSymbol, Self.handleSymbol], id: \.self) { symbol in
+                    Image(systemName: symbol)
+                        .hidden()
+                }
+                
+                Image(systemName: symbol)
+            }
+            .imageScale(.small)
+            
+            Text(text)
+                .lineLimit(1)
+                // Its ink starts 5pt from the symbol column, whatever its first letter
+                .offset(x: -font.leadingSideBearing(of: text))
+        }
+        .font(.callout)
+        .foregroundStyle(.white.opacity(0.85))
+        // Both symbols start their ink 1pt inside their image at the callout's 16pt (measured at 3x on iOS 27.2), so
+        // the line starts that much further left and their ink starts where the name's does
+        .offset(x: -font.pointSize / 16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .visibleTopAtCapHeight(of: .callout)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(spokenText)
     }
 }
 
