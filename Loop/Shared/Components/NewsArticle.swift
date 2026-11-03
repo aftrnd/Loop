@@ -38,7 +38,7 @@ struct NewsArticle: View {
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .visibleTopAtCapHeight(of: Self.serif(size: headlineSize, weight: .bold))
+                    .visibleTopAtCapHeight(of: UIFont.serifSystemFont(ofSize: headlineSize, weight: .bold))
                 Text(standfirst)
                     .font(.system(size: standfirstSize))
                     .fontDesign(.serif)
@@ -46,7 +46,7 @@ struct NewsArticle: View {
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .visibleTopAtCapHeight(of: Self.serif(size: standfirstSize, weight: .regular))
+                    .visibleTopAtCapHeight(of: UIFont.serifSystemFont(ofSize: standfirstSize, weight: .regular))
                 if imageURL != nil {
                     photo
                 }
@@ -80,13 +80,6 @@ struct NewsArticle: View {
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: CardLayoutConstants.mediaCornerRadius, style: .continuous))
-    }
-
-    /// New York at a size and weight, the face `.fontDesign(.serif)` sets a sized system font in, for its cap height
-    private static func serif(size: CGFloat, weight: UIFont.Weight) -> UIFont {
-        let font = UIFont.systemFont(ofSize: size, weight: weight)
-        guard let descriptor = font.fontDescriptor.withDesign(.serif) else { return font }
-        return UIFont(descriptor: descriptor, size: size)
     }
 }
 

@@ -140,6 +140,15 @@ struct DebugMenuView: View {
                 }
                 
                 Section("Testing Options") {
+                    // The Home feed ranks them as new again the next time it ranks
+                    Button("Reset seen posts") {
+                        if let userId = Auth.auth().currentUser?.uid {
+                            Task {
+                                await SeenPostsStore.shared.reset(userId: userId)
+                            }
+                        }
+                    }
+                    
                     Toggle("Use Mock Authentication", isOn: $debugManager.debugSettings.useMockAuth)
                     
                     Toggle("Show Debug Logs", isOn: $debugManager.debugSettings.showDebugLogs)

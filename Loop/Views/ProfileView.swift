@@ -89,10 +89,10 @@ struct ProfileView: View {
     // Layout constants
     /// The header's coordinate space, where its parts are measured from
     private static let headerCoordinateSpace = "profileHeader"
-    /// How the profile follows the sheet's height as it opens and closes
-    private static let expansionAnimation = Animation.easeInOut(duration: 0.2)
+    /// How the profile follows the sheet's height as it opens and closes, as topic pages do
+    static let expansionAnimation = Animation.easeInOut(duration: 0.2)
     /// How an avatar or wallpaper that has to load fades in, as quickly as the profile follows the sheet
-    fileprivate static let imageFadeIn = Animation.easeOut(duration: 0.2)
+    static let imageFadeIn = Animation.easeOut(duration: 0.2)
     /// The card's height while the profile loads: about a card with a two-line bio (362.33pt on iPhone 18 Pro), so
     /// a typical profile barely moves once it appears
     private static let loadingCardHeight: CGFloat = 362
@@ -379,11 +379,9 @@ struct ProfileView: View {
         // with its corners
         .padding(.bottom, ProfileGeometry.part)
         .background {
-            ProfileBackdrop(
-                bannerURL: user.bannerURL,
-                cardHeight: cardHeaderHeight,
-                heroHeight: heroHeight
-            )
+            ProfileBackdrop(cardHeight: cardHeaderHeight, heroHeight: heroHeight) {
+                ProfileBanner(bannerURL: user.bannerURL)
+            }
             // On under the page's rounded corners
             .padding(.bottom, -ProfileGeometry.wallpaperReach)
         }
@@ -395,12 +393,14 @@ struct ProfileView: View {
     /// The avatar, lit like an icon, on the left, and the name and handle beside it.
     private func profileHero(for user: User) -> some View {
         BaselineSpacedVStack(spacing: ProfileGeometry.part) {
-            ProfileIdentityRow(user: user) {
+            ProfileIdentityRow(name: user.displayName ?? "Display Name") {
                 avatarView
                     .overlay {
                         ProfileAvatarRim()
                     }
                     .modifier(ProfileAvatarShadow())
+            } lines: {
+                ProfileUserLines(user: user)
             }
             
             // Where the bio starts
@@ -746,21 +746,25 @@ struct ProfileView: View {
 
 // MARK: - Geometry
 
-/// The profile's measurements, shared by the header and the card height worked out before the sheet opens.
-private enum ProfileGeometry {
+/// The profile's measurements, shared by the header, the card height worked out before the sheet opens, and topic
+/// pages.
+enum ProfileGeometry {
     /// The side inset, as in posts: 10pt list inset plus 10pt card padding
     static let margin: CGFloat = CardLayoutConstants.horizontalPadding * 2
     /// The space between the profile's parts, measured where they visibly end and start
     static let part: CGFloat = 20
-    /// The name and the handle belong together: 12pt from the name's baseline to the handle's capitals
+    /// The name, the location and the handle belong together: 12pt from each line's baseline to the next one's
+    /// capitals
     static let nameToHandle: CGFloat = 12
     /// Twice the feed's 56pt avatar, as the name beside it is twice the feed's 17pt
     static let avatarSize: CGFloat = 2 * CardLayoutConstants.avatarSize
     static let avatarFrame = CGSize(width: avatarSize, height: avatarSize)
-    /// At full height the close button is 44pt tall and 16pt below the sheet's top edge (iOS 27.2), and the avatar
-    /// below it on the left starts a part spacing lower. The card keeps the same top, so the avatar, name and handle
-    /// don't move as the sheet expands
-    static let avatarTop: CGFloat = 16 + 44 + part
+    /// At full height the close button is 44pt tall and 16pt below the sheet's top edge (iOS 27.2)
+    static let closeButtonTop: CGFloat = 16
+    static let closeButtonSize: CGFloat = 44
+    /// The avatar below the close button on the left starts a part spacing lower. The card keeps the same top, so the
+    /// avatar, name and handle don't move as the sheet expands
+    static let avatarTop: CGFloat = closeButtonTop + closeButtonSize + part
     /// The space between the avatar and the name beside it, as in the feed
     static let avatarToName: CGFloat = CardLayoutConstants.avatarSpacing
     /// The hero's height when the avatar is taller than the name and handle beside it: down to a part spacing below
@@ -778,13 +782,16 @@ private enum ProfileGeometry {
     /// radius, so the wallpaper reaching only the radius ended in a flat cut inside the curve; twice the radius covers
     /// it
     static let wallpaperReach: CGFloat = pageCornerRadius * 2
+    /// How far the wallpaper holds back as the page scrolls down at full height: half of it, so it moves at half the
+    /// page's speed. Read while rendering, off the main actor
+    nonisolated static let wallpaperParallax: CGFloat = 0.5
 }
 
 /// The avatar's edge lit like a macOS 27 app icon's, so it reads on any wallpaper: a highlight inside the top edge
 /// and its corners, a fainter one inside the bottom, none along the sides. Measured on the Messages icon rendered at
 /// 1024px (an 824px tile): white at the top edge fading into the fill over 1.2% of the side, half as bright and half
 /// as deep at the bottom.
-private struct ProfileAvatarRim: View {
+struct ProfileAvatarRim: View {
     /// How far the top highlight reaches in, 1.2% of the side: the inner half of a stroke this wide, softened by a
     /// third of it, stays white at the edge and is gone by this depth
     private static let depth = ProfileGeometry.avatarSize * 0.012
@@ -813,16 +820,13 @@ private struct ProfileAvatarRim: View {
     }
 }
 
-/// The soft shadow a macOS 27 app icon casts, scaled from the 824px tile measured at 1024px to the avatar: it reaches
-/// about 3% of the side above, 4% to the sides and 5% below, 10% dark at the sides.
-private struct ProfileAvatarShadow: ViewModifier {
+/// A soft shadow spread evenly around the avatar, a photo resting on the wallpaper rather than an icon on a desk: no
+/// offset, so it reaches as far on every side, and gone 14pt out, before the name 20pt away (measured on a photo
+/// wallpaper at 3x).
+struct ProfileAvatarShadow: ViewModifier {
     func body(content: Content) -> some View {
         content
-            .shadow(
-                color: .black.opacity(0.25),
-                radius: ProfileGeometry.avatarSize * 0.02,
-                y: ProfileGeometry.avatarSize * 0.011
-            )
+            .shadow(color: .black.opacity(0.3), radius: 12)
     }
 }
 
@@ -830,7 +834,7 @@ private struct ProfileAvatarShadow: ViewModifier {
 
 /// Follow and Message in Liquid Glass, rendered like the toolbar's buttons: glass in the tint (white on the
 /// wallpaper, ink on the page) for an action, plain glass once it is done (Following).
-private struct ProfileActionGlass: ViewModifier {
+struct ProfileActionGlass: ViewModifier {
     let isProminent: Bool
 
     func body(content: Content) -> some View {
@@ -845,7 +849,7 @@ private struct ProfileActionGlass: ViewModifier {
 }
 
 /// A symbol and a title, as tall as the button. The symbol dims while the action is in flight.
-private struct ProfileActionLabel: View {
+struct ProfileActionLabel: View {
     let symbol: String
     let title: String
     let isLoading: Bool
@@ -867,19 +871,21 @@ private struct ProfileActionLabel: View {
 
 // MARK: - Profile Text
 
-/// The avatar on the left and the name and handle beside it, centered on the avatar by where they visibly start and
-/// end (the name's capitals and the handle's baseline). A view of its own so the card's height can be worked out
-/// with the same layout before the sheet opens.
-private struct ProfileIdentityRow<Avatar: View>: View {
-    let user: User
+/// The avatar on the left and the name and the lines under it beside it, centered on the avatar by where they visibly
+/// start and end (the name's capitals and the last line's baseline). A view of its own so the card's height can be
+/// worked out with the same layout before the sheet opens.
+struct ProfileIdentityRow<Avatar: View, Lines: View>: View {
+    let name: String
     @ViewBuilder let avatar: Avatar
+    /// The location and the handle
+    @ViewBuilder let lines: Lines
     
     var body: some View {
         HStack(spacing: ProfileGeometry.avatarToName) {
             avatar
                 .frame(width: ProfileGeometry.avatarSize, height: ProfileGeometry.avatarSize)
             
-            ProfileNameBlock(user: user)
+            ProfileNameBlock(name: name, lines: lines)
                 .alignmentGuide(VerticalAlignment.center) { ($0[.visibleTop] + $0[.visibleBottom]) / 2 }
         }
         // It visibly spans the avatar, which is taller than the lines beside it; the text inside doesn't change that
@@ -888,65 +894,105 @@ private struct ProfileIdentityRow<Avatar: View>: View {
     }
 }
 
-/// The name, and the handle line under it, beside the avatar: a post header's two lines. White, on the wallpaper.
-/// Both start their ink, not their frames, a part spacing from the avatar: at 34pt the name's first letter sits
-/// visibly inside its frame (2.67pt for an M), which set it further from the avatar than the handle under it.
-private struct ProfileNameBlock: View {
-    let user: User
+/// The name, then the lines under it, beside a profile's avatar or alone on a topic's page. White, on the wallpaper.
+/// Every line starts its ink, not its frame, where the text starts: at 34pt the name's first letter sits visibly inside
+/// its frame (2pt for an M), which set it further in than the lines under it.
+struct ProfileNameBlock<Lines: View>: View {
+    let name: String
+    /// Sets the name in New York, as a news topic's headlines are, rather than the app's rounded face
+    var isSerif = false
+    let lines: Lines
     
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    
-    private var name: String {
-        user.displayName ?? "Display Name"
-    }
+    // The serif is set as a fixed size, as in NewsArticle, so it scales with Dynamic Type itself
+    @ScaledMetric(relativeTo: .largeTitle) private var serifSize: CGFloat = 34
     
     var body: some View {
         let traits = UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(dynamicTypeSize))
-        let nameFont = UIFont.roundedSystemFont(.largeTitle, weight: .bold, compatibleWith: traits)
+        let nameFont = isSerif
+            ? UIFont.serifSystemFont(ofSize: serifSize, weight: .bold)
+            : UIFont.roundedSystemFont(.largeTitle, weight: .bold, compatibleWith: traits)
         BaselineSpacedVStack(spacing: ProfileGeometry.nameToHandle) {
-            Text(name)
-                .font(.largeTitle)
-                .fontWeight(.bold)
+            nameText
                 .lineLimit(2)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .offset(x: -nameFont.leadingSideBearing(of: name))
-                .visibleTopAtCapHeight(of: .largeTitle)
+                // The rounded bold's cap height is the large title's to the bit (23.956pt at 34pt, iOS 27.2)
+                .visibleTopAtCapHeight(of: nameFont)
                 .accessibilityAddTraits(.isHeader)
             
-            ProfileHandleLine(user: user)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            lines
         }
         .foregroundStyle(.white)
     }
+    
+    private var nameText: Text {
+        isSerif
+            ? Text(name).font(.system(size: serifSize, weight: .bold)).fontDesign(.serif)
+            : Text(name).font(.largeTitle).fontWeight(.bold)
+    }
 }
 
-/// The handle and location, as one line under the name: a post's second line, in callout.
-private struct ProfileHandleLine: View {
+/// A profile's location, when there is one, and handle, each on a line of its own under the name.
+private struct ProfileUserLines: View {
     let user: User
     
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    
-    private var handleAndLocation: String {
-        let handle = "@\(user.username ?? "username")"
-        guard let location = user.location, !location.isEmpty else { return handle }
-        return "\(handle) \u{00B7} \(location)"
+    var body: some View {
+        if let location = user.location, !location.isEmpty {
+            ProfileSubtitleLine(symbol: ProfileSubtitleLine.locationSymbol, text: location, spokenText: location)
+        }
+        
+        let username = user.username ?? "username"
+        ProfileSubtitleLine(symbol: ProfileSubtitleLine.handleSymbol, text: username, spokenText: "@\(username)")
     }
+}
+
+/// A line under the name, the location or the handle, in callout like a post's second line: its symbol, then the text,
+/// as the feed's AI mark comes before a topic post's source. The symbols are drawn small, about as tall as the capitals.
+private struct ProfileSubtitleLine: View {
+    static let locationSymbol = "location"
+    static let handleSymbol = "at"
+    
+    let symbol: String
+    let text: String
+    /// What VoiceOver reads, since the symbol is hidden from it
+    let spokenText: String
+    
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     
     var body: some View {
         let traits = UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(dynamicTypeSize))
         let font = UIFont.roundedSystemFont(.callout, weight: .regular, compatibleWith: traits)
-        Text(handleAndLocation)
-            .font(.callout)
-            .foregroundStyle(.white.opacity(0.85))
-            .lineLimit(1)
-            // Its ink starts where the name's does
-            .offset(x: -font.leadingSideBearing(of: handleAndLocation))
-            .visibleTopAtCapHeight(of: .callout)
-            .accessibilityLabel(handleAndLocation.replacingOccurrences(of: " \u{00B7} ", with: ", "))
+        HStack(alignment: .firstTextBaseline, spacing: 5) {
+            // A column as wide as the widest symbol, so the location and the handle start their text together
+            ZStack(alignment: Alignment(horizontal: .leading, vertical: .firstTextBaseline)) {
+                ForEach([Self.locationSymbol, Self.handleSymbol], id: \.self) { symbol in
+                    Image(systemName: symbol)
+                        .hidden()
+                }
+                
+                Image(systemName: symbol)
+            }
+            .imageScale(.small)
+            
+            Text(text)
+                .lineLimit(1)
+                // Its ink starts 5pt from the symbol column, whatever its first letter
+                .offset(x: -font.leadingSideBearing(of: text))
+        }
+        .font(.callout)
+        .foregroundStyle(.white.opacity(0.85))
+        // Both symbols start their ink 1pt inside their image at the callout's 16pt (measured at 3x on iOS 27.2), so
+        // the line starts that much further left and their ink starts where the name's does
+        .offset(x: -font.pointSize / 16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .visibleTopAtCapHeight(of: .callout)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(spokenText)
     }
 }
 
-private extension UIFont {
+extension UIFont {
     /// The app's rounded system face at a text style's size, as SwiftUI draws that style under the root's
     /// `.fontDesign(.rounded)`
     static func roundedSystemFont(
@@ -957,6 +1003,20 @@ private extension UIFont {
         let size = UIFont.preferredFont(forTextStyle: style, compatibleWith: traits).pointSize
         let font = UIFont.systemFont(ofSize: size, weight: weight)
         return font.fontDescriptor.withDesign(.rounded).map { UIFont(descriptor: $0, size: size) } ?? font
+    }
+    
+    /// New York at a size and weight, the face `.fontDesign(.serif)` sets a sized system font in
+    static func serifSystemFont(ofSize size: CGFloat, weight: UIFont.Weight) -> UIFont {
+        let font = UIFont.systemFont(ofSize: size, weight: weight)
+        return font.fontDescriptor.withDesign(.serif).map { UIFont(descriptor: $0, size: size) } ?? font
+    }
+    
+    /// How far a line of `text` ends its ink inside its trailing edge: its last letter's side bearing
+    func trailingSideBearing(of text: String) -> CGFloat {
+        guard let last = text.last else { return 0 }
+        let line = CTLineCreateWithAttributedString(NSAttributedString(string: String(last), attributes: [.font: self]))
+        let advance = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
+        return advance - CTLineGetBoundsWithOptions(line, .useGlyphPathBounds).maxX
     }
     
     /// How far a line of `text` starts its ink inside its leading edge: its first letter's side bearing
@@ -1135,7 +1195,7 @@ private struct ProfileDetails: View {
 /// The page behind the tabs and the feed. Always opaque, so the sheet's glass never shows below the buttons as the
 /// sheet opens, and its top corners round in from square on the card to the page corner radius at full height, in
 /// step with the tabs fading in. Reads the live height, so per-frame updates stop here.
-private struct ProfilePageBackground: View {
+struct ProfilePageBackground: View {
     let metrics: ProfileSheetMetrics
     let minimumHeight: CGFloat
     let isFullyExpanded: Bool
@@ -1152,27 +1212,49 @@ private struct ProfilePageBackground: View {
 
 /// The wallpaper behind the header, darkened a little toward its foot so white type stays legible. It is laid out at
 /// the card's height, plus the reach it runs on under the page, in every detent, so it never re-crops as the sheet
-/// opens. With no wallpaper, the dark gray it shows while loading stands in.
-private struct ProfileBackdrop: View {
-    let bannerURL: String?
+/// opens. Scrolled down at full height, it moves up at half the page's speed, so the page slides up over it. A
+/// profile's wallpaper is its banner; a topic's is its latest story photos.
+struct ProfileBackdrop<Wallpaper: View>: View {
     /// The card's header height, or 0 before it is measured, when the wallpaper fills the header
     let cardHeight: CGFloat
     let heroHeight: CGFloat
+    /// What the wallpaper darkens toward under the type: black, or a topic's own color
+    var shade = Color.black
+    /// Whether the wallpaper takes touches, as a topic's photos do to be swiped. The shade never does
+    var isInteractive = false
+    @ViewBuilder let wallpaper: Wallpaper
     
     var body: some View {
         Color.clear
             .overlay(alignment: .top) {
                 wallpaper
+                    // Only scrolling down moves it; at rest, on the card and pulled down, it sits where it is laid
+                    // out. A transform rather than an offset, which lands on whole pixels and would step
+                    .visualEffect { content, proxy in
+                        let scrolled = max(0, -proxy.frame(in: .scrollView(axis: .vertical)).minY)
+                        let holdBack = scrolled * ProfileGeometry.wallpaperParallax
+                        return content.transformEffect(CGAffineTransform(translationX: 0, y: holdBack))
+                    }
+                    // The shade stays with the type it is under
+                    .overlay {
+                        ProfileWallpaperShade(heroHeight: heroHeight, color: shade)
+                            .allowsHitTesting(false)
+                    }
                     .frame(height: cardHeight > 0 ? cardHeight + ProfileGeometry.wallpaperReach : nil)
             }
             .clipped()
             // The wallpaper always renders dark, like a contact poster
             .environment(\.colorScheme, .dark)
-            .allowsHitTesting(false)
+            .allowsHitTesting(isInteractive)
             .accessibilityHidden(true)
     }
+}
+
+/// A profile's banner, on the dark gray it shows while loading or when there is none.
+private struct ProfileBanner: View {
+    let bannerURL: String?
     
-    private var wallpaper: some View {
+    var body: some View {
         Color(.systemGray5)
             .overlay {
                 if let bannerURL, let url = URL(string: bannerURL) {
@@ -1190,9 +1272,6 @@ private struct ProfileBackdrop: View {
                     }
                 }
             }
-            .overlay {
-                ProfileWallpaperShade(heroHeight: heroHeight)
-            }
     }
 }
 
@@ -1202,6 +1281,7 @@ private struct ProfileBackdrop: View {
 /// edge shows where it begins.
 private struct ProfileWallpaperShade: View {
     let heroHeight: CGFloat
+    let color: Color
     
     /// The darkest it gets, behind the smaller type
     private static let strongest = 0.45
@@ -1216,7 +1296,7 @@ private struct ProfileWallpaperShade: View {
                 let t = CGFloat(step) / 8
                 let eased = t * t * (3 - 2 * t)
                 return Gradient.Stop(
-                    color: .black.opacity(Self.strongest * eased),
+                    color: color.opacity(Self.strongest * eased),
                     location: min((start + (end - start) * t) / height, 1)
                 )
             }
@@ -1253,8 +1333,10 @@ extension ProfileView {
     static func collapsedCardHeight(for user: User, in context: ProfileLayoutContext) -> CGFloat {
         let contentWidth = context.width - ProfileGeometry.margin * 2
         let header = BaselineSpacedVStack(spacing: ProfileGeometry.part) {
-            ProfileIdentityRow(user: user) {
+            ProfileIdentityRow(name: user.displayName ?? "Display Name") {
                 Color.clear
+            } lines: {
+                ProfileUserLines(user: user)
             }
             ProfileDetails(user: user)
             Color.clear
@@ -1297,7 +1379,7 @@ extension ProfileView {
 
 /// The posts, photos or likes under the header. Reading the view model here rather than in ProfileView keeps
 /// feed loads and like changes from re-rendering the banner and header.
-private struct ProfileFeedSection: View {
+struct ProfileFeedSection: View {
     let viewModel: ProfileFeedViewModel
     let selectedTab: ProfileFeedTab
     
@@ -1404,7 +1486,7 @@ private struct ProfileFeedSection: View {
 /// The live height of the profile's content area. It changes on every frame of a sheet drag, so only
 /// the SheetExpansion modifiers read it, and the rest of the profile doesn't re-render while the sheet moves.
 @Observable
-private final class ProfileSheetMetrics {
+final class ProfileSheetMetrics {
     var height: CGFloat = 0
     /// The sheet's height at the large detent, once it has been there. The tallest height seen, so dragging
     /// down from full height still fades.
@@ -1434,7 +1516,7 @@ private final class ProfileSheetMetrics {
 
 /// Fades the tabs and feed in as the sheet opens, taking touches once mostly visible. The live height is read
 /// here, so per-frame updates during a drag stop at this modifier instead of re-running ProfileView's body.
-private struct SheetExpansionFade: ViewModifier {
+struct SheetExpansionFade: ViewModifier {
     let metrics: ProfileSheetMetrics
     let minimumHeight: CGFloat
     let isFullyExpanded: Bool
@@ -1453,7 +1535,7 @@ private struct SheetExpansionFade: ViewModifier {
 /// fading in, so it follows the finger and is exactly one or the other whenever the sheet rests. Like
 /// `SheetExpansionFade`, it reads the live height so per-frame updates stop here. It has no animation of its own:
 /// the transaction that changes the height animates it together with the layout around it.
-private struct SheetExpansionHeight: ViewModifier {
+struct SheetExpansionHeight: ViewModifier {
     let metrics: ProfileSheetMetrics
     let minimumHeight: CGFloat
     let isFullyExpanded: Bool
@@ -1470,7 +1552,7 @@ private struct SheetExpansionHeight: ViewModifier {
 
 // MARK: - View Modifiers to reduce type-checking complexity
 
-private struct ProfileNavigationModifiers: ViewModifier {
+struct ProfileNavigationModifiers: ViewModifier {
     let isSheetFullyExpanded: Bool
     let dismissAction: () -> Void
     

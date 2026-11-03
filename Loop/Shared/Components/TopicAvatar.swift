@@ -31,7 +31,7 @@ struct TopicAvatar: View {
     }
 }
 
-private extension Color {
+extension Color {
     /// A color from `#RRGGBB`, or nil if the string isn't one
     init?(hex: String) {
         let digits = hex.hasPrefix("#") ? String(hex.dropFirst()) : hex

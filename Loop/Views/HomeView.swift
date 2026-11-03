@@ -7,6 +7,7 @@ struct HomeView: View {
     /// Pulls to refresh so far; each one rolls the glass across the wordmark
     @State private var refreshes = 0
     @Environment(SheetRouter.self) private var sheetRouter
+    @Environment(\.scenePhase) private var scenePhase
     
     // Debug settings
     @AppStorage("showLayoutDebugOverlays") private var showLayoutDebugOverlays = false
@@ -56,6 +57,19 @@ struct HomeView: View {
         .task {
             viewModel.start()
         }
+        // Coming back after a while ranks the feed again for the new visit
+        .onChange(of: scenePhase) { _, phase in
+            switch phase {
+            case .background:
+                viewModel.appDidEnterBackground()
+            case .active:
+                Task {
+                    await viewModel.appDidBecomeActive()
+                }
+            default:
+                break
+            }
+        }
         .alert("Error", isPresented: errorAlertBinding) {
             Button("OK") {
                 viewModel.clearError()
@@ -95,6 +109,8 @@ struct HomeView: View {
                 postsSection
             }
         }
+        // A new visit's ranking starts the list back at the top
+        .id(viewModel.visitID)
     }
     
     // MARK: - Posts Section
@@ -136,7 +152,7 @@ struct HomeView: View {
                         }
                     } : nil,
                     onAvatarTap: {
-                        sheetRouter.showProfile(userId: loop.authorId)
+                        sheetRouter.showAuthor(of: loop)
                     },
                     replyPreviews: replies,
                     onReplyPreviewTap: {
@@ -164,6 +180,10 @@ struct HomeView: View {
             }
             // Like bursts fly out of the post and land on its divider
             .likeBurstLayer()
+            // Seen after a second at least half on screen; the feed ranks posts you haven't seen first
+            .onScrollVisibilityChange(threshold: 0.5) { isVisible in
+                viewModel.postVisibilityChanged(loop.id, isVisible: isVisible)
+            }
             .listRowSeparator(.hidden)
             .listRowBackground(Color.clear)
             .listRowInsets(EdgeInsets(top: 0, leading: 10, bottom: 0, trailing: 10))

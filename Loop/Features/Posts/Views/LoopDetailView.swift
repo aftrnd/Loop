@@ -30,7 +30,9 @@ struct LoopDetailView: View {
                         },
                         onShare: nil,
                         onDelete: nil, // Can't delete main loop from detail view
-                        onAvatarTap: {
+                        // A topic has no profile to open here; its page opens from the feed, through the router that
+                        // presents this thread
+                        onAvatarTap: viewModel.loop.isTopicPost ? nil : {
                             profileUserToShow = ProfileUser(userId: viewModel.loop.authorId)
                         },
             showDebugOverlays: showDebugOverlay

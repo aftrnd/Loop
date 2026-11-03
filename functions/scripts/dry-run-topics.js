@@ -1,5 +1,6 @@
-// Dry run of the topic job: fetches every feed, claims stories in memory and prints the posts it would make, without
-// writing anything. With ANTHROPIC_API_KEY set, Claude writes the posts; without it, each post is the headline.
+// Dry run of the topic job: fetches every feed, claims stories in memory and prints the posts and directory entries it
+// would make, without writing anything. With ANTHROPIC_API_KEY set, Claude writes the posts and briefs; without it,
+// each post and brief is a headline.
 // usage: npm run dry-run-topics [-- <topicId>]
 const Anthropic = require('@anthropic-ai/sdk');
 const { internals } = require('../topics');
@@ -19,12 +20,15 @@ async function main() {
       claimed.delete(storyId);
     },
     save: async () => {},
+    describe: async (topicId, fields) => console.log(`topics/${topicId}: ${JSON.stringify(fields)}`),
   };
-  const writer = process.env.ANTHROPIC_API_KEY
-    ? internals.claudeWriter(new Anthropic())
+  const client = process.env.ANTHROPIC_API_KEY ? new Anthropic() : null;
+  const writer = client
+    ? internals.claudeWriter(client)
     : async (topic, story) => ({ text: story.title, significance: 3 });
+  const briefer = client ? internals.claudeBriefer(client) : async (topic, stories) => stories[0].title;
   const log = { info: console.log, warn: console.warn, error: console.error };
-  const posts = await internals.runTopics({ store, writer, log, topics });
+  const posts = await internals.runTopics({ store, writer, briefer, log, topics });
   for (const loop of posts) {
     console.log(`\n@${loop.authorUsername}${loop.topic.layout ? ` (${loop.topic.layout})` : ''}: ${loop.content}`);
     console.log(`  ${loop.link.source}: ${loop.link.title}`);

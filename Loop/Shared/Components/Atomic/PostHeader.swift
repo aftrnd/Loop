@@ -3,11 +3,20 @@ import SwiftUI
 /// Atomic component: Post header with avatar, name, badge, username, and timestamp
 /// Single source of truth for all post headers - use this everywhere for consistency
 struct PostHeader: View {
+    /// Where the verified or premium badge sits
+    enum BadgePlacement {
+        /// Before the handle, as in posts
+        case handle
+        /// Before the name, for rows whose second line isn't a handle, such as a conversation's last message
+        case name
+    }
+    
     // MARK: - Properties
     let avatarURL: String?
     let displayName: String
     let username: String?
     let badgeType: BadgeType?
+    let badgePlacement: BadgePlacement
     /// A topic account's look, drawn in place of a photo
     let topic: LoopTopic?
     /// Where a topic post's story comes from, shown with the AI mark in place of the handle
@@ -27,6 +36,7 @@ struct PostHeader: View {
         displayName: String,
         username: String?,
         badgeType: BadgeType?,
+        badgePlacement: BadgePlacement = .handle,
         topic: LoopTopic? = nil,
         source: String? = nil,
         timestamp: String? = nil,
@@ -39,6 +49,7 @@ struct PostHeader: View {
         self.displayName = displayName
         self.username = username
         self.badgeType = badgeType
+        self.badgePlacement = badgePlacement
         self.topic = topic
         self.source = source
         self.timestamp = timestamp
@@ -136,10 +147,16 @@ struct PostHeader: View {
     
     private var topHalf: some View {
         HStack(spacing: 0) {
-            Text(displayName)
-                .font(.headline)
-                .fontWeight(.semibold)
-                .lineLimit(1)
+            HStack(spacing: 4) {
+                if badgePlacement == .name, let badgeType {
+                    badge(badgeType)
+                }
+                
+                Text(displayName)
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                    .lineLimit(1)
+            }
             
             Spacer()
             
@@ -177,10 +194,8 @@ struct PostHeader: View {
                 topicSourceLine(source)
             } else if let username = username, !username.isEmpty {
                 HStack(spacing: 4) {
-                    if let badgeType = badgeType {
-                        Image(systemName: badgeType.iconName)
-                            .font(.system(size: 14))
-                            .foregroundColor(badgeType.color)
+                    if badgePlacement == .handle, let badgeType {
+                        badge(badgeType)
                     }
 
                     Text(showUsernamePrefix ? "@\(username)" : username)
@@ -204,6 +219,12 @@ struct PostHeader: View {
         )
     }
 
+    private func badge(_ badgeType: BadgeType) -> some View {
+        Image(systemName: badgeType.iconName)
+            .font(.system(size: 14))
+            .foregroundColor(badgeType.color)
+    }
+
     /// A topic post's second line: the AI mark, then the source of the story Loop wrote the post from
     private func topicSourceLine(_ source: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 5) {
@@ -222,10 +243,12 @@ struct PostHeader: View {
 
 // MARK: - AI Mark
 
-/// Marks what Loop wrote with AI: sparkles.2 cut out of a small plate with the avatar's corners, in the secondary color
-/// of the callout text beside it. The plate is 1.3 times the callout's cap height and centered on its capitals, so it
-/// overshoots them by 0.15 cap heights above and below; the symbol fills its middle four sevenths
-private struct AIMark: View {
+/// Marks what Loop wrote with AI: sparkles.2 cut out of a small plate with the avatar's corners, in the color of the
+/// callout text beside it (secondary in posts). The plate is 1.3 times the callout's cap height and centered on its
+/// capitals, so it overshoots them by 0.15 cap heights above and below; the symbol fills its middle four sevenths
+struct AIMark: View {
+    var fill: Color = .secondary
+
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
@@ -233,7 +256,7 @@ private struct AIMark: View {
         let capHeight = UIFont.preferredFont(forTextStyle: .callout, compatibleWith: traits).capHeight
         let side = capHeight * 1.3
         AvatarShape()
-            .fill(Color.secondary)
+            .fill(fill)
             .overlay {
                 Image(systemName: "sparkles.2")
                     .resizable()

@@ -14,6 +14,8 @@ class FirebaseService {
 
     /// Author profiles fetched this session, keyed by user ID. Shared by every feed so a profile is read once.
     private var userCache: [String: User] = [:]
+    /// The topics the signed-in user follows, read once a session and kept current as they follow and unfollow
+    private var followedTopicsCache: (userId: String, topicIds: Set<String>)?
 
     private init() {}
 
@@ -882,6 +884,38 @@ class FirebaseService {
         print("✅ Successfully unfollowed user: \(targetUserId)")
     }
     
+    /// The ids of the topics the signed-in user follows, kept in `followedTopics` on their own profile. Topic accounts
+    /// have no profile of their own, so following one writes only yours.
+    func followedTopics() async throws -> Set<String> {
+        guard let currentUserId = Auth.auth().currentUser?.uid else {
+            throw NSError(domain: "FirebaseService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
+        }
+        if let cache = followedTopicsCache, cache.userId == currentUserId {
+            return cache.topicIds
+        }
+        let doc = try await db.collection("users").document(currentUserId).getDocument()
+        let topicIds = Set(doc.data()?["followedTopics"] as? [String] ?? [])
+        followedTopicsCache = (currentUserId, topicIds)
+        return topicIds
+    }
+    
+    func setFollowing(_ following: Bool, topicId: String) async throws {
+        guard let currentUserId = Auth.auth().currentUser?.uid else {
+            throw NSError(domain: "FirebaseService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
+        }
+        try await db.collection("users").document(currentUserId).updateData([
+            "followedTopics": following ? FieldValue.arrayUnion([topicId]) : FieldValue.arrayRemove([topicId])
+        ])
+        if var cache = followedTopicsCache, cache.userId == currentUserId {
+            if following {
+                cache.topicIds.insert(topicId)
+            } else {
+                cache.topicIds.remove(topicId)
+            }
+            followedTopicsCache = cache
+        }
+    }
+    
     // MARK: - Loop Operations
     
     func createLoop(content: String, media: [LoopMedia] = [], isReply: Bool = false, parentLoopId: String? = nil, replyToReplyId: String? = nil) async throws {
@@ -1080,7 +1114,8 @@ class FirebaseService {
             authorDisplayName: topic == nil ? nil : data["authorDisplayName"] as? String,
             authorUsername: topic == nil ? nil : data["authorUsername"] as? String,
             topic: topic,
-            link: parseLink(data["link"] as? [String: Any])
+            link: parseLink(data["link"] as? [String: Any]),
+            significance: data["significance"] as? Int
         )
     }
     
@@ -1153,12 +1188,16 @@ class FirebaseService {
     
     // MARK: - Profile Feed Operations
     
-    /// Fetches all loops (posts and replies) created by a specific user
-    func getUserLoops(userId: String) async throws -> [Loop] {
-        let snapshot = try await db.collection("loops")
+    /// Fetches the loops (posts and replies) created by a specific user, newest first: all of them, or the latest
+    /// `limit`
+    func getUserLoops(userId: String, limit: Int? = nil) async throws -> [Loop] {
+        var query = db.collection("loops")
             .whereField("authorId", isEqualTo: userId)
             .order(by: "createdAt", descending: true)
-            .getDocuments()
+        if let limit {
+            query = query.limit(to: limit)
+        }
+        let snapshot = try await query.getDocuments()
         
         return await loops(from: snapshot.documents)
     }
