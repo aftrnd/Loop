@@ -92,7 +92,7 @@ struct ProfileView: View {
     /// How the profile follows the sheet's height as it opens and closes, as topic pages do
     static let expansionAnimation = Animation.easeInOut(duration: 0.2)
     /// How an avatar or wallpaper that has to load fades in, as quickly as the profile follows the sheet
-    fileprivate static let imageFadeIn = Animation.easeOut(duration: 0.2)
+    static let imageFadeIn = Animation.easeOut(duration: 0.2)
     /// The card's height while the profile loads: about a card with a two-line bio (362.33pt on iPhone 18 Pro), so
     /// a typical profile barely moves once it appears
     private static let loadingCardHeight: CGFloat = 362
@@ -379,11 +379,9 @@ struct ProfileView: View {
         // with its corners
         .padding(.bottom, ProfileGeometry.part)
         .background {
-            ProfileBackdrop(
-                bannerURL: user.bannerURL,
-                cardHeight: cardHeaderHeight,
-                heroHeight: heroHeight
-            )
+            ProfileBackdrop(cardHeight: cardHeaderHeight, heroHeight: heroHeight) {
+                ProfileBanner(bannerURL: user.bannerURL)
+            }
             // On under the page's rounded corners
             .padding(.bottom, -ProfileGeometry.wallpaperReach)
         }
@@ -761,10 +759,12 @@ enum ProfileGeometry {
     /// Twice the feed's 56pt avatar, as the name beside it is twice the feed's 17pt
     static let avatarSize: CGFloat = 2 * CardLayoutConstants.avatarSize
     static let avatarFrame = CGSize(width: avatarSize, height: avatarSize)
-    /// At full height the close button is 44pt tall and 16pt below the sheet's top edge (iOS 27.2), and the avatar
-    /// below it on the left starts a part spacing lower. The card keeps the same top, so the avatar, name and handle
-    /// don't move as the sheet expands
-    static let avatarTop: CGFloat = 16 + 44 + part
+    /// At full height the close button is 44pt tall and 16pt below the sheet's top edge (iOS 27.2)
+    static let closeButtonTop: CGFloat = 16
+    static let closeButtonSize: CGFloat = 44
+    /// The avatar below the close button on the left starts a part spacing lower. The card keeps the same top, so the
+    /// avatar, name and handle don't move as the sheet expands
+    static let avatarTop: CGFloat = closeButtonTop + closeButtonSize + part
     /// The space between the avatar and the name beside it, as in the feed
     static let avatarToName: CGFloat = CardLayoutConstants.avatarSpacing
     /// The hero's height when the avatar is taller than the name and handle beside it: down to a part spacing below
@@ -991,6 +991,14 @@ extension UIFont {
         return font.fontDescriptor.withDesign(.rounded).map { UIFont(descriptor: $0, size: size) } ?? font
     }
     
+    /// How far a line of `text` ends its ink inside its trailing edge: its last letter's side bearing
+    func trailingSideBearing(of text: String) -> CGFloat {
+        guard let last = text.last else { return 0 }
+        let line = CTLineCreateWithAttributedString(NSAttributedString(string: String(last), attributes: [.font: self]))
+        let advance = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
+        return advance - CTLineGetBoundsWithOptions(line, .useGlyphPathBounds).maxX
+    }
+    
     /// How far a line of `text` starts its ink inside its leading edge: its first letter's side bearing
     func leadingSideBearing(of text: String) -> CGFloat {
         guard let first = text.first else { return 0 }
@@ -1184,19 +1192,22 @@ struct ProfilePageBackground: View {
 
 /// The wallpaper behind the header, darkened a little toward its foot so white type stays legible. It is laid out at
 /// the card's height, plus the reach it runs on under the page, in every detent, so it never re-crops as the sheet
-/// opens. With no wallpaper, the color under it stands in: the dark gray it shows while loading, or a team's color on
-/// its topic page.
-struct ProfileBackdrop: View {
-    let bannerURL: String?
-    var color = Color(.systemGray5)
+/// opens. A profile's wallpaper is its banner; a topic's is drawn from its look.
+struct ProfileBackdrop<Wallpaper: View>: View {
     /// The card's header height, or 0 before it is measured, when the wallpaper fills the header
     let cardHeight: CGFloat
     let heroHeight: CGFloat
+    /// What the wallpaper darkens toward under the type: black, or a topic's own color
+    var shade = Color.black
+    @ViewBuilder let wallpaper: Wallpaper
     
     var body: some View {
         Color.clear
             .overlay(alignment: .top) {
                 wallpaper
+                    .overlay {
+                        ProfileWallpaperShade(heroHeight: heroHeight, color: shade)
+                    }
                     .frame(height: cardHeight > 0 ? cardHeight + ProfileGeometry.wallpaperReach : nil)
             }
             .clipped()
@@ -1205,9 +1216,14 @@ struct ProfileBackdrop: View {
             .allowsHitTesting(false)
             .accessibilityHidden(true)
     }
+}
+
+/// A profile's banner, on the dark gray it shows while loading or when there is none.
+private struct ProfileBanner: View {
+    let bannerURL: String?
     
-    private var wallpaper: some View {
-        color
+    var body: some View {
+        Color(.systemGray5)
             .overlay {
                 if let bannerURL, let url = URL(string: bannerURL) {
                     CachedAsyncImage(url: url, fadeIn: ProfileView.imageFadeIn) { image in
@@ -1224,9 +1240,6 @@ struct ProfileBackdrop: View {
                     }
                 }
             }
-            .overlay {
-                ProfileWallpaperShade(heroHeight: heroHeight)
-            }
     }
 }
 
@@ -1236,6 +1249,7 @@ struct ProfileBackdrop: View {
 /// edge shows where it begins.
 private struct ProfileWallpaperShade: View {
     let heroHeight: CGFloat
+    let color: Color
     
     /// The darkest it gets, behind the smaller type
     private static let strongest = 0.45
@@ -1250,7 +1264,7 @@ private struct ProfileWallpaperShade: View {
                 let t = CGFloat(step) / 8
                 let eased = t * t * (3 - 2 * t)
                 return Gradient.Stop(
-                    color: .black.opacity(Self.strongest * eased),
+                    color: color.opacity(Self.strongest * eased),
                     location: min((start + (end - start) * t) / height, 1)
                 )
             }

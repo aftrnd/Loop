@@ -60,14 +60,6 @@ struct TopicView: View {
         collapsedHeight + (sheetRouter?.profileLayout?.bottomInset ?? 0)
     }
 
-    /// A team's own color, as its squircle wears it; every other topic is in ink, so the dark gray of a profile with
-    /// no wallpaper
-    private var wallpaperColor: Color {
-        let ink = Color(.systemGray5)
-        guard page.topic.isTeam else { return ink }
-        return Color(hex: page.topic.color) ?? ink
-    }
-
     /// - Parameter collapsedHeight: The card's detent from `collapsedHeight(for:in:)`, or nil when the layout isn't
     ///   known, which leaves out the bottom safe area
     init(page: TopicPage, collapsedHeight: CGFloat?) {
@@ -190,12 +182,9 @@ struct TopicView: View {
         .tint(.white)
         .backgroundStyle(.black)
         .background {
-            ProfileBackdrop(
-                bannerURL: nil,
-                color: wallpaperColor,
-                cardHeight: cardHeight,
-                heroHeight: ProfileGeometry.heroHeight
-            )
+            ProfileBackdrop(cardHeight: cardHeight, heroHeight: ProfileGeometry.heroHeight, shade: page.topic.pageColor) {
+                TopicWallpaper(page: page, feed: feedViewModel)
+            }
             // On under the page's rounded corners
             .padding(.bottom, -ProfileGeometry.wallpaperReach)
         }
@@ -331,23 +320,19 @@ private struct TopicIdentityRow: View {
     }
 }
 
-/// The lines under a topic's name, like a profile's location and handle: the AI mark with the sources its posts
-/// summarize, as a topic post's second line has the mark and its story's source, then when it last posted. Reading
-/// the feed here keeps its loads from re-rendering the rest of the page.
+/// The line under a topic's name, as a topic post's second line has the AI mark and its story's source: the mark
+/// with the sources its latest posts summarize. Reading the feed here keeps its loads from re-rendering the rest of the
+/// page.
 private struct TopicLines: View {
     let page: TopicPage
     let feed: ProfileFeedViewModel?
 
-    private var posts: [Loop] {
-        let loaded = feed?.posts ?? []
-        return loaded.isEmpty ? [page.post] : loaded
-    }
-
     /// The publishers its posts summarize, the most summarized first, ties in order of their latest post
     private var sources: [String] {
+        let loaded = feed?.posts ?? []
         var counts: [String: Int] = [:]
         var order: [String] = []
-        for post in posts {
+        for post in loaded.isEmpty ? [page.post] : loaded {
             guard let source = post.link?.source, !source.isEmpty else { continue }
             if counts[source] == nil {
                 order.append(source)
@@ -361,16 +346,11 @@ private struct TopicLines: View {
 
     var body: some View {
         let sources = sources
-        TopicSubtitleLine(mark: .ai, variants: Self.sourceVariants(sources), spokenText: Self.spokenSources(sources))
-
-        if let latest = posts.max(by: { $0.createdAt < $1.createdAt }) {
-            let updated = "Updated \(latest.timeAgoString)"
-            TopicSubtitleLine(mark: .symbol("clock"), variants: [updated], spokenText: updated)
-        }
+        TopicSourcesLine(variants: Self.variants(sources), spokenText: Self.spokenText(sources))
     }
 
     /// The sources, longest first: up to two by name and how many more, then one by name, then only how many
-    private static func sourceVariants(_ sources: [String]) -> [String] {
+    private static func variants(_ sources: [String]) -> [String] {
         switch sources.count {
         case 0: return ["News summaries"]
         case 1: return [sources[0]]
@@ -384,21 +364,14 @@ private struct TopicLines: View {
         }
     }
 
-    private static func spokenSources(_ sources: [String]) -> String {
+    private static func spokenText(_ sources: [String]) -> String {
         guard !sources.isEmpty else { return "News summaries written by AI" }
         return "Summaries written by AI, from " + ListFormatter.localizedString(byJoining: sources)
     }
 }
 
-/// A line under a topic's name: its mark, then the longest of its texts that fits on one line. The marks share a
-/// column as wide as the wider of the AI mark and the clock, so both lines start their text together.
-private struct TopicSubtitleLine: View {
-    enum Mark {
-        case ai
-        case symbol(String)
-    }
-
-    let mark: Mark
+/// The AI mark, then the longest of the texts that fits on one line, in callout like a profile's lines.
+private struct TopicSourcesLine: View {
     /// The text, longest first
     let variants: [String]
     let spokenText: String
@@ -409,30 +382,13 @@ private struct TopicSubtitleLine: View {
         let traits = UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(dynamicTypeSize))
         let font = UIFont.roundedSystemFont(.callout, weight: .regular, compatibleWith: traits)
         HStack(alignment: .firstTextBaseline, spacing: 5) {
-            ZStack(alignment: Alignment(horizontal: .leading, vertical: .firstTextBaseline)) {
-                AIMark()
-                    .hidden()
-                Image(systemName: "clock")
-                    .imageScale(.small)
-                    .hidden()
-
-                switch mark {
-                case .ai:
-                    AIMark(fill: .white.opacity(0.85))
-                case .symbol(let name):
-                    Image(systemName: name)
-                        .imageScale(.small)
-                        // A symbol starts its ink 1pt inside its image at the callout's 16pt, as on a profile; the
-                        // AI mark's plate starts at its edge
-                        .offset(x: -font.pointSize / 16)
-                }
-            }
+            AIMark(fill: .white.opacity(0.85))
 
             ViewThatFits(in: .horizontal) {
                 ForEach(variants, id: \.self) { text in
                     Text(text)
                         .lineLimit(1)
-                        // Its ink starts 5pt from the mark column, whatever its first letter
+                        // Its ink starts 5pt from the mark, whatever its first letter
                         .offset(x: -font.leadingSideBearing(of: text))
                 }
             }
@@ -443,5 +399,147 @@ private struct TopicSubtitleLine: View {
         .visibleTopAtCapHeight(of: .callout)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(spokenText)
+    }
+}
+
+// MARK: - Wallpaper
+
+private extension LoopTopic {
+    /// The topic's color on its page: a team's own, exactly, or for a topic drawn in ink, its color darkened to a deep
+    /// shade of its own
+    var pageColor: Color {
+        let color = Color(hex: self.color) ?? Color(.systemGray5)
+        return isTeam ? color : color.mix(with: .black, by: 0.55)
+    }
+}
+
+/// A story photo the wallpaper shows, with what its credit says
+private struct TopicPhoto: Hashable {
+    let url: URL
+    let source: String
+    let timeAgo: String
+}
+
+/// A topic's wallpaper: its latest story photos in full color, one after another, on the topic's color until the
+/// first has loaded. The post the page was opened from stands in until the topic's posts load. Each photo loads before
+/// it fades in over the last, which stays underneath, so the wallpaper never shows a photo half faded over its color.
+private struct TopicWallpaper: View {
+    let page: TopicPage
+    let feed: ProfileFeedViewModel
+
+    /// The latest photos it goes through
+    private static let photoCount = 5
+    /// How long each photo shows before the next fades in
+    private static let hold: Duration = .seconds(6)
+    private static let crossfade = Animation.easeInOut(duration: 1.2)
+
+    private struct Shown: Equatable {
+        let photo: TopicPhoto
+        let image: UIImage
+    }
+
+    @State private var current: Shown?
+    /// The photo before, under the current one while it fades in
+    @State private var previous: Shown?
+
+    @Environment(\.displayScale) private var displayScale
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var photos: [TopicPhoto] {
+        var urls: Set<URL> = []
+        return (feed.posts.isEmpty ? [page.post] : feed.posts)
+            .compactMap { post -> TopicPhoto? in
+                guard let link = post.link,
+                      let url = link.imageURL.flatMap(URL.init(string:)),
+                      urls.insert(url).inserted else { return nil }
+                return TopicPhoto(url: url, source: link.source, timeAgo: post.timeAgoString)
+            }
+            .prefix(Self.photoCount)
+            .map { $0 }
+    }
+
+    var body: some View {
+        page.topic.pageColor
+            .overlay {
+                if let previous {
+                    photo(previous.image)
+                }
+            }
+            .overlay {
+                if let current {
+                    photo(current.image)
+                        .id(current.photo)
+                        .transition(.opacity)
+                }
+            }
+            .overlay(alignment: .topTrailing) {
+                if let current {
+                    TopicPhotoCredit(photo: current.photo)
+                }
+            }
+            .clipped()
+            // Starts again from the photo showing when the topic's posts arrive
+            .task(id: photos) {
+                await show(photos)
+            }
+    }
+
+    private func photo(_ image: UIImage) -> some View {
+        Image(uiImage: image)
+            .resizable()
+            .aspectRatio(contentMode: .fill)
+    }
+
+    private func show(_ photos: [TopicPhoto]) async {
+        guard !photos.isEmpty else { return }
+        var index = photos.firstIndex { $0 == current?.photo } ?? 0
+        while !Task.isCancelled {
+            let photo = photos[index]
+            // News photos, so trimmed of the edge some publishers bake in, as in link cards
+            let request = ImageRequest(url: photo.url, pointSize: nil, scale: displayScale, trimsEdges: true)
+            if let image = await ImagePipeline.shared.image(for: request), !Task.isCancelled, current?.photo != photo {
+                withAnimation(current == nil ? ProfileView.imageFadeIn : Self.crossfade) {
+                    previous = current
+                    current = Shown(photo: photo, image: image)
+                }
+            }
+            guard !reduceMotion, photos.count > 1 else { return }
+            try? await Task.sleep(for: Self.hold)
+            index = (index + 1) % photos.count
+        }
+    }
+}
+
+/// The credit for the photo showing, at the top right: its publisher and how long ago its story was posted. Its
+/// capitals are centered on the close button's middle at full height, and its ink ends a margin from the edge.
+private struct TopicPhotoCredit: View {
+    let photo: TopicPhoto
+
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    var body: some View {
+        let traits = UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(dynamicTypeSize))
+        let font = UIFont.roundedSystemFont(.footnote, weight: .semibold, compatibleWith: traits)
+        let text = "\(photo.source) \u{00B7} \(photo.timeAgo)"
+        let middle = ProfileGeometry.closeButtonTop + ProfileGeometry.closeButtonSize / 2
+        Text(text)
+            .font(.footnote)
+            .fontWeight(.semibold)
+            .foregroundStyle(.white.opacity(0.85))
+            .lineLimit(1)
+            // Legible on the photo's brightest skies, where the wallpaper isn't darkened
+            .shadow(color: .black.opacity(0.35), radius: 6)
+            // Changes with the photo: the old credit fades out, then the new one in, as two texts in one place
+            // crossfaded read as neither
+            .id(photo)
+            .transition(.asymmetric(
+                insertion: .opacity.animation(.easeOut(duration: 0.5).delay(0.7)),
+                removal: .opacity.animation(.easeIn(duration: 0.5))
+            ))
+            .offset(x: font.trailingSideBearing(of: text))
+            .padding(.trailing, ProfileGeometry.margin)
+            // Centered in a band from the top twice as deep as the close button's middle: the font centers its
+            // capitals in its line, so they center on that middle
+            .frame(height: middle * 2)
     }
 }
