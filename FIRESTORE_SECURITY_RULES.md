@@ -34,6 +34,12 @@ service cloud.firestore {
       allow delete: if isOwner(userId);
     }
     
+    // Topics Collection: the topic directory, written only by the postTopicStories function
+    match /topics/{topicId} {
+      allow read: if isAuthenticated();
+      allow write: if false;
+    }
+    
     // Chats Collection
     match /chats/{chatId} {
       // Users can only read chats they are a participant in
@@ -72,6 +78,10 @@ service cloud.firestore {
 ```
 
 ## What These Rules Do
+
+### Topics (`/topics/{topicId}`)
+- Any authenticated user can read the topic directory (names, colors, sources and each topic's brief)
+- Only the topic function writes it; the Admin SDK it runs with is not bound by these rules
 
 ### 1. **User Profiles** (`/users/{userId}`)
 - ✅ Any authenticated user can **read** any profile (needed to look up contacts by phone)
