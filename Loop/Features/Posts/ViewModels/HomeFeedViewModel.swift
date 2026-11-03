@@ -12,6 +12,8 @@ final class HomeFeedViewModel {
     private(set) var isLoadingMore = false
     var errorMessage: String?
     private(set) var hasMoreContent = true
+    /// Changes when the feed ranks again for a new visit after the app was away, which starts the list back at the top
+    private(set) var visitID = UUID()
 
     // Reply previews for each loop
     private(set) var replyPreviews: [String: [Loop]] = [:] // loopId -> reply previews
@@ -20,13 +22,36 @@ final class HomeFeedViewModel {
     private(set) var isPosting = false
 
     private let currentUserId = Auth.auth().currentUser?.uid
+    /// How many of the newest posts are ranked for each visit. Topics post about ten an hour between them, so this
+    /// reaches back most of a working day
+    private let windowSize = 80
+    /// Older posts, below the ranked window, load in time order this many at a time
     private let pageSize = 20
     private let logger = Logger(subsystem: "com.nejack.Loop", category: "HomeFeedViewModel")
+    /// Away this long, the feed ranks again when the app comes back, as if it had just been opened
+    private static let rerankAfterAway: TimeInterval = 30 * 60
+    /// How long a first snapshot from the device's cache waits for the server's before it is ranked anyway (offline)
+    private static let cacheFallbackDelay: Duration = .seconds(2)
+    /// How long a post stays at least half on screen before it counts as seen, so posts flicked past don't
+    private static let seenDwell: Duration = .seconds(1)
 
     @ObservationIgnored private var listener: ListenerRegistration?
-    @ObservationIgnored private var firstPageTask: Task<Void, Never>?
-    /// Cursor for the next page: the last document currently loaded.
+    @ObservationIgnored private var windowTask: Task<Void, Never>?
+    /// Cursor for the next page: the oldest post of the ranked window, then the last page loaded.
     @ObservationIgnored private var lastDocument: DocumentSnapshot?
+    /// Whether the feed has been ranked since it started; until then live snapshots rank rather than update
+    @ObservationIgnored private var isRanked = false
+    /// Bumped by every ranking, so a slower, older one doesn't overwrite a newer one
+    @ObservationIgnored private var rankGeneration = 0
+    /// When the first snapshot from the cache arrived, which the wait for the server's counts from
+    @ObservationIgnored private var firstCachedSnapshotAt: Date?
+    /// New posts from others that arrived after the feed was ranked; they show at the next ranking
+    @ObservationIgnored private var heldPostIds: Set<String> = []
+    @ObservationIgnored private var seenIds: Set<String> = []
+    @ObservationIgnored private var seenTimers: [String: Task<Void, Never>] = [:]
+    @ObservationIgnored private var backgroundedAt: Date?
+    /// Fixes the ranking's jitter for this session
+    @ObservationIgnored private let rankingSeed = UInt64.random(in: 0...UInt64.max)
     /// People the current user follows, read once per load.
     @ObservationIgnored private var followingIds: Set<String>?
     /// Reply IDs each preview was built from, so a post's preview is only refetched when its replies change.
@@ -38,7 +63,7 @@ final class HomeFeedViewModel {
 
     // MARK: - Feed Management
 
-    /// All public loops, newest first. Filtering by following comes later.
+    /// The newest public posts, newest first: the window ranked for each visit, then the pages below it.
     private var feedQuery: Query {
         Firestore.firestore()
             .collection("loops")
@@ -46,7 +71,9 @@ final class HomeFeedViewModel {
             .order(by: "createdAt", descending: true)
     }
 
-    /// Starts the live listener on the first page. Safe to call again; it only starts once.
+    /// Starts the live listener on the ranked window. Safe to call again; it only starts once. The first snapshot
+    /// with server data is ranked; later ones update the feed in place (see `applyLiveUpdate`). Metadata changes are
+    /// included so a first snapshot from the cache can be told apart from the server's, even when they match.
     func start() {
         guard listener == nil, currentUserId != nil else { return }
 
@@ -55,8 +82,8 @@ final class HomeFeedViewModel {
         }
 
         listener = feedQuery
-            .limit(to: pageSize)
-            .addSnapshotListener { [weak self] snapshot, error in
+            .limit(to: windowSize)
+            .addSnapshotListener(includeMetadataChanges: true) { [weak self] snapshot, error in
                 guard let self = self else { return }
 
                 if let error = error {
@@ -65,29 +92,29 @@ final class HomeFeedViewModel {
                     return
                 }
 
-                guard let documents = snapshot?.documents else {
+                guard let snapshot else {
                     self.isLoading = false
                     return
                 }
 
                 // A newer snapshot supersedes one that is still being processed
-                self.firstPageTask?.cancel()
-                self.firstPageTask = Task {
-                    await self.applyFirstPage(documents, keepingOlderPages: true)
+                self.windowTask?.cancel()
+                self.windowTask = Task {
+                    await self.applyWindowSnapshot(snapshot)
                 }
             }
     }
 
     func refreshFeed() async {
-        // Pull to refresh re-reads profiles and the following list, then resets to the first page
+        // Pull to refresh re-reads profiles and the following list, then ranks the newest posts again
         FirebaseService.shared.invalidateUserCache()
         followingIds = nil
         previewSources = [:]
-        firstPageTask?.cancel()
+        windowTask?.cancel()
 
         do {
-            let snapshot = try await feedQuery.limit(to: pageSize).getDocuments()
-            await applyFirstPage(snapshot.documents, keepingOlderPages: false)
+            let snapshot = try await feedQuery.limit(to: windowSize).getDocuments()
+            await rank(snapshot.documents)
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -128,37 +155,169 @@ final class HomeFeedViewModel {
         }
     }
 
-    /// Replaces the first page with `documents`. When `keepingOlderPages` is set, loops loaded further down
-    /// stay in place, so a live update (a like, a new post) doesn't reset scrolling.
-    private func applyFirstPage(_ documents: [QueryDocumentSnapshot], keepingOlderPages: Bool) async {
-        let page = await FirebaseService.shared.loops(from: documents)
-        // Previews load before the page is shown so cards don't shift once they appear
-        let previewUpdates = await previewUpdates(for: page)
-        guard !Task.isCancelled else { return }
-
-        var olderLoops: [Loop] = []
-        if keepingOlderPages, let oldestOnPage = page.last {
-            let pageIds = Set(page.map(\.id))
-            olderLoops = loops.filter { !pageIds.contains($0.id) && $0.createdAt <= oldestOnPage.createdAt }
+    /// The first snapshot often comes from the device's cache, from whenever the app last ran; ranking it would show
+    /// old posts and hold back everything newer. So the feed ranks the server's, or the cache's if the server's doesn't
+    /// come in time.
+    private func applyWindowSnapshot(_ snapshot: QuerySnapshot) async {
+        if isRanked {
+            await applyLiveUpdate(snapshot.documents)
+        } else if snapshot.metadata.isFromCache {
+            // A later cache snapshot cancels this one's wait and carries on with what is left of it
+            let firstAt = firstCachedSnapshotAt ?? Date()
+            firstCachedSnapshotAt = firstAt
+            let waited = Date().timeIntervalSince(firstAt)
+            try? await Task.sleep(for: max(Self.cacheFallbackDelay - .seconds(waited), .zero))
+            guard !Task.isCancelled, !isRanked else { return }
+            await rank(snapshot.documents)
+        } else {
+            await rank(snapshot.documents)
         }
-        let mergedLoops = page + olderLoops
+    }
+
+    /// Orders the window's posts for this visit and shows them in place of the whole feed, older pages included.
+    private func rank(_ documents: [QueryDocumentSnapshot], resettingScroll: Bool = false) async {
+        rankGeneration += 1
+        let generation = rankGeneration
+
+        let window = await FirebaseService.shared.loops(from: documents)
+        let context = await rankingContext()
+        // Previews load before the feed is shown so cards don't shift once they appear
+        let previewUpdates = await previewUpdates(for: window)
+        guard generation == rankGeneration else { return }
+
+        let candidates = window.map {
+            FeedRanker.Candidate(
+                id: $0.id,
+                authorId: $0.authorId,
+                topicId: $0.topic?.id,
+                createdAt: $0.createdAt,
+                likeCount: $0.likeCount,
+                replyCount: $0.replyCount,
+                significance: $0.significance
+            )
+        }
+        let windowById = Dictionary(window.map { ($0.id, $0) }) { first, _ in first }
+        let ranked = FeedRanker.rank(candidates, context: context).compactMap { windowById[$0] }
 
         // Disable animations to prevent flickering during state updates
         var transaction = Transaction()
         transaction.disablesAnimations = true
         withTransaction(transaction) {
-            applyPreviewUpdates(previewUpdates, from: page)
-            if mergedLoops != loops {
-                loops = mergedLoops
+            applyPreviewUpdates(previewUpdates, from: window)
+            if ranked != loops {
+                loops = ranked
+            }
+            if resettingScroll {
+                visitID = UUID()
             }
         }
 
-        // With older pages loaded, the cursor already points past them
-        if olderLoops.isEmpty {
-            lastDocument = documents.last
-            hasMoreContent = documents.count == pageSize
-        }
+        isRanked = true
+        firstCachedSnapshotAt = nil
+        heldPostIds = []
+        lastDocument = documents.last
+        hasMoreContent = documents.count == windowSize
         isLoading = false
+    }
+
+    /// Applies a live snapshot of the window without reordering the feed, so nothing moves under the finger: posts
+    /// already showing update in place (likes, replies), posts deleted from the window disappear, and new posts from
+    /// others wait for the next ranking. Your own new posts show at the top straight away.
+    private func applyLiveUpdate(_ documents: [QueryDocumentSnapshot]) async {
+        let window = await FirebaseService.shared.loops(from: documents)
+        let previewUpdates = await previewUpdates(for: window)
+        guard !Task.isCancelled else { return }
+
+        // Read after the last await, so a ranking that landed meanwhile is what gets updated
+        let windowById = Dictionary(window.map { ($0.id, $0) }) { first, _ in first }
+        let shownIds = Set(loops.map(\.id))
+        let oldestInWindow = window.last?.createdAt
+        let ownNewPosts = window.filter { !shownIds.contains($0.id) && $0.authorId == currentUserId }
+        heldPostIds.formUnion(window.filter { !shownIds.contains($0.id) && $0.authorId != currentUserId }.map(\.id))
+
+        let updated = ownNewPosts + loops.compactMap { loop -> Loop? in
+            if let fresh = windowById[loop.id] {
+                return fresh
+            }
+            // Missing from the window: deleted if it is newer than the window's oldest post; older ones were pushed
+            // out by newer posts, or loaded with a page below it, and stay
+            if let oldestInWindow, loop.createdAt > oldestInWindow {
+                return nil
+            }
+            return loop
+        }
+
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            applyPreviewUpdates(previewUpdates, from: window)
+            if updated != loops {
+                loops = updated
+            }
+        }
+    }
+
+    /// What the ranking needs to know about you: the posts you've seen, and the people and topics you follow.
+    private func rankingContext() async -> FeedRanker.Context {
+        var seen: Set<String> = []
+        var followedTopics: Set<String> = []
+        if let currentUserId {
+            seen = await SeenPostsStore.shared.seenIds(userId: currentUserId)
+            do {
+                followedTopics = try await FirebaseService.shared.followedTopics()
+            } catch {
+                logger.error("Followed topics read failed: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+        seenIds = seen
+        return FeedRanker.Context(
+            now: Date(),
+            currentUserId: currentUserId,
+            seenIds: seen,
+            followedAuthorIds: await loadFollowingIds(),
+            followedTopicIds: followedTopics,
+            seed: rankingSeed
+        )
+    }
+
+    // MARK: - Seen Posts
+
+    /// Counts a post as seen once it has stayed at least half on screen for a second.
+    func postVisibilityChanged(_ loopId: String, isVisible: Bool) {
+        seenTimers[loopId]?.cancel()
+        seenTimers[loopId] = nil
+        guard isVisible, !seenIds.contains(loopId), let currentUserId else { return }
+
+        seenTimers[loopId] = Task { [weak self] in
+            try? await Task.sleep(for: Self.seenDwell)
+            guard !Task.isCancelled, let self else { return }
+            self.seenTimers[loopId] = nil
+            self.seenIds.insert(loopId)
+            await SeenPostsStore.shared.markSeen(loopId, userId: currentUserId)
+        }
+    }
+
+    // MARK: - App Lifecycle
+
+    func appDidEnterBackground() {
+        backgroundedAt = Date()
+        Task {
+            await SeenPostsStore.shared.flush()
+        }
+    }
+
+    /// Ranks the feed again if the app was away long enough, and starts the list back at the top.
+    func appDidBecomeActive() async {
+        guard let backgroundedAt else { return }
+        self.backgroundedAt = nil
+        guard isRanked, Date().timeIntervalSince(backgroundedAt) >= Self.rerankAfterAway else { return }
+
+        do {
+            let snapshot = try await feedQuery.limit(to: windowSize).getDocuments()
+            await rank(snapshot.documents, resettingScroll: true)
+        } catch {
+            logger.error("Ranking on return failed: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     // MARK: - Reply Previews
