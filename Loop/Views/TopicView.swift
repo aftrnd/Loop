@@ -21,8 +21,8 @@ struct TopicPage: Hashable {
 }
 
 /// A topic's page, laid out like a profile without the avatar: the topic's name and the line under it on a wallpaper of
-/// its latest stories' photos, swiped through on the card with the headline of the one showing, Follow in Liquid Glass
-/// at the card's foot, and the topic's latest posts on the page at full height.
+/// its latest stories' photos, which move on by themselves and swipe, with the headline of the one showing, Follow in
+/// Liquid Glass at the card's foot, and the topic's latest posts on the page at full height.
 struct TopicView: View {
     let page: TopicPage
 
@@ -39,7 +39,7 @@ struct TopicView: View {
     /// How far the page is scrolled. Only the full-height page scrolls; the card always shows the header
     @State private var scrollPosition = ScrollPosition(edge: .top)
 
-    /// The wallpaper's photo swiped to on the card, nil for the first
+    /// The wallpaper's photo showing, nil for the first
     @State private var shownPhoto: TopicPhoto?
 
     /// Whether the signed-in user follows the topic, nil until it has been read
@@ -183,12 +183,12 @@ struct TopicView: View {
             // Darkest from Follow's top down, a part spacing below the text, as a profile's is from a part spacing
             // below its avatar
             let heroHeight = cardHeight - ProfileGeometry.part - ProfileGeometry.cardActionHeight
-            // The photos swipe on the card only; at full height the one showing stays under the header
+            // Its photos swipe
             ProfileBackdrop(
                 cardHeight: cardHeight,
                 heroHeight: heroHeight,
                 shade: page.topic.pageColor,
-                isInteractive: !isSheetFullyExpanded
+                isInteractive: true
             ) {
                 TopicWallpaper(page: page, feed: feedViewModel, shown: $shownPhoto)
             }
@@ -311,9 +311,9 @@ extension TopicView {
 // MARK: - Topic Text
 
 /// The topic's name a part spacing below the close button, as a profile's avatar is, the line under it, then the
-/// headline of the story on the wallpaper and Follow, each a part spacing below the last. News topics set the name in
-/// New York, as their posts' headlines are. A view of its own so the card's height can be worked out with the same
-/// layout before the sheet opens.
+/// headline of the story on the wallpaper, a dot for each photo, and Follow, each a part spacing below the last. News
+/// topics set the name in New York, as their posts' headlines are. A view of its own so the card's height, its detent,
+/// can be worked out with the same layout before the sheet opens.
 private struct TopicHeaderLayout<Follow: View>: View {
     let page: TopicPage
     /// The topic's posts, once they load; until then the lines come from the post the page was opened from
@@ -322,6 +322,9 @@ private struct TopicHeaderLayout<Follow: View>: View {
     @ViewBuilder let follow: Follow
 
     var body: some View {
+        let photos = TopicPhoto.latest(for: page, feed: feed)
+        // The one showing, or the first when the topic's posts arrive without it
+        let index = photos.firstIndex { $0 == shownPhoto } ?? 0
         BaselineSpacedVStack(spacing: ProfileGeometry.part) {
             // Stands in for the close button at full height, which the card keeps room for so the text doesn't move
             // as the sheet expands
@@ -329,10 +332,15 @@ private struct TopicHeaderLayout<Follow: View>: View {
                 .frame(height: ProfileGeometry.closeButtonTop + ProfileGeometry.closeButtonSize)
 
             ProfileNameBlock(name: page.name, isSerif: page.topic.isArticle, lines: TopicLines(page: page, feed: feed))
+                .modifier(TopicTypeShadow())
                 // A swipe across the type pages the photos behind it
                 .allowsHitTesting(false)
 
-            TopicStoryLink(page: page, feed: feed, shownPhoto: shownPhoto)
+            TopicStoryLink(page: page, photo: photos.indices.contains(index) ? photos[index] : nil)
+                .modifier(TopicTypeShadow())
+
+            TopicPageDots(count: photos.count, index: index)
+                .modifier(TopicTypeShadow())
 
             follow
         }
@@ -426,8 +434,8 @@ private struct TopicSourcesLine: View {
 /// rest. It always takes two lines, so the card is as tall whatever the headline.
 private struct TopicStoryLink: View {
     let page: TopicPage
-    let feed: ProfileFeedViewModel?
-    let shownPhoto: TopicPhoto?
+    /// The photo showing, nil when the topic has none
+    let photo: TopicPhoto?
 
     @Environment(\.openURL) private var openURL
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -435,8 +443,6 @@ private struct TopicStoryLink: View {
     @ScaledMetric(relativeTo: .headline) private var serifSize: CGFloat = 17
 
     var body: some View {
-        let photos = TopicPhoto.latest(for: page, feed: feed)
-        let photo = photos.first { $0 == shownPhoto } ?? photos.first
         let isSerif = page.topic.isArticle
         let traits = UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(dynamicTypeSize))
         let font = isSerif
@@ -486,6 +492,35 @@ private struct TopicStoryLink: View {
     }
 }
 
+/// A dot for each photo on the wallpaper, the one showing brightest, centered above Follow. The line is always there,
+/// its dots drawn once there is more than one photo, so the card is as tall before the topic's posts load as after.
+private struct TopicPageDots: View {
+    let count: Int
+    let index: Int
+
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    var body: some View {
+        let traits = UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(dynamicTypeSize))
+        // As tall as the lowercase of the credit, the wallpaper's smallest type, and a dot apart
+        let dot = UIFont.roundedSystemFont(.footnote, weight: .semibold, compatibleWith: traits).xHeight
+        HStack(spacing: dot) {
+            ForEach(0..<count, id: \.self) { page in
+                Circle()
+                    .opacity(page == index ? 1 : 0.4)
+                    .frame(width: dot, height: dot)
+            }
+        }
+        .frame(height: dot)
+        .frame(maxWidth: .infinity)
+        .foregroundStyle(.white.opacity(0.85))
+        .opacity(count > 1 ? 1 : 0)
+        .animation(.easeInOut(duration: 0.25), value: index)
+        .animation(.easeOut(duration: 0.3), value: count > 1)
+        .accessibilityHidden(true)
+    }
+}
+
 // MARK: - Wallpaper
 
 private extension LoopTopic {
@@ -497,8 +532,17 @@ private extension LoopTopic {
     }
 }
 
-/// A story photo the wallpaper shows, with what its credit says
-private struct TopicPhoto: Hashable {
+/// A soft shadow under the white type on the wallpaper, so it holds on the photos' brightest parts, where the shade is
+/// lightest or none: faint and wide, with no offset, so it darkens around the letters without an edge
+private struct TopicTypeShadow: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .shadow(color: .black.opacity(0.35), radius: 6)
+    }
+}
+
+/// A story photo the wallpaper shows, with what its credit says. Sendable, as a scroll position's id
+private nonisolated struct TopicPhoto: Hashable, Sendable {
     let url: URL
     let source: String
     let timeAgo: String
@@ -511,6 +555,7 @@ private struct TopicPhoto: Hashable {
 
     /// The photos of the topic's latest stories, newest first, or of the post the page was opened from until the
     /// topic's posts load
+    @MainActor
     static func latest(for page: TopicPage, feed: ProfileFeedViewModel?) -> [TopicPhoto] {
         let loaded = feed?.posts ?? []
         var urls: Set<URL> = []
@@ -533,12 +578,35 @@ private struct TopicPhoto: Hashable {
 }
 
 /// A topic's wallpaper: its latest stories' photos in full color, side by side to swipe through, each on the topic's
-/// color until it has loaded. The post the page was opened from stands in until the topic's posts load.
+/// color until it has loaded. It moves on to the next photo by itself a few seconds after the last change, unless it is
+/// being swiped or motion is reduced. The post the page was opened from stands in until the topic's posts load.
 private struct TopicWallpaper: View {
     let page: TopicPage
     let feed: ProfileFeedViewModel
-    /// The photo swiped to, nil for the first
+    /// The photo showing, nil for the first
     @Binding var shown: TopicPhoto?
+
+    /// How long each photo shows before the next slides in
+    private static let hold: Duration = .seconds(3)
+    private static let slide = Animation.smooth(duration: 0.8)
+
+    /// Where the photos are scrolled to. Moving on sets it; under a finger, `shown` follows the photo most in view.
+    /// Bound to `shown` instead, the scroll view wrote the photo it was leaving back into it while it slid, and the
+    /// dots and the headline flipped back until it landed
+    @State private var position = ScrollPosition(idType: TopicPhoto.self)
+    /// Whether the photos are moving, under a finger or settling; the next photo waits until they stop
+    @State private var isScrolling = false
+    /// Set while it moves on by itself, so the dots and the headline change once, to the photo it is going to, rather
+    /// than to each photo it slides past going back to the first
+    @State private var isAdvancing = false
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private struct Advance: Hashable {
+        let shown: TopicPhoto?
+        let photos: [TopicPhoto]
+        let isScrolling: Bool
+    }
 
     var body: some View {
         let photos = TopicPhoto.latest(for: page, feed: feed)
@@ -565,72 +633,75 @@ private struct TopicWallpaper: View {
                 .scrollTargetLayout()
             }
             .scrollTargetBehavior(.paging)
-            .scrollPosition(id: $shown)
+            .scrollPosition($position)
+            .onScrollTargetVisibilityChange(idType: TopicPhoto.self, threshold: 0.5) { visible in
+                if !isAdvancing, let photo = visible.first {
+                    shown = photo
+                }
+            }
             .scrollIndicators(.hidden)
             // One photo stays put rather than bouncing
             .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+            .onScrollPhaseChange { _, phase in
+                isScrolling = phase != .idle
+                // Landed, or taken over by a finger
+                if phase == .idle || phase == .interacting {
+                    isAdvancing = false
+                }
+            }
         }
         .background(page.topic.pageColor)
+        // Starts the wait again whenever the photo changes, by hand or by itself, and when the photos stop moving
+        .task(id: Advance(shown: shown, photos: photos, isScrolling: isScrolling)) {
+            guard !isScrolling, !reduceMotion, photos.count > 1 else { return }
+            try? await Task.sleep(for: Self.hold)
+            guard !Task.isCancelled else { return }
+            // After the last, back to the first
+            let next = photos[(index + 1) % photos.count]
+            isAdvancing = true
+            shown = next
+            withAnimation(Self.slide) {
+                position.scrollTo(id: next, anchor: .leading)
+            }
+        }
         .overlay(alignment: .topTrailing) {
             if photos.indices.contains(index) {
-                TopicPhotoCredit(photo: photos[index], index: index, count: photos.count)
+                TopicPhotoCredit(photo: photos[index])
                     .allowsHitTesting(false)
             }
         }
     }
 }
 
-/// The credit for the photo showing, at the top right: its publisher and how long ago its story was posted, then a dot
-/// for each photo when there is more than one, the one showing brightest. Its capitals and dots are centered on the
-/// close button's middle at full height, and its last dot ends a margin from the edge.
+/// The credit for the photo showing, at the top right: its publisher and how long ago its story was posted. Its
+/// capitals are centered on the close button's middle at full height, and its ink ends a margin from the edge.
 private struct TopicPhotoCredit: View {
     let photo: TopicPhoto
-    let index: Int
-    let count: Int
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         let traits = UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(dynamicTypeSize))
         let font = UIFont.roundedSystemFont(.footnote, weight: .semibold, compatibleWith: traits)
-        // The dots are as tall as the credit's lowercase, a dot apart, and twice that from the credit
-        let dot = font.xHeight
         let text = "\(photo.source) \u{00B7} \(photo.timeAgo)"
         let middle = ProfileGeometry.closeButtonTop + ProfileGeometry.closeButtonSize / 2
-        HStack(spacing: dot * 2) {
+        Text(text)
+            .font(.footnote)
+            .fontWeight(.semibold)
+            .foregroundStyle(.white.opacity(0.85))
+            .lineLimit(1)
+            .modifier(TopicTypeShadow())
             // Changes with the photo: the old credit fades out, then the new one in, as two texts in one place
-            // crossfaded read as neither. Both end at the same place while they change
-            ZStack(alignment: .trailing) {
-                Text(text)
-                    .font(.footnote)
-                    .fontWeight(.semibold)
-                    .lineLimit(1)
-                    .id(photo)
-                    .transition(.asymmetric(
-                        insertion: .opacity.animation(.easeOut(duration: 0.5).delay(0.7)),
-                        removal: .opacity.animation(.easeIn(duration: 0.5))
-                    ))
-                    // Its ink ends where its frame does, a margin from the edge or twice a dot from the dots
-                    .offset(x: font.trailingSideBearing(of: text))
-            }
-
-            if count > 1 {
-                HStack(spacing: dot) {
-                    ForEach(0..<count, id: \.self) { page in
-                        Circle()
-                            .opacity(page == index ? 1 : 0.4)
-                            .frame(width: dot, height: dot)
-                    }
-                }
-                .animation(.easeInOut(duration: 0.25), value: index)
-            }
-        }
-        .foregroundStyle(.white.opacity(0.85))
-        // Legible on the photo's brightest skies, where the wallpaper isn't darkened
-        .shadow(color: .black.opacity(0.35), radius: 6)
-        .padding(.trailing, ProfileGeometry.margin)
-        // Centered in a band from the top twice as deep as the close button's middle: the font centers its
-        // capitals in its line, so they center on that middle
-        .frame(height: middle * 2)
+            // crossfaded read as neither
+            .id(photo)
+            .transition(.asymmetric(
+                insertion: .opacity.animation(.easeOut(duration: 0.5).delay(0.7)),
+                removal: .opacity.animation(.easeIn(duration: 0.5))
+            ))
+            .offset(x: font.trailingSideBearing(of: text))
+            .padding(.trailing, ProfileGeometry.margin)
+            // Centered in a band from the top twice as deep as the close button's middle: the font centers its
+            // capitals in its line, so they center on that middle
+            .frame(height: middle * 2)
     }
 }
