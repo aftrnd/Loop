@@ -1130,7 +1130,8 @@ class FirebaseService {
             color: color,
             ink: ink,
             layout: data["layout"] as? String,
-            style: data["style"] as? String
+            style: data["style"] as? String,
+            monogram: data["monogram"] as? String
         )
     }
     
@@ -1148,7 +1149,8 @@ class FirebaseService {
                 color: color,
                 ink: ink,
                 layout: data["layout"] as? String,
-                style: data["style"] as? String
+                style: data["style"] as? String,
+                monogram: data["monogram"] as? String
             ),
             name: name,
             about: data["about"] as? String,

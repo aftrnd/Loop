@@ -49,6 +49,8 @@ struct LoopTopic: Codable, Hashable {
     var layout: String? = nil
     /// "team" for a team, whose squircle wears its colors; nil for every other topic, drawn in ink
     var style: String? = nil
+    /// A person account's initials, drawn in place of the symbol; nil for topics
+    var monogram: String? = nil
 
     var isArticle: Bool {
         layout == "article"

@@ -536,6 +536,12 @@ function claudeWriter(client) {
 
 // MARK: - Directory
 
+/** A person account's initials, which its avatar shows in place of a symbol: KC for Kaitlan Collins */
+function monogram(topic) {
+  if (topic.kind !== 'person') return null;
+  return topic.name.split(/\s+/).map((word) => word[0]).join('').slice(0, 2).toUpperCase();
+}
+
 /** A topic's entry in `topics/{id}`: what the app shows on its page and lists for following */
 function topicEntry(topic, order) {
   return {
@@ -548,6 +554,7 @@ function topicEntry(topic, order) {
     layout: topic.layout ?? null,
     style: topic.style ?? null,
     kind: topic.kind ?? null,
+    monogram: monogram(topic),
     sources: [...new Set(topic.feeds.map((feed) => feed.source))],
     order,
   };
@@ -686,6 +693,7 @@ function topicLoop(topic, story, post, imageURL) {
       ink: topic.ink,
       layout: topic.layout ?? null,
       style: topic.style ?? null,
+      monogram: monogram(topic),
     },
     link: {
       url: canonicalURL(story.link),
